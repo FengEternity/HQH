@@ -1,4 +1,4 @@
-const INIT_KEY = 'hqh_db_inited_v1';
+const INIT_KEY = 'hqh_db_inited_v2';
 
 App({
   onLaunch() {

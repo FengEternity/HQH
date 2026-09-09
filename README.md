@@ -2,7 +2,7 @@
 
 当前线上/体验版能力对应 **0.1.0**：微信云开发目录（品牌/视频）、关键词搜索、运营入库、播放、首页客服留言。
 
-下一期（商城、统一搜索、播放页文档问答、AI 客服）需求在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`，实现计划索引在 `docs/superpowers/plans/2026-09-09-00-ai-native-mall-index.md`。未合入 `main` 前，下文「打开与上云 / 运营 / 手测」仍以 **0.1.0** 为准。
+下一期（商城、统一搜索、播放页文档问答、AI 客服）需求在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`，需求总表在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-req-board.md`，实现计划索引在 `docs/superpowers/plans/2026-09-09-00-ai-native-mall-index.md`。未合入 `main` 前，下文「打开与上云 / 运营 / 手测」仍以 **0.1.0** 为准。
 
 运营主体：**优度（杭州）智能装备有限公司**（简称「优度」）。产品对外名称是「仪器讲解资料馆」，和执照上的公司全称不是同一个字段。
 
@@ -20,7 +20,7 @@
 
 1. 安装[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)，用真实 AppID 导入本仓库根目录（含 `project.config.json`）。游客模式不能开通云开发、不能上传视频。
 2. 开通云开发并创建环境，设为当前环境。
-3. 对云函数 `catalog`、`shop` 安装依赖并上传部署；环境变量设置 `ADMIN_PIN`（运营口令，两个函数都要配）。`catalog` 需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。
+3. 对云函数 `catalog`、`shop` 在开发者工具里右键文件夹 → **上传并部署：云端安装依赖**（不要选「不上传 node_modules / 仅上传代码」；否则会报 `Cannot find module 'wx-server-sdk'` / `-504002`。缺函数时是 `-501000`）。环境变量设置 `ADMIN_PIN`（运营口令，**两个函数都要配且必须相同**；只配 catalog 时商品运营会鉴权失败并退回工作台）。`catalog` 需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。
 4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`，以及商城用的 `shop_products`、`video_shop_links`。也可在云函数测试里传入 `{ "action": "initDb" }`。
 5. 集合出现后，在云开发控制台把上述集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。
 
@@ -44,7 +44,7 @@
 ## 检索单测（不依赖微信）
 
 ```bash
-node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js miniprogram/utils/videoMedia.test.js miniprogram/constants/tabs.test.js
+node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/shop/lib/*.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/mapCloudCallError.test.js miniprogram/utils/shopEditSave.test.js miniprogram/constants/tabs.test.js
 ```
 
 ## 手测清单

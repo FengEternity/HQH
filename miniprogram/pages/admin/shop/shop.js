@@ -43,7 +43,13 @@ Page({
       .catch((err) => {
         this.setData({ loading: false });
         if (err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
+          wx.showModal({
+            title: '无法进入商品运营',
+            content:
+              'shop 云函数鉴权失败。请在云开发控制台给 shop 配置与 catalog 相同的环境变量 ADMIN_PIN，保存后重新进入。',
+            showCancel: false,
+            success: () => wx.navigateBack(),
+          });
           return;
         }
         wx.showToast({ title: err.message || '加载失败', icon: 'none' });

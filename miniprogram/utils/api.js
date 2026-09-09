@@ -1,17 +1,24 @@
+const { mapCloudCallError } = require('./mapCloudCallError');
+
+function unwrapCloudResult(res) {
+  const result = res.result;
+  if (!result || result.ok === false) {
+    const err = new Error((result && result.message) || '请求失败');
+    err.code = result && result.code;
+    throw err;
+  }
+  return result;
+}
+
 function catalog(data) {
   return wx.cloud
     .callFunction({
       name: 'catalog',
       data,
     })
-    .then((res) => {
-      const result = res.result;
-      if (!result || result.ok === false) {
-        const err = new Error((result && result.message) || '请求失败');
-        err.code = result && result.code;
-        throw err;
-      }
-      return result;
+    .then(unwrapCloudResult)
+    .catch((err) => {
+      throw mapCloudCallError(err, 'catalog');
     });
 }
 
@@ -21,14 +28,9 @@ function shop(data) {
       name: 'shop',
       data,
     })
-    .then((res) => {
-      const result = res.result;
-      if (!result || result.ok === false) {
-        const err = new Error((result && result.message) || '请求失败');
-        err.code = result && result.code;
-        throw err;
-      }
-      return result;
+    .then(unwrapCloudResult)
+    .catch((err) => {
+      throw mapCloudCallError(err, 'shop');
     });
 }
 

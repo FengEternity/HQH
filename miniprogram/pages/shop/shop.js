@@ -22,7 +22,10 @@ Page({
         return this.resolveCovers(products);
       })
       .catch((err) => {
-        this.setData({ loading: false });
+        this.setData({ loading: false, products: [] });
+        if (err.code === 'FUNCTION_NOT_FOUND') {
+          return;
+        }
         wx.showToast({ title: err.message || '加载失败', icon: 'none' });
       });
   },
