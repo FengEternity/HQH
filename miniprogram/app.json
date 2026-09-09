@@ -1,6 +1,8 @@
 {
   "pages": [
     "pages/index/index",
+    "pages/shop/shop",
+    "pages/mine/mine",
     "pages/contact/contact",
     "pages/brand/brand",
     "pages/player/player",
@@ -17,6 +19,38 @@
     "navigationBarBackgroundColor": "#F7F7F8",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#F7F7F8"
+  },
+  "tabBar": {
+    "color": "#6B6B70",
+    "selectedColor": "#1A1A1A",
+    "backgroundColor": "#F7F7F8",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "讲解",
+        "iconPath": "assets/tab/explain.png",
+        "selectedIconPath": "assets/tab/explain-on.png"
+      },
+      {
+        "pagePath": "pages/shop/shop",
+        "text": "商城",
+        "iconPath": "assets/tab/shop.png",
+        "selectedIconPath": "assets/tab/shop-on.png"
+      },
+      {
+        "pagePath": "pages/contact/contact",
+        "text": "客服",
+        "iconPath": "assets/tab/cs.png",
+        "selectedIconPath": "assets/tab/cs-on.png"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的",
+        "iconPath": "assets/tab/mine.png",
+        "selectedIconPath": "assets/tab/mine-on.png"
+      }
+    ]
   },
   "sitemapLocation": "sitemap.json",
   "style": "v2",

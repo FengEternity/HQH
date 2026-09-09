@@ -33,9 +33,9 @@
 - 内容运营：品牌列表（点行进视频、点编辑改品牌）→ 某品牌下的视频 → 编辑（标题、简介必填，型号与标签可选，上传封面和视频）。上架必须封面和视频都已传。未选手动封面时，上传视频会用系统缩略图（一般为首帧）。可下架；删除会二次确认。
 - 品牌改名会同步刷新该品牌下视频里的 `brandName` 和搜索索引；品牌下还有视频时不允许删除，先把视频删干净。
 
-## 首页客服入口
+## 客服入口
 
-首页标题右边「联系客服」进入 `pages/contact/contact`。开场话术和快捷问题在 `miniprogram/config.js` 的 `contact`。
+底栏「客服」进入 `pages/contact/contact`（`switchTab`）。开场话术和快捷问题在 `miniprogram/config.js` 的 `contact`。
 
 - 领取的账号存在本机 `hqh_support_account`，同一设备重复领取会拿到同一组。
 - 用户自己打字发送，以及点「没有我要的讲解」「转人工」，会写入集合 `support_messages`。运营入口首页「客服留言」可看。点「领取账号 / 怎么找视频」只走自动回复，不进留言箱。
@@ -43,16 +43,17 @@
 ## 检索单测（不依赖微信）
 
 ```bash
-node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js miniprogram/utils/videoMedia.test.js
+node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js miniprogram/utils/videoMedia.test.js miniprogram/constants/tabs.test.js
 ```
 
 ## 手测清单
 
+- 底栏四项为「讲解｜商城｜客服｜我的」，默认打开讲解；商城空态「暂无商品」，我的空态「登录后可查看订单」。
 - 草稿视频不能出现在首页、品牌列表和搜索结果中。
 - 空库时首页给「资料馆还是空的」，内容运营给「还没有品牌」，都不报错。
 - 品牌改名后，用新名字搜索能命中它下面已上架的视频，旧名字搜不到。
 - 品牌下有视频时点删除会被拦住并说明原因；视频删空后能删掉品牌。
-- 首页「联系客服」进入问答页，可点快捷问题、领取并复制账号。
+- 客服从底栏进入问答页（`switchTab`），可点快捷问题、领取并复制账号；首页不再有「联系客服」按钮。
 - 无结果时：关键词搜提示换词或按品牌浏览。
 - 运营新增品牌并上架（封面+视频齐全、有简介）后，首页出现该品牌且可搜索到。
 - 播放页展示标题、品牌、型号、标签、简介，并能播放云存储视频。
