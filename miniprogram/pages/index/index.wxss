@@ -1,6 +1,0 @@
-.contact-btn {
-  margin-left: auto;
-  flex-shrink: 0;
-  padding: 12rpx 22rpx;
-  font-size: 24rpx;
-}
