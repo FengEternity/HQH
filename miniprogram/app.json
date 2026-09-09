@@ -3,6 +3,7 @@
     "pages/index/index",
     "pages/shop/shop",
     "pages/mine/mine",
+    "pages/about/about",
     "pages/contact/contact",
     "pages/brand/brand",
     "pages/player/player",
