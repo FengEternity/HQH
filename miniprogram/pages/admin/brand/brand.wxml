@@ -1,0 +1,24 @@
+<view class="page">
+  <input class="input" placeholder="品牌名，如 海星达" value="{{name}}" bindinput="onName" />
+  <input
+    class="input"
+    type="number"
+    placeholder="排序，数字越小越靠前，默认 99"
+    value="{{sort}}"
+    bindinput="onSort"
+  />
+
+  <block wx:if="{{id}}">
+    <view class="row card" bindtap="openVideos">
+      <view>
+        <view>视频列表</view>
+        <view class="muted">已有 {{videoCount}} 条</view>
+      </view>
+      <text class="muted">进入</text>
+    </view>
+  </block>
+
+  <view class="btn" bindtap="save">保存</view>
+  <view wx:if="{{id}}" class="btn btn-ghost btn-danger" bindtap="remove" style="margin-top: 16rpx">删除品牌</view>
+  <view wx:if="{{id}}" class="muted" style="margin-top: 16rpx">品牌下还有视频时不能删除，请先在视频列表里删干净。</view>
+</view>

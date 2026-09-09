@@ -1,0 +1,37 @@
+<view class="page">
+  <view class="card row" bindtap="openInbox">
+    <view>
+      <view class="tile-title">客服留言</view>
+      <view class="muted">用户在问答页发来的内容</view>
+    </view>
+    <text class="chip">{{unreadLabel}}</text>
+  </view>
+  <view class="grid">
+    <view class="tile" wx:for="{{brands}}" wx:key="_id">
+      <view class="cover" data-id="{{item._id}}" data-name="{{item.name}}" bindtap="openBrand">
+        <text>进入</text>
+        <view class="mark">{{item.initial}}</view>
+      </view>
+      <view class="tile-body">
+        <view data-id="{{item._id}}" data-name="{{item.name}}" bindtap="openBrand">
+          <view class="tile-title">{{item.name}}</view>
+          <view class="muted">{{item.videoCount}} 条视频 · 排序 {{item.sort}}</view>
+        </view>
+        <view class="row" style="margin-top: 16rpx">
+          <text data-id="{{item._id}}" data-name="{{item.name}}" bindtap="openBrand">视频</text>
+          <text data-id="{{item._id}}" bindtap="editBrand">编辑</text>
+        </view>
+      </view>
+    </view>
+    <view class="tile" bindtap="addBrand">
+      <view class="cover tile-add">
+        <text>+</text>
+      </view>
+      <view class="tile-body">
+        <view class="tile-title">添加品牌</view>
+        <view class="muted">新建合集</view>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{brands.length === 0}}" class="muted" style="margin-top: 24rpx">还没有品牌，先点「添加品牌」建一个。</view>
+</view>

@@ -1,0 +1,56 @@
+{
+  "description": "优度（杭州）智能装备有限公司 · 仪器讲解资料馆",
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "视频",
+        "type": "folder"
+      }
+    ],
+    "include": []
+  },
+  "watchOptions": {
+    "ignore": [
+      "视频/**",
+      "docs/**",
+      "scripts/**"
+    ]
+  },
+  "setting": {
+    "es6": true,
+    "minified": true,
+    "enhance": true,
+    "urlCheck": false,
+    "condition": false,
+    "postcss": false,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.7.1",
+  "appid": "wxfbc102f9a77567b3",
+  "projectname": "hqh-survey-videos",
+  "miniprogramRoot": "miniprogram/",
+  "cloudfunctionRoot": "cloudfunctions/",
+  "condition": {},
+  "srcMiniprogramRoot": "miniprogram/",
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  },
+  "isGameTourist": false,
+  "simulatorPluginLibVersion": {}
+}

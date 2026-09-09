@@ -1,0 +1,38 @@
+<view class="page">
+  <view class="muted" style="margin-bottom: 16rpx">品牌：{{brandName}}</view>
+  <input class="input" placeholder="标题" value="{{title}}" bindinput="onTitle" />
+  <textarea class="input" placeholder="简介（必填，给人看也会进搜索）" value="{{intro}}" bindinput="onIntro" style="height: 160rpx"></textarea>
+  <input class="input" placeholder="型号/系列，可空" value="{{modelName}}" bindinput="onModel" />
+  <input class="input" placeholder="标签，逗号分隔" value="{{tags}}" bindinput="onTags" />
+
+  <view class="muted" style="margin: 8rpx 0 12rpx">封面</view>
+  <image wx:if="{{posterUrl}}" class="cover-preview" src="{{posterUrl}}" mode="aspectFill" />
+  <view class="btn btn-ghost" bindtap="pickCoverPhoto" style="margin-bottom: 16rpx">从相册选封面</view>
+
+  <block wx:if="{{mediaSrc}}">
+    <video
+      id="coverVideo"
+      class="cover-scrub"
+      src="{{mediaSrc}}"
+      object-fit="contain"
+      show-fullscreen-btn="{{false}}"
+      enable-progress-gesture="{{false}}"
+      bindloadedmetadata="onCoverMeta"
+    ></video>
+    <slider
+      min="0"
+      max="{{duration}}"
+      step="0.1"
+      value="{{coverTime}}"
+      bindchanging="onScrub"
+      bindchange="onScrub"
+      activeColor="#4B6FDB"
+    />
+    <view class="muted" style="margin-bottom: 16rpx">当前 {{coverTimeLabel}}</view>
+    <view class="btn btn-ghost" bindtap="pickCoverFrame" style="margin-bottom: 16rpx">用当前帧做封面</view>
+  </block>
+
+  <view class="btn" bindtap="uploadVideo" style="margin-bottom: 16rpx">上传视频 {{videoFileId ? '已传' : (localFile ? '已有本地片源' : '')}}</view>
+  <view class="btn" bindtap="save">保存</view>
+  <view wx:if="{{coverHint}}" class="muted" style="margin-top: 16rpx">{{coverHint}}</view>
+</view>

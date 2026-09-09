@@ -1,0 +1,34 @@
+{
+  "$comment": "单条视频上与 AI 搜片相关的字段。转写未完成时保持空值；不要把 transcript 下发给 C 端列表。",
+  "transcript": {
+    "type": "string",
+    "description": "口播全文（ASR 原文，可含错词）。搜片用，不直接展示。"
+  },
+  "transcriptSegments": {
+    "type": "array",
+    "description": "带时间戳的口播切片，供日后问答跳转。",
+    "items": {
+      "type": "object",
+      "required": ["startSec", "endSec", "text"],
+      "properties": {
+        "startSec": { "type": "number" },
+        "endSec": { "type": "number" },
+        "text": { "type": "string" }
+      }
+    }
+  },
+  "searchAbstract": {
+    "type": "string",
+    "description": "80–200 字检索摘要：讲什么、适用机型/软件、关键操作。由转写润色而来，不是文件名扩写。"
+  },
+  "entities": {
+    "type": "object",
+    "description": "抽出来的可检索实体，写入 searchBlob。",
+    "properties": {
+      "models": { "type": "array", "items": { "type": "string" }, "description": "型号/手簿，如 55手簿、iRTK5" },
+      "actions": { "type": "array", "items": { "type": "string" }, "description": "操作，如 对中、放样、参数计算" },
+      "menus": { "type": "array", "items": { "type": "string" }, "description": "软件菜单/界面名" },
+      "aliases": { "type": "array", "items": { "type": "string" }, "description": "口误或俗称，映射到规范说法" }
+    }
+  }
+}

@@ -1,0 +1,149 @@
+page {
+  background: #f4f5f7;
+}
+
+.chat-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.thread {
+  flex: 1;
+  height: 0;
+  padding: 16rpx 24rpx 0;
+  box-sizing: border-box;
+}
+
+.status {
+  text-align: center;
+  padding: 8rpx 0 20rpx;
+}
+
+.msg {
+  margin-bottom: 24rpx;
+}
+
+.msg-main {
+  display: flex;
+  align-items: flex-start;
+}
+
+.msg.user .msg-main {
+  justify-content: flex-end;
+}
+
+.avatar {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 12rpx;
+  background: #4b6fdb;
+  color: #fff;
+  font-size: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12rpx;
+  flex-shrink: 0;
+}
+
+.bubble {
+  max-width: 78%;
+  padding: 18rpx 22rpx;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  line-height: 1.55;
+  background: #ffffff;
+  border: 1rpx solid #e4e4e7;
+}
+
+/* 回复里有换行（如转人工的微信、电话各占一行），要按原样断行 */
+.bubble-text {
+  white-space: pre-line;
+  word-break: break-all;
+}
+
+.user .bubble {
+  background: #4b6fdb;
+  color: #ffffff;
+  border-color: #4b6fdb;
+}
+
+.account {
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
+  background: #eef1fc;
+  color: #18181b;
+  border-radius: 8rpx;
+  font-family: Menlo, monospace;
+  font-size: 26rpx;
+}
+
+/* 快捷回复放气泡外面，跟头像右侧对齐，不挤在气泡里换行 */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 14rpx 0 0 68rpx;
+}
+
+.msg.user .actions {
+  margin-left: 0;
+  justify-content: flex-end;
+}
+
+.chip-btn {
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid #4b6fdb;
+  color: #4b6fdb;
+  font-size: 24rpx;
+  line-height: 1.4;
+  background: #ffffff;
+}
+
+.pad {
+  height: 16rpx;
+}
+
+.dock {
+  background: #ffffff;
+  border-top: 1rpx solid #e4e4e7;
+  padding: 12rpx 16rpx calc(16rpx + env(safe-area-inset-bottom));
+}
+
+.quick {
+  white-space: nowrap;
+  margin-bottom: 12rpx;
+}
+
+.quick-chip {
+  display: inline-block;
+  margin-right: 12rpx;
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
+  border: 1rpx solid #e4e4e7;
+  background: #f7f7f8;
+  font-size: 24rpx;
+  color: #18181b;
+}
+
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.composer-input {
+  flex: 1;
+  background: #f7f7f8;
+  border-radius: 10rpx;
+  padding: 16rpx 20rpx;
+  border: 1rpx solid #e4e4e7;
+}
+
+.send {
+  flex-shrink: 0;
+  padding: 16rpx 28rpx;
+  font-size: 26rpx;
+}

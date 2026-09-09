@@ -1,0 +1,264 @@
+/* Neutral Quiet：对齐原浏览器预览的冷灰蓝体系，仅保留小程序端 */
+page {
+  background: #f7f7f8;
+  color: #18181b;
+  font-size: 28rpx;
+  line-height: 1.55;
+  font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
+}
+
+.page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 32rpx 32rpx 64rpx;
+}
+
+.h1 {
+  font-size: 40rpx;
+  font-weight: 600;
+  margin-bottom: 8rpx;
+}
+
+.masthead {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 8rpx;
+}
+
+.masthead-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.muted {
+  color: #71717a;
+  font-size: 24rpx;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  border: 1rpx solid #e4e4e7;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chip {
+  display: inline-block;
+  color: #71717a;
+  font-size: 20rpx;
+  padding: 2rpx 10rpx;
+  border-radius: 8rpx;
+  border: 1rpx solid #e4e4e7;
+  background: #ffffff;
+}
+
+.tag-row,
+.meta-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8rpx;
+  margin-top: 4rpx;
+}
+
+.btn {
+  background: #4b6fdb;
+  color: #fff;
+  text-align: center;
+  padding: 20rpx;
+  border-radius: 12rpx;
+}
+
+.btn-ghost {
+  background: #ffffff;
+  color: #4b6fdb;
+  border: 1rpx solid #e4e4e7;
+}
+
+.btn-danger {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.35);
+}
+
+.cover-preview,
+.cover-scrub {
+  width: 100%;
+  height: 280rpx;
+  border-radius: 12rpx;
+  margin-bottom: 16rpx;
+  background: #111;
+}
+
+.input {
+  background: #ffffff;
+  border-radius: 10rpx;
+  padding: 18rpx 22rpx;
+  margin-bottom: 20rpx;
+  border: 1rpx solid #e4e4e7;
+}
+
+.empty {
+  padding: 80rpx 24rpx;
+  text-align: center;
+  color: #71717a;
+}
+
+.legal {
+  margin-top: auto;
+  padding-top: 24rpx;
+  border-top: 1rpx solid #e4e4e7;
+  text-align: center;
+  color: #71717a;
+  font-size: 20rpx;
+  letter-spacing: 0.02em;
+}
+
+.brand-scroll {
+  white-space: nowrap;
+  margin: 8rpx 0 16rpx;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin: 20rpx 0 8rpx;
+}
+
+.search-input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.search-btn {
+  flex-shrink: 0;
+  padding: 18rpx 22rpx;
+  font-size: 26rpx;
+}
+
+.ai-answer {
+  margin: 8rpx 0 16rpx;
+  padding: 16rpx 18rpx;
+  background: #eef1fc;
+  border-radius: 12rpx;
+  color: #18181b;
+  font-size: 26rpx;
+}
+
+.brand-pill {
+  display: inline-block;
+  background: #ffffff;
+  color: #18181b;
+  border: 1rpx solid #e4e4e7;
+  border-radius: 12rpx;
+  padding: 10rpx 24rpx;
+  margin-right: 12rpx;
+  font-size: 24rpx;
+}
+
+.brand-pill-on {
+  color: #4b6fdb;
+  border-color: rgba(75, 111, 219, 0.5);
+  background: #eef1fc;
+}
+
+.shelf-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 28rpx 0 8rpx;
+  font-weight: 600;
+}
+
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 -8rpx;
+}
+
+.tile {
+  width: 50%;
+  box-sizing: border-box;
+  padding: 8rpx;
+}
+
+.tile-add .cover {
+  background: #eef1fc;
+  color: #71717a;
+  justify-content: center;
+}
+
+.cover {
+  height: 176rpx;
+  border-radius: 16rpx 16rpx 0 0;
+  background: #eef1fc;
+  color: #4b6fdb;
+  font-size: 22rpx;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.cover-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.cover text {
+  position: absolute;
+  left: 16rpx;
+  bottom: 16rpx;
+  color: #fff;
+  text-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.55);
+}
+
+.cover .mark {
+  position: absolute;
+  right: 16rpx;
+  bottom: 16rpx;
+}
+
+.tile-body {
+  background: #ffffff;
+  border: 1rpx solid #e4e4e7;
+  border-top: 0;
+  border-radius: 0 0 16rpx 16rpx;
+  padding: 16rpx;
+}
+
+.mark {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 12rpx;
+  background: #4b6fdb;
+  color: #ffffff;
+  font-size: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tile-title {
+  font-weight: 600;
+}

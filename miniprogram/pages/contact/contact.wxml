@@ -1,0 +1,54 @@
+<view class="chat-page">
+  <scroll-view
+    class="thread"
+    scroll-y
+    scroll-into-view="{{anchor}}"
+    scroll-with-animation
+  >
+    <view class="status muted">客服在线 · {{hours}}</view>
+
+    <view wx:for="{{messages}}" wx:key="id" id="m{{item.id}}" class="msg {{item.role}}">
+      <view class="msg-main">
+        <view class="avatar" wx:if="{{item.role === 'staff'}}">优</view>
+        <view class="bubble">
+          <view class="bubble-text">{{item.text}}</view>
+          <view class="account" wx:if="{{item.account}}">{{item.account}}</view>
+        </view>
+      </view>
+      <view class="actions" wx:if="{{item.actions}}">
+        <view
+          class="chip-btn"
+          wx:for="{{item.actions}}"
+          wx:for-item="act"
+          wx:key="id"
+          data-id="{{act.id}}"
+          bindtap="onAction"
+        >{{act.label}}</view>
+      </view>
+    </view>
+    <view id="bottom" class="pad"></view>
+  </scroll-view>
+
+  <view class="dock">
+    <scroll-view scroll-x class="quick" wx:if="{{faqs.length}}">
+      <view
+        class="quick-chip"
+        wx:for="{{faqs}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="askFaq"
+      >{{item.title}}</view>
+    </scroll-view>
+    <view class="composer">
+      <input
+        class="composer-input"
+        placeholder="描述没找到的问题或型号"
+        value="{{draft}}"
+        confirm-type="send"
+        bindinput="onDraft"
+        bindconfirm="send"
+      />
+      <view class="btn send" bindtap="send">发送</view>
+    </view>
+  </view>
+</view>

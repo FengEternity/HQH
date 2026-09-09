@@ -1,0 +1,22 @@
+<view class="page">
+  <view class="muted" wx:if="{{unreadCount}}">未读 {{unreadCount}} 条，点一条标为已读。</view>
+  <view wx:if="{{loading}}" class="empty">加载中</view>
+  <view wx:elif="{{messages.length === 0}}" class="empty">还没有用户留言。用户在「联系客服」里打字发送后会出现在这里。</view>
+  <view
+    class="card"
+    wx:for="{{messages}}"
+    wx:key="_id"
+    data-id="{{item._id}}"
+    bindtap="markRead"
+  >
+    <view class="row">
+      <view class="tile-title">{{item.text}}</view>
+      <text class="chip">{{item.statusLabel}}</text>
+    </view>
+    <view class="muted" style="margin-top: 8rpx">
+      {{item.timeLabel}}
+      <block wx:if="{{item.account}}"> · 账号 {{item.account}}</block>
+      <block wx:else> · 未领账号</block>
+    </view>
+  </view>
+</view>

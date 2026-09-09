@@ -1,0 +1,9 @@
+node_modules/
+cloudfunctions/**/node_modules/
+.DS_Store
+miniprogram_npm/
+project.private.config.json
+analyse-data.json
+视频/
+miniprogram/data/posters/
+miniprogram/data/asr-work/

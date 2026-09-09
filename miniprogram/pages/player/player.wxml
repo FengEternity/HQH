@@ -1,0 +1,24 @@
+<view class="player-page">
+  <view wx:if="{{error}}" class="player-empty">{{error}}</view>
+  <block wx:elif="{{video}}">
+    <video
+      wx:if="{{src}}"
+      id="player"
+      class="player-video"
+      src="{{src}}"
+      poster="{{video.posterUrl}}"
+      autoplay
+      controls
+      show-center-play-btn
+      show-fullscreen-btn
+      object-fit="contain"
+      initial-time="{{startSec}}"
+      binderror="onVideoError"
+    ></video>
+    <view wx:else class="player-empty">
+      <block wx:if="{{video.localFile}}">正在准备本地片源…</block>
+      <block wx:else>暂无视频文件</block>
+    </view>
+  </block>
+  <view wx:else class="player-empty">加载中</view>
+</view>

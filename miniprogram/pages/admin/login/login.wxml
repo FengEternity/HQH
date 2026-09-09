@@ -1,0 +1,14 @@
+<view class="page">
+  <view class="masthead">
+    <view class="mark">优</view>
+    <view class="masthead-copy">
+      <text class="tile-title">优度运营</text>
+      <text class="muted">仪器讲解资料馆</text>
+    </view>
+  </view>
+  <view class="h1">运营登录</view>
+  <view class="muted">无 AppID 的本地模拟口令是 dev。接上云开发后，口令在云函数环境变量 ADMIN_PIN 中配置，不要写进代码。</view>
+  <input class="input" password placeholder="口令" bindinput="onPin" />
+  <view class="btn" bindtap="onLogin">进入</view>
+  <view class="legal">优度（杭州）智能装备有限公司</view>
+</view>
