@@ -1,6 +1,6 @@
 # 仪器讲解资料馆：商城与 AI Native — 计划索引
 
-规格已定稿：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`。实现按本索引拆成 6 份计划，不要一次改完所有云函数。每一份计划在对应的 **`dev-<功能>`** 短分支上做（从 `dev` 迁出），验收后合回 `dev`；不要在 **`main`** 上开发（`docs/branching.md`）。
+规格已定稿：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`。需求总表：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-req-board.md`。实现按本索引拆成 6 份计划，不要一次改完所有云函数。每一份计划在对应的 **`dev-<功能>`** 短分支上做（从 `dev` 迁出），验收后合回 `dev`；不要在 **`main`** 上开发（`docs/branching.md`）。
 
 | 顺序 | 短分支 | 计划文件 | 独立验收 |
 | --- | --- | --- | --- |
