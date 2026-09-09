@@ -1,5 +1,6 @@
 const { catalog } = require('../../utils/api');
 const { withPosterUrls } = require('../../utils/videoMedia');
+const { whenCloudReady } = require('../../utils/cloudReady');
 
 Page({
   data: {
@@ -15,7 +16,7 @@ Page({
   },
   tapCount: 0,
   onLoad() {
-    this.load({ showLoading: true });
+    whenCloudReady(getApp()).then(() => this.load({ showLoading: true }));
   },
   onShow() {
     // 从运营页返回时静默刷新；首次由 onLoad 负责，避免重复请求
@@ -31,10 +32,11 @@ Page({
     } else {
       this.setData({ error: '' });
     }
-    Promise.all([catalog({ action: 'listBrands' }), catalog({ action: 'listPublished' })])
-      .then(([brandRes, videoRes]) => {
-        const brands = brandRes.brands || [];
-        const allVideos = withPosterUrls(videoRes.videos || []);
+    // 一次云函数取齐品牌+视频，避免低并发环境两次 callFunction 排队
+    catalog({ action: 'listHome' })
+      .then((res) => {
+        const brands = res.brands || [];
+        const allVideos = withPosterUrls(res.videos || []);
         this._loadedOnce = true;
         this.setData({ brands, allVideos, loading: false });
         this.paintShelves();

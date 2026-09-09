@@ -132,6 +132,65 @@ page {
   color: #71717a;
 }
 
+.home-loading {
+  margin-top: 8rpx;
+}
+
+.home-loading-label {
+  color: #52525b;
+  font-size: 26rpx;
+  margin: 12rpx 0 20rpx;
+}
+
+.skel-row {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 24rpx;
+  overflow: hidden;
+}
+
+.skel-pill {
+  width: 120rpx;
+  height: 56rpx;
+  border-radius: 12rpx;
+  background: #e4e4e7;
+  flex-shrink: 0;
+}
+
+.skel-shelf-title {
+  width: 40%;
+  height: 32rpx;
+  border-radius: 8rpx;
+  background: #e4e4e7;
+  margin: 20rpx 0 16rpx;
+}
+
+.skel-cover {
+  height: 176rpx;
+  border-radius: 16rpx 16rpx 0 0;
+  background: #e4e4e7;
+}
+
+.skel-body {
+  background: #ffffff;
+  border: 1rpx solid #e4e4e7;
+  border-top: 0;
+  border-radius: 0 0 16rpx 16rpx;
+  padding: 16rpx;
+}
+
+.skel-line {
+  height: 24rpx;
+  border-radius: 6rpx;
+  background: #e4e4e7;
+  margin-bottom: 12rpx;
+}
+
+.skel-line-short {
+  width: 55%;
+  margin-bottom: 0;
+}
+
 .legal {
   margin-top: auto;
   padding-top: 24rpx;

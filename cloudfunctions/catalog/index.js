@@ -10,6 +10,7 @@ const {
 } = require('./lib/videoPublishGate');
 const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
 const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
+const { listHomeCatalog } = require('./lib/listHome');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -86,6 +87,8 @@ async function dispatch(event) {
       return await adminLogin(event);
     case 'listBrands':
       return await listBrands();
+    case 'listHome':
+      return await listHome();
     case 'adminListBrands':
       return await adminListBrands(event);
     case 'listPublished':
@@ -162,6 +165,13 @@ async function adminLogin(event) {
 async function listBrands() {
   const res = await db.collection('brands').orderBy('sort', 'asc').get();
   return { ok: true, brands: res.data };
+}
+
+async function listHome() {
+  return listHomeCatalog({
+    listBrands,
+    listPublished: (event) => listPublished(event || {}),
+  });
 }
 
 async function adminListBrands(event) {
