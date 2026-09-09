@@ -1,4 +1,5 @@
 const { admin } = require('../../../utils/api');
+const { decodeQueryName } = require('../../../utils/decodeQueryName');
 const { isReadyToPublish } = require('../../../utils/videoPublishGate');
 const { withPosterUrls } = require('../../../utils/videoMedia');
 
@@ -19,12 +20,13 @@ Page({
     videos: [],
   },
   onLoad(query) {
+    const brandName = decodeQueryName(query.name);
     this.setData({
       brandId: query.brandId || '',
-      brandName: decodeURIComponent(query.name || ''),
+      brandName,
     });
-    if (query.name) {
-      wx.setNavigationBarTitle({ title: query.name });
+    if (brandName) {
+      wx.setNavigationBarTitle({ title: brandName });
     }
   },
   onShow() {
