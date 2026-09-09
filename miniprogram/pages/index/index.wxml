@@ -35,7 +35,22 @@
   </scroll-view>
 
   <view wx:if="{{error}}" class="empty">{{error}}</view>
-  <view wx:elif="{{loading}}" class="empty">加载中</view>
+  <view wx:elif="{{loading}}" class="home-loading">
+    <view class="home-loading-label">正在加载讲解目录…</view>
+    <view class="skel-row">
+      <view class="skel-pill" wx:for="{{[1,2,3,4]}}" wx:key="*this"></view>
+    </view>
+    <view class="skel-shelf-title"></view>
+    <view class="grid">
+      <view class="tile" wx:for="{{[1,2,3,4]}}" wx:key="*this">
+        <view class="skel-cover"></view>
+        <view class="skel-body">
+          <view class="skel-line"></view>
+          <view class="skel-line skel-line-short"></view>
+        </view>
+      </view>
+    </view>
+  </view>
 
   <view wx:elif="{{searched}}">
     <view wx:if="{{results.length === 0}}" class="empty">
