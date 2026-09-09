@@ -47,6 +47,13 @@ page {
   font-size: 24rpx;
 }
 
+.legal-inline {
+  color: #a1a1aa;
+  font-size: 20rpx;
+  margin-top: 4rpx;
+  letter-spacing: 0.02em;
+}
+
 .card {
   background: #ffffff;
   border-radius: 16rpx;

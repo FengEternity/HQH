@@ -29,26 +29,26 @@
       {
         "pagePath": "pages/index/index",
         "text": "讲解",
-        "iconPath": "assets/tab/explain.png",
-        "selectedIconPath": "assets/tab/explain-on.png"
+        "iconPath": "images/tab/explain.png",
+        "selectedIconPath": "images/tab/explain-on.png"
       },
       {
         "pagePath": "pages/shop/shop",
         "text": "商城",
-        "iconPath": "assets/tab/shop.png",
-        "selectedIconPath": "assets/tab/shop-on.png"
+        "iconPath": "images/tab/shop.png",
+        "selectedIconPath": "images/tab/shop-on.png"
       },
       {
         "pagePath": "pages/contact/contact",
         "text": "客服",
-        "iconPath": "assets/tab/cs.png",
-        "selectedIconPath": "assets/tab/cs-on.png"
+        "iconPath": "images/tab/cs.png",
+        "selectedIconPath": "images/tab/cs-on.png"
       },
       {
         "pagePath": "pages/mine/mine",
         "text": "我的",
-        "iconPath": "assets/tab/mine.png",
-        "selectedIconPath": "assets/tab/mine-on.png"
+        "iconPath": "images/tab/mine.png",
+        "selectedIconPath": "images/tab/mine-on.png"
       }
     ]
   },
