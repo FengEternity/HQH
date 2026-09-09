@@ -404,10 +404,11 @@ page {
   border: 1rpx solid transparent;
 }
 
+/* 与 field-input 同灰底；配合 auto-height：空时约一行，随内容增高 */
 .field-textarea {
   height: auto;
-  min-height: 160rpx;
-  line-height: 1.5;
+  min-height: 80rpx;
+  line-height: 1.45;
   padding: 18rpx 20rpx;
 }
 

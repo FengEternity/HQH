@@ -8,7 +8,15 @@
     <view class="form-section-title">基本信息</view>
     <view class="field">
       <view class="field-label">标题 <text class="field-req">必填</text></view>
-      <input class="field-input" placeholder="例如：主机对中讲解" value="{{title}}" bindinput="onTitle" />
+      <textarea
+        class="field-input field-textarea"
+        placeholder="例如：主机对中讲解"
+        value="{{title}}"
+        bindinput="onTitle"
+        maxlength="120"
+        auto-height
+        show-confirm-bar="{{false}}"
+      ></textarea>
     </view>
     <view class="field">
       <view class="field-label">简介 <text class="field-req">必填</text></view>
@@ -18,15 +26,33 @@
         value="{{intro}}"
         bindinput="onIntro"
         maxlength="500"
+        auto-height
+        show-confirm-bar="{{false}}"
       ></textarea>
     </view>
     <view class="field">
       <view class="field-label">型号 / 系列</view>
-      <input class="field-input" placeholder="可留空" value="{{modelName}}" bindinput="onModel" />
+      <textarea
+        class="field-input field-textarea"
+        placeholder="可留空"
+        value="{{modelName}}"
+        bindinput="onModel"
+        maxlength="80"
+        auto-height
+        show-confirm-bar="{{false}}"
+      ></textarea>
     </view>
     <view class="field field-last">
       <view class="field-label">标签</view>
-      <input class="field-input" placeholder="多个用逗号分隔，如 对中,放样" value="{{tags}}" bindinput="onTags" />
+      <textarea
+        class="field-input field-textarea"
+        placeholder="多个用逗号分隔，如 对中,放样"
+        value="{{tags}}"
+        bindinput="onTags"
+        maxlength="200"
+        auto-height
+        show-confirm-bar="{{false}}"
+      ></textarea>
     </view>
   </view>
 
