@@ -5,7 +5,6 @@
       <text class="tile-title">优度</text>
       <text class="muted">仪器讲解资料馆</text>
     </view>
-    <view class="btn btn-ghost contact-btn" catchtap="openContact">联系客服</view>
   </view>
 
   <view class="search-row">

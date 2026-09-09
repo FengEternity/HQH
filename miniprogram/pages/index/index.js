@@ -105,7 +105,4 @@ Page({
       wx.navigateTo({ url: '/pages/admin/login/login' });
     }
   },
-  openContact() {
-    wx.navigateTo({ url: '/pages/contact/contact' });
-  },
 });
