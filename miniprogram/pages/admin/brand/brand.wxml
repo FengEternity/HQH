@@ -1,24 +1,35 @@
-<view class="page">
-  <input class="input" placeholder="品牌名，如 海星达" value="{{name}}" bindinput="onName" />
-  <input
-    class="input"
-    type="number"
-    placeholder="排序，数字越小越靠前，默认 99"
-    value="{{sort}}"
-    bindinput="onSort"
-  />
-
-  <block wx:if="{{id}}">
-    <view class="row card" bindtap="openVideos">
-      <view>
-        <view>视频列表</view>
-        <view class="muted">已有 {{videoCount}} 条</view>
-      </view>
-      <text class="muted">进入</text>
+<view class="page form-page">
+  <view class="form-card">
+    <view class="form-section-title">品牌信息</view>
+    <view class="field">
+      <view class="field-label">品牌名 <text class="field-req">必填</text></view>
+      <input class="field-input" placeholder="例如：海星达" value="{{name}}" bindinput="onName" />
     </view>
-  </block>
+    <view class="field field-last">
+      <view class="field-label">排序</view>
+      <input
+        class="field-input"
+        type="number"
+        placeholder="数字越小越靠前，默认 99"
+        value="{{sort}}"
+        bindinput="onSort"
+      />
+    </view>
+  </view>
 
-  <view class="btn" bindtap="save">保存</view>
-  <view wx:if="{{id}}" class="btn btn-ghost btn-danger" bindtap="remove" style="margin-top: 16rpx">删除品牌</view>
-  <view wx:if="{{id}}" class="muted" style="margin-top: 16rpx">品牌下还有视频时不能删除，请先在视频列表里删干净。</view>
+  <view class="hub-item" wx:if="{{id}}" bindtap="openVideos">
+    <view>
+      <view class="tile-title">视频列表</view>
+      <view class="muted">已有 {{videoCount}} 条讲解</view>
+    </view>
+    <text class="muted">进入</text>
+  </view>
+
+  <view class="form-footer">
+    <view class="btn" bindtap="save">保存</view>
+    <view wx:if="{{id}}" class="btn btn-ghost btn-danger" bindtap="remove" style="margin-top: 16rpx">删除品牌</view>
+    <view wx:if="{{id}}" class="muted" style="margin-top: 16rpx; text-align: center">
+      品牌下还有视频时不能删除，请先删干净视频。
+    </view>
+  </view>
 </view>

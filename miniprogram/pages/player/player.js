@@ -1,53 +1,55 @@
-const { catalog, isMockMode } = require('../../utils/api');
-
-const LOCAL_MEDIA = 'http://127.0.0.1:8787/media/';
+const { catalog } = require('../../utils/api');
+const { withPosterUrl } = require('../../utils/videoMedia');
 
 Page({
   data: {
     video: null,
     src: '',
     error: '',
-    startSec: 0,
   },
   onLoad(query) {
     const id = query.id;
-    const startSec = Math.max(0, Number(query.t) || 0);
-    this.setData({ startSec });
     catalog({ action: 'getVideo', id })
       .then((res) => {
-        const video = res.video;
+        const video = withPosterUrl(res.video);
         this.setData({ video });
         if (video && video.title) {
           wx.setNavigationBarTitle({ title: video.title });
         }
-        return this.resolveSrc(video);
+        return Promise.all([
+          this.resolveCloudUrl(video && video.videoFileId),
+          this.resolveCloudUrl(video && video.posterUrl),
+        ]);
       })
-      .then((src) => {
-        if (!src) {
-          return;
+      .then(([src, posterUrl]) => {
+        const patch = {};
+        if (src) {
+          patch.src = src;
         }
-        this.setData({ src });
+        if (posterUrl && this.data.video) {
+          patch.video = Object.assign({}, this.data.video, { posterUrl });
+        }
+        if (Object.keys(patch).length) {
+          this.setData(patch);
+        }
       })
       .catch((err) => {
         this.setData({ error: err.message || '无法播放' });
       });
   },
-  resolveSrc(video) {
-    const fileId = (video && video.videoFileId) || '';
-    if (fileId.indexOf('cloud://') === 0) {
-      return wx.cloud.getTempFileURL({ fileList: [fileId] }).then((fileRes) => {
+  resolveCloudUrl(fileId) {
+    const id = String(fileId || '');
+    if (id.indexOf('cloud://') === 0) {
+      return wx.cloud.getTempFileURL({ fileList: [id] }).then((fileRes) => {
         const row = fileRes && fileRes.fileList && fileRes.fileList[0];
         return (row && row.tempFileURL) || '';
       });
     }
-    if (video && video.localFile && isMockMode()) {
-      return Promise.resolve(LOCAL_MEDIA + encodeURIComponent(video.localFile));
-    }
-    return Promise.resolve('');
+    return Promise.resolve(id);
   },
   onVideoError() {
     this.setData({
-      error: '播不了。请先运行 node scripts/preview-server.js，并在开发者工具关闭「校验合法域名」。',
+      error: '视频无法播放，请确认已上传云存储文件。',
     });
   },
 });

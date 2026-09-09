@@ -1,38 +1,59 @@
-<view class="page">
-  <view class="muted" style="margin-bottom: 16rpx">品牌：{{brandName}}</view>
-  <input class="input" placeholder="标题" value="{{title}}" bindinput="onTitle" />
-  <textarea class="input" placeholder="简介（必填，给人看也会进搜索）" value="{{intro}}" bindinput="onIntro" style="height: 160rpx"></textarea>
-  <input class="input" placeholder="型号/系列，可空" value="{{modelName}}" bindinput="onModel" />
-  <input class="input" placeholder="标签，逗号分隔" value="{{tags}}" bindinput="onTags" />
+<view class="page form-page">
+  <view class="form-meta">
+    <text class="muted">所属品牌</text>
+    <text class="form-meta-value">{{brandName || '—'}}</text>
+  </view>
 
-  <view class="muted" style="margin: 8rpx 0 12rpx">封面</view>
-  <image wx:if="{{posterUrl}}" class="cover-preview" src="{{posterUrl}}" mode="aspectFill" />
-  <view class="btn btn-ghost" bindtap="pickCoverPhoto" style="margin-bottom: 16rpx">从相册选封面</view>
+  <view class="form-card">
+    <view class="form-section-title">基本信息</view>
+    <view class="field">
+      <view class="field-label">标题 <text class="field-req">必填</text></view>
+      <input class="field-input" placeholder="例如：主机对中讲解" value="{{title}}" bindinput="onTitle" />
+    </view>
+    <view class="field">
+      <view class="field-label">简介 <text class="field-req">必填</text></view>
+      <textarea
+        class="field-input field-textarea"
+        placeholder="这段讲解讲什么、适用机型"
+        value="{{intro}}"
+        bindinput="onIntro"
+        maxlength="500"
+      ></textarea>
+    </view>
+    <view class="field">
+      <view class="field-label">型号 / 系列</view>
+      <input class="field-input" placeholder="可留空" value="{{modelName}}" bindinput="onModel" />
+    </view>
+    <view class="field field-last">
+      <view class="field-label">标签</view>
+      <input class="field-input" placeholder="多个用逗号分隔，如 对中,放样" value="{{tags}}" bindinput="onTags" />
+    </view>
+  </view>
 
-  <block wx:if="{{mediaSrc}}">
-    <video
-      id="coverVideo"
-      class="cover-scrub"
-      src="{{mediaSrc}}"
-      object-fit="contain"
-      show-fullscreen-btn="{{false}}"
-      enable-progress-gesture="{{false}}"
-      bindloadedmetadata="onCoverMeta"
-    ></video>
-    <slider
-      min="0"
-      max="{{duration}}"
-      step="0.1"
-      value="{{coverTime}}"
-      bindchanging="onScrub"
-      bindchange="onScrub"
-      activeColor="#4B6FDB"
-    />
-    <view class="muted" style="margin-bottom: 16rpx">当前 {{coverTimeLabel}}</view>
-    <view class="btn btn-ghost" bindtap="pickCoverFrame" style="margin-bottom: 16rpx">用当前帧做封面</view>
-  </block>
+  <view class="form-card">
+    <view class="form-section-title">封面与视频</view>
+    <view class="media-block">
+      <view class="cover-frame" bindtap="pickCoverPhoto">
+        <image wx:if="{{posterUrl}}" class="cover-frame-img" src="{{posterUrl}}" mode="aspectFill" />
+        <view wx:else class="cover-frame-empty">
+          <text class="cover-frame-empty-title">添加封面</text>
+          <text class="muted">点此从相册选择</text>
+        </view>
+        <view wx:if="{{posterUrl}}" class="cover-frame-badge">更换封面</view>
+      </view>
+      <view wx:if="{{coverHint}}" class="muted" style="margin-top: 12rpx">{{coverHint}}</view>
+      <view class="muted" style="margin-top: 12rpx">未选封面时，上传视频会自动用首帧缩略图。</view>
+    </view>
+    <view class="media-row" bindtap="uploadVideo">
+      <view>
+        <view class="tile-title">视频文件</view>
+        <view class="muted">{{videoFileId ? '已上传到云存储，可点此更换' : '点此从相册或拍摄上传'}}</view>
+      </view>
+      <text class="chip {{videoFileId ? 'chip-ok' : ''}}">{{videoFileId ? '已传' : '未传'}}</text>
+    </view>
+  </view>
 
-  <view class="btn" bindtap="uploadVideo" style="margin-bottom: 16rpx">上传视频 {{videoFileId ? '已传' : (localFile ? '已有本地片源' : '')}}</view>
-  <view class="btn" bindtap="save">保存</view>
-  <view wx:if="{{coverHint}}" class="muted" style="margin-top: 16rpx">{{coverHint}}</view>
+  <view class="form-footer">
+    <view class="btn" bindtap="save">保存</view>
+  </view>
 </view>

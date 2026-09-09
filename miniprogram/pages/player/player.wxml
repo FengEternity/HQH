@@ -12,13 +12,9 @@
       show-center-play-btn
       show-fullscreen-btn
       object-fit="contain"
-      initial-time="{{startSec}}"
       binderror="onVideoError"
     ></video>
-    <view wx:else class="player-empty">
-      <block wx:if="{{video.localFile}}">正在准备本地片源…</block>
-      <block wx:else>暂无视频文件</block>
-    </view>
+    <view wx:else class="player-empty">暂无视频文件</view>
   </block>
   <view wx:else class="player-empty">加载中</view>
 </view>

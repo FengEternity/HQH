@@ -8,6 +8,7 @@ const {
   assertReadyToPublish,
   nextStatusAfterSave,
 } = require('./lib/videoPublishGate');
+const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -73,56 +74,66 @@ async function checkText(content) {
   }
 }
 
-exports.main = async (event) => {
+async function dispatch(event) {
   const action = event && event.action;
-  try {
-    switch (action) {
-      case 'ping':
-        return { ok: true };
-      case 'adminLogin':
-        return await adminLogin(event);
-      case 'listBrands':
-        return await listBrands();
-      case 'adminListBrands':
-        return await adminListBrands(event);
-      case 'listPublished':
-        return await listPublished(event);
-      case 'getVideo':
-        return await getVideo(event);
-      case 'search':
-        return await search(event);
-      case 'adminListVideos':
-        return await adminListVideos(event);
-      case 'adminGetVideo':
-        return await adminGetVideo(event);
-      case 'upsertBrand':
-        return await upsertBrand(event);
-      case 'deleteBrand':
-        return await deleteBrand(event);
-      case 'upsertProduct':
-        return await upsertProduct(event);
-      case 'upsertSynonym':
-        return await upsertSynonym(event);
-      case 'upsertVideo':
-        return await upsertVideo(event);
-      case 'publishVideo':
-        return await publishVideo(event);
-      case 'unpublishVideo':
-        return await unpublishVideo(event);
-      case 'deleteVideo':
-        return await deleteVideo(event);
-      case 'submitSupport':
-        return await submitSupport(event);
-      case 'adminListSupport':
-        return await adminListSupport(event);
-      case 'adminReadSupport':
-        return await adminReadSupport(event);
-      default: {
-        const err = new Error('UNKNOWN_ACTION');
-        err.code = 'UNKNOWN_ACTION';
-        throw err;
-      }
+  switch (action) {
+    case 'ping':
+      return { ok: true };
+    case 'initDb':
+      return await initDb();
+    case 'adminLogin':
+      return await adminLogin(event);
+    case 'listBrands':
+      return await listBrands();
+    case 'adminListBrands':
+      return await adminListBrands(event);
+    case 'listPublished':
+      return await listPublished(event);
+    case 'getVideo':
+      return await getVideo(event);
+    case 'search':
+      return await search(event);
+    case 'adminListVideos':
+      return await adminListVideos(event);
+    case 'adminGetVideo':
+      return await adminGetVideo(event);
+    case 'upsertBrand':
+      return await upsertBrand(event);
+    case 'deleteBrand':
+      return await deleteBrand(event);
+    case 'upsertProduct':
+      return await upsertProduct(event);
+    case 'upsertSynonym':
+      return await upsertSynonym(event);
+    case 'upsertVideo':
+      return await upsertVideo(event);
+    case 'publishVideo':
+      return await publishVideo(event);
+    case 'unpublishVideo':
+      return await unpublishVideo(event);
+    case 'deleteVideo':
+      return await deleteVideo(event);
+    case 'submitSupport':
+      return await submitSupport(event);
+    case 'adminListSupport':
+      return await adminListSupport(event);
+    case 'adminReadSupport':
+      return await adminReadSupport(event);
+    default: {
+      const err = new Error('UNKNOWN_ACTION');
+      err.code = 'UNKNOWN_ACTION';
+      throw err;
     }
+  }
+}
+
+exports.main = async (event) => {
+  try {
+    const action = event && event.action;
+    if (action === 'ping' || action === 'initDb') {
+      return await dispatch(event);
+    }
+    return await runWithCollections(db, () => dispatch(event));
   } catch (error) {
     return {
       ok: false,
@@ -131,6 +142,11 @@ exports.main = async (event) => {
     };
   }
 };
+
+async function initDb() {
+  const result = await ensureCollections(db);
+  return { ok: true, created: result.created, existed: result.existed };
+}
 
 async function adminLogin(event) {
   const pin = process.env.ADMIN_PIN;
@@ -149,12 +165,21 @@ async function listBrands() {
 
 async function adminListBrands(event) {
   await requireAdmin(event.ticket);
-  const res = await db.collection('brands').orderBy('sort', 'asc').get();
-  const brands = [];
-  for (const brand of res.data) {
-    const counted = await db.collection('videos').where({ brandId: brand._id }).count();
-    brands.push(Object.assign({}, brand, { videoCount: counted.total || 0 }));
+  const [brandRes, videoRes] = await Promise.all([
+    db.collection('brands').orderBy('sort', 'asc').get(),
+    db.collection('videos').field({ brandId: true }).limit(1000).get(),
+  ]);
+  const counts = {};
+  for (const video of videoRes.data || []) {
+    const brandId = video.brandId;
+    if (!brandId) {
+      continue;
+    }
+    counts[brandId] = (counts[brandId] || 0) + 1;
   }
+  const brands = (brandRes.data || []).map((brand) =>
+    Object.assign({}, brand, { videoCount: counts[brand._id] || 0 }),
+  );
   return { ok: true, brands };
 }
 
@@ -166,7 +191,26 @@ async function listPublished(event) {
   if (event.productId) {
     where.productId = event.productId;
   }
-  const res = await db.collection('videos').where(where).orderBy('publishedAt', 'desc').limit(100).get();
+  // 列表不拉口播全文 / searchBlob，否则上传后首页会越来越慢
+  const res = await db
+    .collection('videos')
+    .where(where)
+    .orderBy('publishedAt', 'desc')
+    .field({
+      title: true,
+      intro: true,
+      brandId: true,
+      brandName: true,
+      productId: true,
+      modelName: true,
+      tags: true,
+      coverFileId: true,
+      videoFileId: true,
+      status: true,
+      publishedAt: true,
+    })
+    .limit(100)
+    .get();
   let list = res.data.map(publicVideo);
   if (event.tag) {
     list = list.filter((item) => (item.tags || []).includes(event.tag));
@@ -196,7 +240,26 @@ async function search(event) {
     return { ok: true, videos: [] };
   }
   const [published, synonyms] = await Promise.all([
-    db.collection('videos').where({ status: 'published' }).limit(1000).get(),
+    db
+      .collection('videos')
+      .where({ status: 'published' })
+      .field({
+        title: true,
+        intro: true,
+        brandId: true,
+        brandName: true,
+        productId: true,
+        modelName: true,
+        tags: true,
+        coverFileId: true,
+        videoFileId: true,
+        status: true,
+        publishedAt: true,
+        searchBlob: true,
+        searchAbstract: true,
+      })
+      .limit(1000)
+      .get(),
     loadSynonyms(),
   ]);
   const hits = searchPublished(published.data, query, synonyms);
@@ -215,6 +278,20 @@ async function adminListVideos(event) {
     .collection('videos')
     .where({ brandId })
     .orderBy('updatedAt', 'desc')
+    .field({
+      title: true,
+      intro: true,
+      brandId: true,
+      brandName: true,
+      productId: true,
+      modelName: true,
+      tags: true,
+      coverFileId: true,
+      videoFileId: true,
+      status: true,
+      publishedAt: true,
+      updatedAt: true,
+    })
     .limit(100)
     .get();
   return { ok: true, videos: res.data };

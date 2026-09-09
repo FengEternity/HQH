@@ -1,4 +1,5 @@
-const { catalog, aiSearch } = require('../../utils/api');
+const { catalog } = require('../../utils/api');
+const { withPosterUrls } = require('../../utils/videoMedia');
 
 Page({
   data: {
@@ -9,21 +10,32 @@ Page({
     brandId: '',
     query: '',
     searched: false,
-    searchedAi: false,
-    aiAnswer: '',
     loading: true,
     error: '',
   },
   tapCount: 0,
-  onShow() {
-    this.load();
+  onLoad() {
+    this.load({ showLoading: true });
   },
-  load() {
-    this.setData({ loading: true, error: '' });
+  onShow() {
+    // 从运营页返回时静默刷新；首次由 onLoad 负责，避免重复请求
+    if (this._loadedOnce) {
+      this.load({ showLoading: false });
+    }
+  },
+  load(options) {
+    const showLoading = !options || options.showLoading !== false;
+    const hasContent = (this.data.shelves && this.data.shelves.length) || this.data.brands.length;
+    if (showLoading || !hasContent) {
+      this.setData({ loading: true, error: '' });
+    } else {
+      this.setData({ error: '' });
+    }
     Promise.all([catalog({ action: 'listBrands' }), catalog({ action: 'listPublished' })])
       .then(([brandRes, videoRes]) => {
         const brands = brandRes.brands || [];
-        const allVideos = videoRes.videos || [];
+        const allVideos = withPosterUrls(videoRes.videos || []);
+        this._loadedOnce = true;
         this.setData({ brands, allVideos, loading: false });
         this.paintShelves();
       })
@@ -43,7 +55,7 @@ Page({
         items: videos.filter((item) => item.brandId === brand._id),
       }))
       .filter((shelf) => shelf.items.length);
-    this.setData({ shelves, searched: false, searchedAi: false, results: [], aiAnswer: '' });
+    this.setData({ shelves, searched: false, results: [] });
   },
   onQuery(e) {
     this.setData({ query: e.detail.value });
@@ -54,10 +66,10 @@ Page({
       this.paintShelves();
       return;
     }
-    this.setData({ loading: true, searched: true, searchedAi: false, aiAnswer: '' });
+    this.setData({ loading: true, searched: true });
     catalog({ action: 'search', query })
       .then((res) => {
-        let results = (res.videos || []).map((item) =>
+        let results = withPosterUrls(res.videos || []).map((item) =>
           Object.assign({}, item, {
             initial: String(item.brandName || '优').slice(0, 1),
           }),
@@ -72,27 +84,6 @@ Page({
         wx.showToast({ title: err.message || '搜索失败', icon: 'none' });
       });
   },
-  onAiSearch() {
-    const query = (this.data.query || '').trim();
-    if (!query) {
-      wx.showToast({ title: '请输入问题', icon: 'none' });
-      return;
-    }
-    this.setData({ loading: true, searched: true, searchedAi: true, error: '' });
-    aiSearch(query, this.data.brandId)
-      .then((res) => {
-        const results = (res.videos || []).map((item) =>
-          Object.assign({}, item, {
-            initial: String(item.brandName || '优').slice(0, 1),
-          }),
-        );
-        this.setData({ results, aiAnswer: res.answer || '', loading: false });
-      })
-      .catch((err) => {
-        this.setData({ loading: false, results: [], aiAnswer: '' });
-        wx.showToast({ title: err.message || 'AI 搜索失败', icon: 'none' });
-      });
-  },
   onBrandTap(e) {
     const id = e.currentTarget.dataset.id || '';
     this.setData({ brandId: id });
@@ -101,20 +92,11 @@ Page({
       this.paintShelves();
       return;
     }
-    if (this.data.searchedAi) {
-      this.onAiSearch();
-    } else {
-      this.onSearch();
-    }
+    this.onSearch();
   },
   onVideoTap(e) {
     const id = e.currentTarget.dataset.id;
-    const t = Number(e.currentTarget.dataset.t);
-    let url = `/pages/player/player?id=${id}`;
-    if (!Number.isNaN(t) && t > 0) {
-      url += `&t=${t}`;
-    }
-    wx.navigateTo({ url });
+    wx.navigateTo({ url: `/pages/player/player?id=${id}` });
   },
   onTitleTap() {
     this.tapCount += 1;

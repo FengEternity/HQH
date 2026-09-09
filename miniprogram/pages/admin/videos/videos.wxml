@@ -1,29 +1,23 @@
 <view class="page">
-  <view class="grid">
-    <view class="tile" wx:for="{{videos}}" wx:key="_id">
-      <view class="cover">
-        <image wx:if="{{item.posterUrl}}" class="cover-img" src="{{item.posterUrl}}" mode="aspectFill" />
-        <text wx:else>{{item.statusLabel}}</text>
-        <view class="mark">{{item.initial}}</view>
+  <view class="btn" bindtap="newVideo" style="margin-bottom: 24rpx">新建视频</view>
+  <view wx:if="{{videos.length === 0}}" class="empty">这个品牌下还没有视频。</view>
+  <view class="list" wx:else>
+    <view class="list-row" wx:for="{{videos}}" wx:key="_id">
+      <view class="list-thumb" wx:if="{{item.posterUrl}}">
+        <image class="list-thumb-img" src="{{item.posterUrl}}" mode="aspectFill" />
       </view>
-      <view class="tile-body">
+      <view class="list-thumb list-thumb-empty" wx:else>
+        <text>{{item.initial}}</text>
+      </view>
+      <view class="list-main" data-id="{{item._id}}" bindtap="editVideo">
         <view class="tile-title">{{item.title}}</view>
-        <view class="muted">{{item.modelName || '未标型号'}}</view>
-        <view class="row" style="margin-top: 16rpx">
+        <view class="muted">{{item.statusLabel}} · {{item.modelName || '未标型号'}}</view>
+        <view class="list-actions" style="margin-top: 12rpx">
           <text data-id="{{item._id}}" bindtap="editVideo">编辑</text>
           <text data-id="{{item._id}}" bindtap="publish" wx:if="{{item.canPublish}}">上架</text>
           <text data-id="{{item._id}}" bindtap="unpublish" wx:if="{{item.canUnpublish}}">下架</text>
           <text data-id="{{item._id}}" bindtap="remove">删除</text>
         </view>
-      </view>
-    </view>
-    <view class="tile" bindtap="newVideo">
-      <view class="cover tile-add">
-        <text>+</text>
-      </view>
-      <view class="tile-body">
-        <view class="tile-title">新建视频</view>
-        <view class="muted">补一条讲解</view>
       </view>
     </view>
   </view>

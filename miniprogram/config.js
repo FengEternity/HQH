@@ -1,7 +1,4 @@
-// 本地开发开关：未开通云开发时保持 true，走 miniprogram/data/catalog.js
-// 云环境就绪（已开通云开发并上传 catalog 云函数）后改为 false
 module.exports = {
-  useLocalCatalog: true,
   contact: {
     wechatId: '',
     phone: '',
@@ -26,7 +23,7 @@ module.exports = {
         id: 'howto',
         title: '怎么找视频',
         answer:
-          '回首页用品牌筛选，或用「搜索」输入型号、菜单名。问操作步骤可以用「AI 搜」。',
+          '回首页用品牌筛选，或用「搜索」输入型号、菜单名。',
       },
       {
         id: 'human',

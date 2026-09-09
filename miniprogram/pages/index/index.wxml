@@ -18,7 +18,6 @@
       bindconfirm="onSearch"
     />
     <view class="btn search-btn" bindtap="onSearch">搜索</view>
-    <view class="btn btn-ghost search-btn" bindtap="onAiSearch">AI 搜</view>
   </view>
 
   <scroll-view scroll-x class="brand-scroll" wx:if="{{brands.length}}">
@@ -40,10 +39,8 @@
   <view wx:elif="{{loading}}" class="empty">加载中</view>
 
   <view wx:elif="{{searched}}">
-    <view class="ai-answer" wx:if="{{searchedAi && aiAnswer}}">{{aiAnswer}}</view>
     <view wx:if="{{results.length === 0}}" class="empty">
-      <block wx:if="{{searchedAi}}">没有找到相关视频。可以换一种说法，或改用「搜索」。</block>
-      <block wx:else>没有找到相关视频。可以换品牌名、型号或操作关键词，或点上方品牌浏览。</block>
+      没有找到相关视频。可以换品牌名、型号或操作关键词，或点上方品牌浏览。
     </view>
     <view class="grid" wx:else>
       <view
@@ -51,7 +48,6 @@
         wx:for="{{results}}"
         wx:key="_id"
         data-id="{{item._id}}"
-        data-t="{{item.startSec}}"
         bindtap="onVideoTap"
       >
         <view class="cover">
@@ -63,11 +59,8 @@
           <view class="tile-title">{{item.title}}</view>
           <view class="meta-sub">
             <view class="muted">{{item.modelName}}</view>
-            <text class="chip" wx:if="{{item.startLabel}}">{{item.startLabel}}</text>
             <text class="chip" wx:for="{{item.tags}}" wx:for-item="tag" wx:key="*this">{{tag}}</text>
           </view>
-          <view class="muted" wx:if="{{item.reason}}">{{item.reason}}</view>
-          <view class="muted" wx:if="{{item.excerpt}}">{{item.excerpt}}</view>
         </view>
       </view>
     </view>

@@ -27,7 +27,7 @@ function matchFaq(text) {
   if (/没有|缺|找不到|完善|问题库/.test(q)) {
     return findFaq('missing') || null;
   }
-  if (/怎么找|搜索|视频|AI/.test(q)) {
+  if (/怎么找|搜索|视频/.test(q)) {
     return findFaq('howto') || null;
   }
   if (/人工|微信|电话|联系/.test(q)) {

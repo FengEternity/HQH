@@ -1,10 +1,9 @@
-const { admin, isMockMode, localAdmin } = require('../../../utils/api');
+const { admin } = require('../../../utils/api');
+const { withPosterUrl, planVideoCoverUpload } = require('../../../utils/videoMedia');
 
-function formatTime(sec) {
-  const n = Math.max(0, Number(sec) || 0);
-  const m = Math.floor(n / 60);
-  const s = Math.floor(n % 60);
-  return m + ':' + String(s).padStart(2, '0');
+function fileExt(filePath, fallback) {
+  const match = String(filePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
+  return (match && match[1]) || fallback;
 }
 
 Page({
@@ -18,19 +17,13 @@ Page({
     tags: '',
     coverFileId: '',
     videoFileId: '',
-    localFile: '',
     posterUrl: '',
-    mediaSrc: '',
-    duration: 1,
-    coverTime: 0,
-    coverTimeLabel: '0:00',
-    mockMode: false,
     coverHint: '',
   },
   onLoad(query) {
     const brandId = query.brandId || '';
     const id = query.id || '';
-    this.setData({ brandId, id, mockMode: isMockMode() });
+    this.setData({ brandId, id });
     admin({ action: 'adminListBrands' })
       .then((res) => {
         const brand = (res.brands || []).find((item) => item._id === brandId);
@@ -49,22 +42,17 @@ Page({
       .catch((err) => wx.showToast({ title: err.message || '加载失败', icon: 'none' }));
   },
   applyVideo(found, brandId) {
-    const duration = Number(found.durationSec) || 1;
+    const video = withPosterUrl(found);
     this.setData({
-      title: found.title,
-      intro: found.intro,
-      modelName: found.modelName,
-      tags: (found.tags || []).join(','),
-      coverFileId: found.coverFileId,
-      videoFileId: found.videoFileId,
-      localFile: found.localFile || '',
-      posterUrl: found.posterUrl || '',
-      mediaSrc: found.mediaSrc || '',
-      duration,
-      coverTime: 0,
-      coverTimeLabel: '0:00',
-      brandId: found.brandId || brandId,
-      id: found._id || this.data.id,
+      title: video.title,
+      intro: video.intro,
+      modelName: video.modelName,
+      tags: (video.tags || []).join(','),
+      coverFileId: video.coverFileId,
+      videoFileId: video.videoFileId,
+      posterUrl: video.posterUrl || '',
+      brandId: video.brandId || brandId,
+      id: video._id || this.data.id,
     });
   },
   onTitle(e) {
@@ -79,15 +67,6 @@ Page({
   onTags(e) {
     this.setData({ tags: e.detail.value });
   },
-  onCoverMeta(e) {
-    const duration = Number(e.detail.duration) || this.data.duration || 1;
-    this.setData({ duration });
-  },
-  onScrub(e) {
-    const coverTime = Number(e.detail.value) || 0;
-    this.setData({ coverTime, coverTimeLabel: formatTime(coverTime) });
-    wx.createVideoContext('coverVideo', this).seek(coverTime);
-  },
   ensureSaved() {
     if (this.data.id) {
       return Promise.resolve(this.data.id);
@@ -101,63 +80,13 @@ Page({
       success: (res) => {
         const filePath = res.tempFiles[0].tempFilePath;
         this.ensureSaved()
-          .then((id) => {
-            if (this.data.mockMode) {
-              return this.saveLocalPhoto(id, filePath);
-            }
-            return this.uploadCloudFile('cover', filePath, 'jpg').then((fileID) => {
-              this.setData({ coverFileId: fileID });
-            });
+          .then(() => this.uploadCloudFile('cover', filePath, 'jpg'))
+          .then((fileID) => {
+            this.setData({ coverFileId: fileID, posterUrl: filePath, coverHint: '' });
           })
           .catch((err) => wx.showToast({ title: err.message || '封面失败', icon: 'none' }));
       },
     });
-  },
-  saveLocalPhoto(id, filePath) {
-    wx.showLoading({ title: '保存封面' });
-    return new Promise((resolve, reject) => {
-      wx.getFileSystemManager().readFile({
-        filePath,
-        encoding: 'base64',
-        success: resolve,
-        fail: () => reject(new Error('读图片失败')),
-      });
-    })
-      .then((file) => localAdmin('/api/admin/cover-photo', { id, image: file.data }))
-      .then((out) => {
-        wx.hideLoading();
-        if (!out.ok) {
-          throw new Error(out.message || '封面保存失败');
-        }
-        this.setData({ posterUrl: out.posterUrl, coverHint: '' });
-        wx.showToast({ title: '封面已更新' });
-      })
-      .catch((err) => {
-        wx.hideLoading();
-        throw err;
-      });
-  },
-  pickCoverFrame() {
-    this.ensureSaved()
-      .then((id) => {
-        if (!this.data.mockMode) {
-          wx.showToast({ title: '云环境请用相册选封面', icon: 'none' });
-          return null;
-        }
-        wx.showLoading({ title: '截取封面' });
-        return localAdmin('/api/admin/cover-frame', { id, timeSec: this.data.coverTime }).then((out) => {
-          wx.hideLoading();
-          if (!out.ok) {
-            throw new Error(out.message || '截帧失败');
-          }
-          this.setData({ posterUrl: out.posterUrl, coverHint: '' });
-          wx.showToast({ title: '封面已更新' });
-        });
-      })
-      .catch((err) => {
-        wx.hideLoading();
-        wx.showToast({ title: err.message || '截帧失败', icon: 'none' });
-      });
   },
   uploadCloudFile(kind, filePath, ext) {
     const cloudPath = `${kind}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
@@ -174,16 +103,45 @@ Page({
       });
   },
   uploadVideo() {
-    if (this.data.mockMode) {
-      wx.showToast({ title: '本地片源在「视频」文件夹里绑定', icon: 'none' });
-      return;
-    }
     wx.chooseMedia({
       count: 1,
       mediaType: ['video'],
       success: (res) => {
-        this.uploadCloudFile('video', res.tempFiles[0].tempFilePath, 'mp4')
-          .then((fileID) => this.setData({ videoFileId: fileID }))
+        const file = res.tempFiles[0];
+        const plan = planVideoCoverUpload({
+          coverFileId: this.data.coverFileId,
+          thumbTempFilePath: file.thumbTempFilePath,
+        });
+        this.ensureSaved()
+          .then(() => this.uploadCloudFile('video', file.tempFilePath, 'mp4'))
+          .then((fileID) => {
+            this.setData({ videoFileId: fileID });
+            if (plan.action === 'keep') {
+              return this.persist(true).then(() => 'video');
+            }
+            if (plan.action === 'missing_thumb') {
+              return this.persist(true).then(() => 'missing_thumb');
+            }
+            return this.uploadCloudFile('cover', plan.path, fileExt(plan.path, 'jpg')).then((coverId) => {
+              this.setData({
+                coverFileId: coverId,
+                posterUrl: plan.path,
+                coverHint: '未选手动封面，已用视频首帧缩略图',
+              });
+              return this.persist(true).then(() => 'cover');
+            });
+          })
+          .then((kind) => {
+            if (kind === 'missing_thumb') {
+              wx.showToast({ title: '未获取到视频缩略图，请手动选封面', icon: 'none' });
+              return;
+            }
+            if (kind === 'cover') {
+              wx.showToast({ title: '视频与封面已保存' });
+              return;
+            }
+            wx.showToast({ title: '视频已保存' });
+          })
           .catch((err) => wx.showToast({ title: err.message || '上传失败', icon: 'none' }));
       },
     });

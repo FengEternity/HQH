@@ -6,6 +6,7 @@
     "pages/player/player",
     "pages/admin/login/login",
     "pages/admin/home/home",
+    "pages/admin/catalog/catalog",
     "pages/admin/inbox/inbox",
     "pages/admin/brand/brand",
     "pages/admin/videos/videos",

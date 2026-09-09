@@ -12,15 +12,14 @@
   "watchOptions": {
     "ignore": [
       "视频/**",
-      "docs/**",
-      "scripts/**"
+      "docs/**"
     ]
   },
   "setting": {
     "es6": true,
     "minified": true,
     "enhance": true,
-    "urlCheck": false,
+    "urlCheck": true,
     "condition": false,
     "postcss": false,
     "compileWorklet": false,

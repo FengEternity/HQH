@@ -1,5 +1,6 @@
 const { admin } = require('../../../utils/api');
 const { isReadyToPublish } = require('../../../utils/videoPublishGate');
+const { withPosterUrls } = require('../../../utils/videoMedia');
 
 function statusLabel(status) {
   if (status === 'published') {
@@ -36,7 +37,7 @@ Page({
     }
     admin({ action: 'adminListVideos', brandId: this.data.brandId })
       .then((res) => {
-        const videos = (res.videos || []).map((item) =>
+        const videos = withPosterUrls(res.videos || []).map((item) =>
           Object.assign({}, item, {
             statusLabel: statusLabel(item.status),
             canPublish: item.status !== 'published' && isReadyToPublish(item),
