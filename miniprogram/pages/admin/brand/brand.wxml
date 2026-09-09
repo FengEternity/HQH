@@ -3,7 +3,15 @@
     <view class="form-section-title">品牌信息</view>
     <view class="field">
       <view class="field-label">品牌名 <text class="field-req">必填</text></view>
-      <input class="field-input" placeholder="例如：海星达" value="{{name}}" bindinput="onName" />
+      <textarea
+        class="field-input field-textarea"
+        placeholder="例如：海星达"
+        value="{{name}}"
+        bindinput="onName"
+        maxlength="80"
+        auto-height
+        show-confirm-bar="{{false}}"
+      ></textarea>
     </view>
     <view class="field field-last">
       <view class="field-label">排序</view>
