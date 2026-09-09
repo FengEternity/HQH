@@ -12,40 +12,29 @@ Page({
     catalog({ action: 'getVideo', id })
       .then((res) => {
         const video = withPosterUrl(res.video);
-        this.setData({ video });
         if (video && video.title) {
           wx.setNavigationBarTitle({ title: video.title });
         }
-        return Promise.all([
-          this.resolveCloudUrl(video && video.videoFileId),
-          this.resolveCloudUrl(video && video.posterUrl),
-        ]);
-      })
-      .then(([src, posterUrl]) => {
-        const patch = {};
-        if (src) {
-          patch.src = src;
+        const src = String((res && res.videoUrl) || '').trim();
+        if (!src) {
+          this.setData({
+            video,
+            error:
+              video && video.videoFileId
+                ? '视频地址未返回。请重新上传部署 catalog 云函数后再试'
+                : '暂无视频文件',
+          });
+          return;
         }
-        if (posterUrl && this.data.video) {
-          patch.video = Object.assign({}, this.data.video, { posterUrl });
-        }
-        if (Object.keys(patch).length) {
-          this.setData(patch);
-        }
+        const posterUrl = String((video && video.posterUrl) || '').trim();
+        this.setData({
+          video: posterUrl ? Object.assign({}, video, { posterUrl }) : video,
+          src,
+        });
       })
       .catch((err) => {
         this.setData({ error: err.message || '无法播放' });
       });
-  },
-  resolveCloudUrl(fileId) {
-    const id = String(fileId || '');
-    if (id.indexOf('cloud://') === 0) {
-      return wx.cloud.getTempFileURL({ fileList: [id] }).then((fileRes) => {
-        const row = fileRes && fileRes.fileList && fileRes.fileList[0];
-        return (row && row.tempFileURL) || '';
-      });
-    }
-    return Promise.resolve(id);
   },
   onVideoError() {
     this.setData({
