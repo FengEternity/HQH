@@ -17,5 +17,4 @@
       <text class="chip" wx:for="{{item.tags}}" wx:for-item="tagItem" wx:key="*this">{{tagItem}}</text>
     </view>
   </view>
-  <view class="legal">优度（杭州）智能装备有限公司</view>
 </view>
