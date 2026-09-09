@@ -1,14 +1,20 @@
-# 测绘仪器讲解小程序（第一期）
+# 测绘仪器讲解小程序
 
-当前版本：**0.1.0**（体验版：目录在微信云开发，运营后台可建品牌/视频，首页可联系客服留言）。
+当前线上/体验版能力对应 **0.1.0**：微信云开发目录（品牌/视频）、关键词搜索、运营入库、播放、首页客服留言。
+
+下一期（商城、统一搜索、播放页文档问答、AI 客服）需求在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`，实现计划索引在 `docs/superpowers/plans/2026-09-09-00-ai-native-mall-index.md`。未合入 `main` 前，下文「打开与上云 / 运营 / 手测」仍以 **0.1.0** 为准。
 
 运营主体：**优度（杭州）智能装备有限公司**（简称「优度」）。产品对外名称是「仪器讲解资料馆」，和执照上的公司全称不是同一个字段。
 
 注册微信小程序时：主体类型选企业，主体名称按执照逐字填写「优度（杭州）智能装备有限公司」（使用中文括号）。小程序名称可另起，不必与公司名相同。
 
-微信小程序 + 微信云开发。浏览、关键词搜索、运营入库、播放全部走云函数 `catalog`、云数据库和云存储。
+微信小程序 + 微信云开发。0.1.0 浏览、关键词搜索、运营入库、播放走云函数 `catalog`、云数据库和云存储。
 
-需求与实现计划：`docs/plans/2026-08-29-001-feat-survey-instrument-miniprogram-search-plan.md`
+一期实现计划（已落地）：`docs/plans/2026-08-29-001-feat-survey-instrument-miniprogram-search-plan.md`
+
+## 分支
+
+日常开发与测试在 **`dev`**。**`main` 只用于发布验证**（上传体验版/正式版）。不要在 `main` 上做功能开发。约定全文：`docs/branching.md`。
 
 ## 打开与上云
 
@@ -54,3 +60,4 @@ node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/cata
 ## 不要做的事
 
 - 不要把 AppSecret、云密钥、`ADMIN_PIN` 提交进 git。
+- 不要在 `main` 上直接开发或提交未经验证的改动（见 `docs/branching.md`）。

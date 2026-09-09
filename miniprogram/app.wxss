@@ -111,7 +111,10 @@ page {
 .input {
   background: #ffffff;
   border-radius: 10rpx;
-  padding: 18rpx 22rpx;
+  height: 80rpx;
+  min-height: 80rpx;
+  line-height: 80rpx;
+  padding: 0 22rpx;
   margin-bottom: 20rpx;
   border: 1rpx solid #e4e4e7;
 }
@@ -386,14 +389,19 @@ page {
   box-sizing: border-box;
   background: #f7f7f8;
   border-radius: 10rpx;
-  padding: 18rpx 20rpx;
+  height: 80rpx;
+  min-height: 80rpx;
+  line-height: 80rpx;
+  padding: 0 20rpx;
   font-size: 28rpx;
   border: 1rpx solid transparent;
 }
 
 .field-textarea {
+  height: auto;
   min-height: 160rpx;
   line-height: 1.5;
+  padding: 18rpx 20rpx;
 }
 
 .media-block {

@@ -1,0 +1,11 @@
+---
+description: 开发在 dev，main 只用于发布验证。改代码或提交前先确认当前分支。
+alwaysApply: true
+---
+
+# 分支
+
+- 日常开发、测试、文档：`dev`（或从 `dev` 拉出的功能分支）
+- `main`：只接受已验证、用于微信侧上传/发布的代码
+- 若当前在 `main`：先切到 `dev` 再改文件，不要在 `main` 上 commit 功能
+- 细则：`docs/branching.md`
