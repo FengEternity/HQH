@@ -14,6 +14,7 @@
 - 不做全局混排首页、不做向量库。
 - C 端只搜上架视频与 `shop_products.status=published`。
 - 密钥不进 git。Commit 用简体中文。
+- 本计划在 **`dev-ai-search`** 上执行（从 `dev` 迁出）；验收后合回 `dev`。
 
 ---
 

@@ -3,7 +3,9 @@
 日期：2026-09-09  
 载体：现有微信小程序 + 微信云开发（本仓库）  
 对外名称：仪器讲解资料馆  
-运营主体：优度（杭州）智能装备有限公司
+运营主体：优度（杭州）智能装备有限公司  
+
+功能模块横构思维导图（SVG）：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-mindmap.svg`
 
 ## 背景与决策
 
@@ -234,4 +236,4 @@ C 端不得命中草稿视频、下架商品、未发布关联。
 
 本文件是一份产品总 spec。落地时应拆成可独立验收的计划，例如：底栏与讲解/商城壳页 → `shop_products` 与关联 → 购物车支付订单 → `search` 与两处搜索框 → 云函数接入 pi-agent-core 与播放页 `video_doc` → 客服 `cs` profile 与转人工通知 → 运营商品/订单/工单。不要按一份计划一次改完所有云函数。
 
-实现只在 **`dev`**（或从 `dev` 拉出的短分支）上进行；**`main` 仅发布验证**。见 `docs/branching.md`。
+实现从 **`dev` 迁出 `dev-<功能>`**（如 `dev-ai-search`）逐渐开发，验收后合回 `dev`；**`main` 仅发布验证**。见 `docs/branching.md`。

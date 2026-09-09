@@ -15,7 +15,7 @@
 - 现网 `products` 集合仍是型号，本计划不创建可售 SKU。
 - 本计划不做支付、搜索云函数、pi-agent-core。
 - Commit message 用简体中文，不要写 `DES-*` / `ANAL-*`。
-- 本计划在 **`dev`** 上执行，不要在 `main` 上开发（`docs/branching.md`）。
+- 本计划在 **`dev-tabbar-shell`** 上执行（从 `dev` 迁出）；验收后合回 `dev`。不要在 `main` 上开发（`docs/branching.md`）。
 
 ---
 
