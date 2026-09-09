@@ -145,6 +145,8 @@ page {
 .brand-scroll {
   white-space: nowrap;
   margin: 8rpx 0 16rpx;
+  /* 给原生横向滚动条留空，避免压住 pill 文字 */
+  padding-bottom: 20rpx;
 }
 
 .search-row {
