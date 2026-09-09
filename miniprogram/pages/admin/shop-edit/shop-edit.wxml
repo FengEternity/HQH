@@ -68,6 +68,6 @@
   </view>
 
   <view class="form-footer">
-    <view class="btn" bindtap="save">保存</view>
+    <view class="btn {{canSave ? '' : 'btn-disabled'}}" bindtap="save">保存</view>
   </view>
 </view>

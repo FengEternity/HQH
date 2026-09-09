@@ -1,5 +1,6 @@
 const { shopAdmin } = require('../../../utils/api');
 const { formatPriceYuan, yuanToFen } = require('../../../utils/shopPrice');
+const { buildUpsertShopProductRequest } = require('../../../utils/shopEditSave');
 
 Page({
   data: {
@@ -14,10 +15,13 @@ Page({
     category: '',
     status: 'unpublished',
     videos: [],
+    canSave: false,
   },
   onLoad(query) {
-    const id = query.id || '';
-    this.setData({ id });
+    // URL id 仅作待加载目标；加载失败时不得带着它去 upsert
+    this._pendingId = String(query.id || '').trim();
+    this._hydrated = false;
+    this._linksReady = false;
     shopAdmin({ action: 'listShopAdmin' })
       .then((res) => {
         const videos = (res.videos || []).map((item) =>
@@ -31,20 +35,26 @@ Page({
                   : '草稿',
           }),
         );
-        if (!id) {
-          this.setData({ videos });
+        if (!this._pendingId) {
+          this._hydrated = true;
+          this._linksReady = true;
+          this.setData({ videos, canSave: true });
           return;
         }
-        const found = (res.products || []).find((item) => item._id === id);
+        const found = (res.products || []).find((item) => item._id === this._pendingId);
         if (!found) {
+          this._hydrated = false;
+          this._linksReady = false;
+          this.setData({ id: '', videos, canSave: false });
           wx.showToast({ title: '商品不存在', icon: 'none' });
-          this.setData({ videos });
           return;
         }
         const selected = Object.create(null);
         for (const videoId of found.videoIds || []) {
           selected[videoId] = true;
         }
+        this._hydrated = true;
+        this._linksReady = true;
         this.setData({
           id: found._id,
           name: found.name || '',
@@ -56,10 +66,14 @@ Page({
           category: found.category || '',
           status: found.status || 'unpublished',
           videos: videos.map((item) => Object.assign({}, item, { checked: !!selected[item._id] })),
+          canSave: true,
         });
         return this.resolveCover(found.coverFileId);
       })
       .catch((err) => {
+        this._hydrated = false;
+        this._linksReady = false;
+        this.setData({ id: '', canSave: false });
         if (err.code === 'UNAUTHORIZED') {
           wx.redirectTo({ url: '/pages/admin/login/login' });
           return;
@@ -101,6 +115,9 @@ Page({
     this.setData({ category: e.detail.value });
   },
   toggleVideo(e) {
+    if (!this._linksReady) {
+      return;
+    }
     const id = e.currentTarget.dataset.id;
     const videos = (this.data.videos || []).map((item) =>
       item._id === id ? Object.assign({}, item, { checked: !item.checked }) : item,
@@ -108,6 +125,10 @@ Page({
     this.setData({ videos });
   },
   pickCover() {
+    if (!this._hydrated) {
+      wx.showToast({ title: '请先等待加载完成', icon: 'none' });
+      return;
+    }
     wx.chooseMedia({
       count: 1,
       mediaType: ['image'],
@@ -137,19 +158,27 @@ Page({
       wx.showToast({ title: '价格无效', icon: 'none' });
       return;
     }
-    shopAdmin({
-      action: 'upsertShopProduct',
-      id: this.data.id || undefined,
-      name: this.data.name,
-      priceFen,
-      coverFileId: this.data.coverFileId,
-      detail: this.data.detail,
-      specName: this.data.specName,
-      specValue: this.data.specValue,
-      category: this.data.category,
-      status: this.data.status || 'unpublished',
-      videoIds: this.selectedVideoIds(),
-    })
+    const built = buildUpsertShopProductRequest({
+      hydrated: this._hydrated,
+      linksReady: this._linksReady,
+      id: this.data.id,
+      fields: {
+        name: this.data.name,
+        priceFen,
+        coverFileId: this.data.coverFileId,
+        detail: this.data.detail,
+        specName: this.data.specName,
+        specValue: this.data.specValue,
+        category: this.data.category,
+        status: this.data.status || 'unpublished',
+      },
+      selectedVideoIds: this.selectedVideoIds(),
+    });
+    if (!built.ok) {
+      wx.showToast({ title: '尚未加载完成，请稍后重试', icon: 'none' });
+      return;
+    }
+    shopAdmin(built.data)
       .then((res) => {
         this.setData({ id: res.id });
         wx.showToast({ title: '已保存' });

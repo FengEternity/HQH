@@ -7,6 +7,7 @@ const {
   collectLinkShopProductIds,
   assertShopProductIdsExist,
   replaceVideoShopLinksAfterValidation,
+  shouldReplaceVideoLinks,
 } = require('./shopListAndLinks');
 
 describe('sortShopProductsByUpdatedAtDesc', () => {
@@ -95,5 +96,16 @@ describe('replaceVideoShopLinksAfterValidation', () => {
       },
     });
     assert.deepEqual(ops, ['remove:v1', 'insert:v1:p2,p1']);
+  });
+});
+
+describe('shouldReplaceVideoLinks', () => {
+  it('ignores missing videoIds so links stay untouched', () => {
+    assert.equal(shouldReplaceVideoLinks({}), false);
+    assert.equal(shouldReplaceVideoLinks({ videoIds: null }), false);
+  });
+
+  it('treats explicit empty array as clear-all', () => {
+    assert.equal(shouldReplaceVideoLinks({ videoIds: [] }), true);
   });
 });

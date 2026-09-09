@@ -9,6 +9,7 @@ const {
   sortShopProductsByUpdatedAtDesc,
   uniqueIds,
   replaceVideoShopLinksAfterValidation,
+  shouldReplaceVideoLinks,
 } = require('./lib/shopListAndLinks');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
@@ -268,7 +269,8 @@ async function upsertShopProduct(event) {
     id = added._id;
   }
 
-  if (Array.isArray(event.videoIds)) {
+  // 缺省 videoIds 不改关联；显式 [] 才清空（客户端须 hydrate 后再传）
+  if (shouldReplaceVideoLinks(event)) {
     await replaceLinksForShopProduct(id, event.videoIds);
   }
 

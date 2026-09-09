@@ -58,10 +58,19 @@ async function replaceVideoShopLinksAfterValidation({
   await insertLinks(videoId, ids);
 }
 
+/**
+ * upsertShopProduct 仅在显式传入数组时替换关联；缺省字段表示不改 links。
+ * 空数组 [] 表示清空（须由已 hydrate 的客户端发送）。
+ */
+function shouldReplaceVideoLinks(event) {
+  return Array.isArray(event && event.videoIds);
+}
+
 module.exports = {
   sortShopProductsByUpdatedAtDesc,
   uniqueIds,
   collectLinkShopProductIds,
   assertShopProductIdsExist,
   replaceVideoShopLinksAfterValidation,
+  shouldReplaceVideoLinks,
 };
