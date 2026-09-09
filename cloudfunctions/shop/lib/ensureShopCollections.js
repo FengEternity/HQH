@@ -1,14 +1,6 @@
 'use strict';
 
-const CATALOG_COLLECTIONS = [
-  'brands',
-  'products',
-  'videos',
-  'synonyms',
-  'support_messages',
-  'shop_products',
-  'video_shop_links',
-];
+const SHOP_COLLECTIONS = ['shop_products', 'video_shop_links'];
 
 function errorText(error) {
   return String((error && (error.errMsg || error.message)) || '');
@@ -45,7 +37,7 @@ function isCollectionMissingError(error) {
 }
 
 async function ensureCollections(db, names) {
-  const list = Array.isArray(names) && names.length ? names : CATALOG_COLLECTIONS;
+  const list = Array.isArray(names) && names.length ? names : SHOP_COLLECTIONS;
   const created = [];
   const existed = [];
   for (const name of list) {
@@ -75,9 +67,7 @@ async function runWithCollections(db, fn) {
 }
 
 module.exports = {
-  CATALOG_COLLECTIONS,
-  isCollectionExistsError,
-  isCollectionMissingError,
+  SHOP_COLLECTIONS,
   ensureCollections,
   runWithCollections,
 };

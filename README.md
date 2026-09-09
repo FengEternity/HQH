@@ -14,23 +14,24 @@
 
 ## 分支
 
-**`main`** 只用于发布验证（上传体验版/正式版）。**`dev`** 是集成与联调。具体功能从 `dev` 迁出 **`dev-<功能>`** 短分支逐渐开发（例如 `dev-ai-search`），做完合回 `dev`，再视情况合入 `main`。约定全文：`docs/branching.md`。
+**`main`** 只用于发布验证（上传体验版/正式版）。**`dev`** 是集成与联调。功能从 `dev` 迁出 **`dev-<功能>`** 短分支，做完合回 `dev`。发行版缺陷从 `main` 迁出 **`hotfix-<简述>`**，验证后合回 `main` 并同步 `dev`。约定全文：`docs/branching.md`。
 
 ## 打开与上云
 
 1. 安装[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)，用真实 AppID 导入本仓库根目录（含 `project.config.json`）。游客模式不能开通云开发、不能上传视频。
 2. 开通云开发并创建环境，设为当前环境。
-3. 对云函数 `catalog` 安装依赖并上传部署；环境变量设置 `ADMIN_PIN`（运营口令）。需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。
-4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`。也可在云函数测试里传入 `{ "action": "initDb" }`。
-5. 集合出现后，在云开发控制台把这 5 个集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。
+3. 对云函数 `catalog`、`shop` 安装依赖并上传部署；环境变量设置 `ADMIN_PIN`（运营口令，两个函数都要配）。`catalog` 需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。
+4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`，以及商城用的 `shop_products`、`video_shop_links`。也可在云函数测试里传入 `{ "action": "initDb" }`。
+5. 集合出现后，在云开发控制台把上述集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。
 
 企业主体在 [微信公众平台](https://mp.weixin.qq.com) 注册小程序：主体名称填「优度（杭州）智能装备有限公司」。通过后在「开发 → 开发管理 → 开发设置」复制 AppID，填进 `project.config.json`。
 
 ## 运营入口
 
 - 路径：`pages/admin/login/login`，或在首页品牌行连点 8 次。
-- 口令是云函数环境变量 `ADMIN_PIN`。登录后进入工作台，再选「内容运营」或「客服留言」。
+- 口令是云函数环境变量 `ADMIN_PIN`。登录后进入工作台，再选「内容运营」「商品运营」或「客服留言」。
 - 内容运营：品牌列表（点行进视频、点编辑改品牌）→ 某品牌下的视频 → 编辑（标题、简介必填，型号与标签可选，上传封面和视频）。上架必须封面和视频都已传。未选手动封面时，上传视频会用系统缩略图（一般为首帧）。可下架；删除会二次确认。
+- 商品运营：可售 SKU（`shop_products`，与目录型号集合分离）入库、上架、勾选关联讲解视频；C 端商城与播放页只展示已上架商品。
 - 品牌改名会同步刷新该品牌下视频里的 `brandName` 和搜索索引；品牌下还有视频时不允许删除，先把视频删干净。
 
 ## 客服入口

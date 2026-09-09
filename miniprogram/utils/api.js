@@ -15,6 +15,23 @@ function catalog(data) {
     });
 }
 
+function shop(data) {
+  return wx.cloud
+    .callFunction({
+      name: 'shop',
+      data,
+    })
+    .then((res) => {
+      const result = res.result;
+      if (!result || result.ok === false) {
+        const err = new Error((result && result.message) || '请求失败');
+        err.code = result && result.code;
+        throw err;
+      }
+      return result;
+    });
+}
+
 function getTicket() {
   return wx.getStorageSync('hqh_admin_ticket') || '';
 }
@@ -27,9 +44,15 @@ function admin(data) {
   return catalog(Object.assign({ ticket: getTicket() }, data));
 }
 
+function shopAdmin(data) {
+  return shop(Object.assign({ ticket: getTicket() }, data));
+}
+
 module.exports = {
   catalog,
+  shop,
   admin,
+  shopAdmin,
   getTicket,
   setTicket,
 };

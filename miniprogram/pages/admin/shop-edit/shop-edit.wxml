@@ -1,0 +1,73 @@
+<view class="page form-page">
+  <view class="form-card">
+    <view class="form-section-title">基本信息</view>
+    <view class="field">
+      <view class="field-label">名称 <text class="field-req">上架必填</text></view>
+      <input class="field-input" placeholder="商品名称" value="{{name}}" bindinput="onName" />
+    </view>
+    <view class="field">
+      <view class="field-label">价格（元） <text class="field-req">上架必填</text></view>
+      <input class="field-input" type="digit" placeholder="例如 19.9" value="{{priceYuan}}" bindinput="onPrice" />
+    </view>
+    <view class="field">
+      <view class="field-label">分类</view>
+      <input class="field-input" placeholder="可留空" value="{{category}}" bindinput="onCategory" />
+    </view>
+    <view class="field">
+      <view class="field-label">规格名</view>
+      <input class="field-input" placeholder="例如 套装 / 成色，可留空" value="{{specName}}" bindinput="onSpecName" />
+    </view>
+    <view class="field field-last">
+      <view class="field-label">规格值</view>
+      <input class="field-input" placeholder="与规格名成对；无规格则留空" value="{{specValue}}" bindinput="onSpecValue" />
+    </view>
+  </view>
+
+  <view class="form-card">
+    <view class="form-section-title">主图与详情</view>
+    <view class="media-block">
+      <view class="cover-frame" bindtap="pickCover">
+        <image wx:if="{{coverUrl}}" class="cover-frame-img" src="{{coverUrl}}" mode="aspectFill" />
+        <view wx:else class="cover-frame-empty">
+          <text class="cover-frame-empty-title">添加主图</text>
+          <text class="muted">上架前必传</text>
+        </view>
+        <view wx:if="{{coverUrl}}" class="cover-frame-badge">更换主图</view>
+      </view>
+    </view>
+    <view class="field field-last">
+      <view class="field-label">详情文案</view>
+      <textarea
+        class="field-input field-textarea"
+        placeholder="商品说明"
+        value="{{detail}}"
+        bindinput="onDetail"
+        maxlength="2000"
+      ></textarea>
+    </view>
+  </view>
+
+  <view class="form-card">
+    <view class="form-section-title">关联讲解视频</view>
+    <view wx:if="{{videos.length === 0}}" class="muted" style="padding: 16rpx 0 24rpx">暂无视频可选。请先在内容运营入库。</view>
+    <view wx:else class="list" style="margin: 8rpx 0 16rpx">
+      <view
+        class="list-row"
+        wx:for="{{videos}}"
+        wx:key="_id"
+        data-id="{{item._id}}"
+        bindtap="toggleVideo"
+      >
+        <view class="list-main">
+          <view class="tile-title">{{item.title}}</view>
+          <view class="muted">{{item.brandName || '未标品牌'}} · {{item.statusLabel}}</view>
+        </view>
+        <text class="chip {{item.checked ? 'chip-ok' : ''}}">{{item.checked ? '已选' : '未选'}}</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="form-footer">
+    <view class="btn" bindtap="save">保存</view>
+  </view>
+</view>
