@@ -5,6 +5,11 @@ const { verifyTicket } = require('./lib/ticket');
 const { assertShopProductPublishable } = require('./lib/shopPublishGate');
 const { assertLinkIds, linkKey } = require('./lib/videoShopLink');
 const { ensureCollections, runWithCollections } = require('./lib/ensureShopCollections');
+const {
+  sortShopProductsByUpdatedAtDesc,
+  uniqueIds,
+  replaceVideoShopLinksAfterValidation,
+} = require('./lib/shopListAndLinks');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -63,20 +68,6 @@ function parsePriceFen(value) {
   return Math.round(n);
 }
 
-function uniqueIds(ids) {
-  const seen = Object.create(null);
-  const out = [];
-  for (const raw of ids || []) {
-    const id = String(raw || '').trim();
-    if (!id || seen[id]) {
-      continue;
-    }
-    seen[id] = true;
-    out.push(id);
-  }
-  return out;
-}
-
 async function removeLinksWhere(where) {
   const res = await db.collection('video_shop_links').where(where).limit(1000).get();
   for (const row of res.data || []) {
@@ -87,21 +78,6 @@ async function removeLinksWhere(where) {
 async function insertVideoShopLinks(videoId, shopProductIds) {
   const ids = uniqueIds(shopProductIds);
   for (const shopProductId of ids) {
-    assertLinkIds(videoId, shopProductId);
-    const snap = await db.collection('shop_products').doc(shopProductId).get();
-    if (!snap.data) {
-      const err = new Error('商品不存在');
-      err.code = 'NOT_FOUND';
-      throw err;
-    }
-  }
-  const seen = Object.create(null);
-  for (const shopProductId of ids) {
-    const key = linkKey(videoId, shopProductId);
-    if (seen[key]) {
-      continue;
-    }
-    seen[key] = true;
     await db.collection('video_shop_links').add({
       data: {
         videoId,
@@ -181,13 +157,10 @@ exports.main = async (event) => {
 };
 
 async function listPublishedShop() {
-  const res = await db
-    .collection('shop_products')
-    .where({ status: 'published' })
-    .orderBy('updatedAt', 'desc')
-    .limit(100)
-    .get();
-  return { ok: true, products: (res.data || []).map(publicShopProduct) };
+  // 仅 where(status)，在内存按 updatedAt 排序，避免 where+orderBy 复合索引
+  const res = await db.collection('shop_products').where({ status: 'published' }).limit(100).get();
+  const sorted = sortShopProductsByUpdatedAtDesc(res.data || []);
+  return { ok: true, products: sorted.map(publicShopProduct) };
 }
 
 async function getPublishedShop(event) {
@@ -342,8 +315,20 @@ async function setVideoShopLinks(event) {
     throw err;
   }
   const shopProductIds = Array.isArray(event.shopProductIds) ? event.shopProductIds : [];
-  await removeLinksWhere({ videoId });
-  await insertVideoShopLinks(videoId, shopProductIds);
+  await replaceVideoShopLinksAfterValidation({
+    videoId,
+    shopProductIds,
+    getProduct: async (id) => {
+      const snap = await db.collection('shop_products').doc(id).get();
+      return snap.data || null;
+    },
+    removeForVideo: async (id) => {
+      await removeLinksWhere({ videoId: id });
+    },
+    insertLinks: async (id, ids) => {
+      await insertVideoShopLinks(id, ids);
+    },
+  });
   return { ok: true };
 }
 
