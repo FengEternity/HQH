@@ -22,7 +22,7 @@
 2. 开通云开发并创建环境，设为当前环境。
 3. 对云函数 `catalog` 安装依赖并上传部署；环境变量设置 `ADMIN_PIN`（运营口令）。需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。
 4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`。也可在云函数测试里传入 `{ "action": "initDb" }`。
-5. 集合出现后，在云开发控制台把这 5 个集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。
+5. 集合出现后，在云开发控制台把这 5 个集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。云存储可保持 **仅创建者可读写**（免费环境改「全员可读」常要升级）；播放由云函数 `getVideo` 服务端换临时 HTTPS，客户端不再调 `getTempFileURL`。
 
 企业主体在 [微信公众平台](https://mp.weixin.qq.com) 注册小程序：主体名称填「优度（杭州）智能装备有限公司」。通过后在「开发 → 开发管理 → 开发设置」复制 AppID，填进 `project.config.json`。
 
@@ -43,7 +43,7 @@
 ## 检索单测（不依赖微信）
 
 ```bash
-node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js miniprogram/utils/videoMedia.test.js
+node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js miniprogram/utils/videoMedia.test.js
 ```
 
 ## 手测清单
@@ -55,7 +55,7 @@ node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/cata
 - 首页「联系客服」进入问答页，可点快捷问题、领取并复制账号。
 - 无结果时：关键词搜提示换词或按品牌浏览。
 - 运营新增品牌并上架（封面+视频齐全、有简介）后，首页出现该品牌且可搜索到。
-- 播放页展示标题、品牌、型号、标签、简介，并能播放云存储视频。
+- 播放页展示标题、品牌、型号、标签、简介，并能播放云存储视频（真机/体验版在存储「仅创建者可读写」下也应能播）。
 
 ## 不要做的事
 

@@ -9,6 +9,7 @@ const {
   nextStatusAfterSave,
 } = require('./lib/videoPublishGate');
 const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
+const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -226,7 +227,19 @@ async function getVideo(event) {
     err.code = 'NOT_FOUND';
     throw err;
   }
-  return { ok: true, video: publicVideo(doc) };
+  const video = publicVideo(doc);
+  // 服务端换临时链，绕过客户端「仅创建者可读写」存储权限；免费环境不必改成全员可读
+  const media = await resolveMediaUrls(
+    { videoFileId: video.videoFileId, coverFileId: video.coverFileId },
+    (payload) => cloud.getTempFileURL(payload),
+  );
+  return {
+    ok: true,
+    video: Object.assign({}, video, {
+      posterUrl: media.posterUrl || video.coverFileId || '',
+    }),
+    videoUrl: media.videoUrl,
+  };
 }
 
 async function loadSynonyms() {
