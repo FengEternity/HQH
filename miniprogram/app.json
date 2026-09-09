@@ -2,6 +2,7 @@
   "pages": [
     "pages/index/index",
     "pages/shop/shop",
+    "pages/shop-detail/shop-detail",
     "pages/mine/mine",
     "pages/contact/contact",
     "pages/brand/brand",
@@ -9,6 +10,8 @@
     "pages/admin/login/login",
     "pages/admin/home/home",
     "pages/admin/catalog/catalog",
+    "pages/admin/shop/shop",
+    "pages/admin/shop-edit/shop-edit",
     "pages/admin/inbox/inbox",
     "pages/admin/brand/brand",
     "pages/admin/videos/videos",

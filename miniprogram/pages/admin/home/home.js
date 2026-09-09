@@ -24,6 +24,9 @@ Page({
   openCatalog() {
     wx.navigateTo({ url: '/pages/admin/catalog/catalog' });
   },
+  openShop() {
+    wx.navigateTo({ url: '/pages/admin/shop/shop' });
+  },
   openInbox() {
     wx.navigateTo({ url: '/pages/admin/inbox/inbox' });
   },

@@ -7,6 +7,13 @@
     </view>
     <text class="muted">进入</text>
   </view>
+  <view class="hub-item" bindtap="openShop">
+    <view>
+      <view class="tile-title">商品运营</view>
+      <view class="muted">可售商品入库、上架与讲解关联</view>
+    </view>
+    <text class="muted">进入</text>
+  </view>
   <view class="hub-item" bindtap="openInbox">
     <view>
       <view class="tile-title">客服留言</view>

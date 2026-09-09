@@ -11,6 +11,18 @@ const {
 } = require('./ensureCollections');
 
 describe('ensureCollections', () => {
+  it('lists the five catalog collections plus shop_products and video_shop_links', () => {
+    assert.deepEqual(CATALOG_COLLECTIONS, [
+      'brands',
+      'products',
+      'videos',
+      'synonyms',
+      'support_messages',
+      'shop_products',
+      'video_shop_links',
+    ]);
+  });
+
   it('creates all catalog collections when none exist', async () => {
     const calls = [];
     const db = {

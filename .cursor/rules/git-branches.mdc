@@ -1,12 +1,13 @@
 ---
-description: 功能从 dev 拉 dev-<功能> 短分支；main 只用于发布验证。改代码前先确认当前分支。
+description: 功能从 dev 拉 dev-<功能>；发行版缺陷从 main 拉 hotfix-*。改代码前先确认当前分支。
 alwaysApply: true
 ---
 
 # 分支
 
 - 写功能：从 `dev` 迁出 `dev-<功能>`（如 `dev-ai-search`、`dev-tabbar-shell`），验收后合回 `dev`
+- 发行版修 bug：从 `main` 迁出 `hotfix-<简述>`，验证后合回 `main`，并同步到 `dev`；不要在 `main` 上直接 commit
 - `dev`：集成与联调，不要在上面同时堆多个未完成大功能
 - `main`：只接受已验证、用于微信侧上传/发布的代码
-- 若当前在 `main`：先切到 `dev`，再 `checkout -b dev-<功能>`，不要在 `main` 上 commit 功能
+- 若当前在 `main` 且要做功能：先切到 `dev`，再 `checkout -b dev-<功能>`
 - 细则：`docs/branching.md`

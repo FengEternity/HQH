@@ -1,0 +1,7 @@
+.shop-cover {
+  width: 100%;
+  height: 420rpx;
+  border-radius: 16rpx;
+  background: #e4e4e7;
+  display: block;
+}
