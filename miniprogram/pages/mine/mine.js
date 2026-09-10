@@ -1,1 +1,15 @@
-Page({});
+const release = require('../../data/appRelease');
+const { normalizeDoc } = require('../../utils/appRelease');
+
+Page({
+  data: {
+    version: '未知',
+  },
+  onShow() {
+    const doc = normalizeDoc(release);
+    this.setData({ version: doc.version });
+  },
+  openAbout() {
+    wx.navigateTo({ url: '/pages/about/about' });
+  },
+});

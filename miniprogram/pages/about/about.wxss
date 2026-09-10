@@ -1,0 +1,40 @@
+.version-block {
+  margin-top: 16rpx;
+}
+
+.version-num {
+  font-size: 40rpx;
+  font-weight: 600;
+}
+
+.wx-line {
+  margin-top: 12rpx;
+}
+
+.copy-hint {
+  margin-top: 8rpx;
+}
+
+.section-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  margin: 8rpx 0 16rpx;
+}
+
+.empty-hint {
+  padding: 24rpx 0 48rpx;
+}
+
+.release-head {
+  margin-bottom: 12rpx;
+}
+
+.note {
+  font-size: 26rpx;
+  margin-top: 8rpx;
+}
+
+.internal {
+  color: #71717a;
+  font-size: 24rpx;
+}

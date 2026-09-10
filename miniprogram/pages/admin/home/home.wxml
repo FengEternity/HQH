@@ -14,4 +14,11 @@
     </view>
     <text class="chip">{{unreadLabel}}</text>
   </view>
+  <view class="hub-item" bindtap="openAbout">
+    <view>
+      <view class="tile-title">版本与日志</view>
+      <view class="muted">{{aboutHint}}</view>
+    </view>
+    <text class="muted">进入</text>
+  </view>
 </view>

@@ -203,9 +203,7 @@ page {
 
 .brand-scroll {
   white-space: nowrap;
-  margin: 8rpx 0 16rpx;
-  /* 给原生横向滚动条留空，避免压住 pill 文字 */
-  padding-bottom: 20rpx;
+  margin: 8rpx 0 4rpx;
 }
 
 .search-row {
@@ -234,6 +232,9 @@ page {
   border-radius: 12rpx;
   padding: 10rpx 24rpx;
   margin-right: 12rpx;
+  /* PC 端把滚动条画在滚动区底部，靠 pill 的下外边距把它挤到文字下方的空白里。
+     滚动条是电脑上唯一能拖动的入口，不能隐藏。 */
+  margin-bottom: 24rpx;
   font-size: 24rpx;
 }
 

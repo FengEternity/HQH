@@ -1,0 +1,22 @@
+<view class="page">
+  <view class="h1">{{productName}}</view>
+  <view class="card version-block" bindtap="copyVersion">
+    <view class="row">
+      <view class="version-num">{{version}}</view>
+      <text class="chip">{{envLabel}}</text>
+    </view>
+    <view class="muted wx-line" wx:if="{{showWxRow}}">{{wxLine}}</view>
+    <view class="muted copy-hint">点按复制版本信息</view>
+  </view>
+
+  <view class="section-title">更新说明</view>
+  <view class="muted empty-hint" wx:if="{{emptyHint}}">{{emptyHint}}</view>
+  <view class="card" wx:for="{{releases}}" wx:key="version">
+    <view class="row release-head">
+      <view class="tile-title">{{item.version}}</view>
+      <text class="muted">{{item.date}}</text>
+    </view>
+    <view class="note" wx:for="{{item.user}}" wx:for-item="line" wx:key="*this">{{line}}</view>
+    <view class="note internal" wx:for="{{item.internal}}" wx:for-item="line" wx:key="*this">{{line}}</view>
+  </view>
+</view>
