@@ -16,6 +16,8 @@
 
 日常开发与测试在 **`dev`**。**`main` 只用于发布验证**（上传体验版/正式版）。不要在 `main` 上做功能开发。约定全文：`docs/branching.md`。
 
+版本号与更新说明：`docs/versioning.md`。体验阶段只用 `0.x.y`，正式上线前不要升到 `1.0.0`。关于页数据在 `miniprogram/data/appRelease.js`。
+
 ## 打开与上云
 
 1. 安装[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)，用真实 AppID 导入本仓库根目录（含 `project.config.json`）。游客模式不能开通云开发、不能上传视频。

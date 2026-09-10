@@ -108,9 +108,11 @@ module.exports = {
 
 ## 发版（人工）
 
+细则以 `docs/versioning.md` 为准：默认升修订号，用户可感知的新能力再升次版本；正式上线前禁止 `1.0.0`。
+
 准备把代码合入 `main` 并上传体验版 / 正式版前：
 
-1. 若本轮有用户或运营需要知道的变化，改 `appRelease.js` 的 `version`，并在 `releases` 头部追加一条。
+1. 若本轮有用户或运营需要知道的变化，按上述规则改 `appRelease.js` 的 `version`，并在 `releases` 头部追加一条。
 2. 微信开发者工具上传时填写的版本号与 `version` 保持一致。
 3. 纯热修若无需用户感知，可只写 `internal`、`user` 留空；该条不会出现在用户关于页。
 

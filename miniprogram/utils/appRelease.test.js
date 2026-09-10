@@ -21,6 +21,11 @@ describe('release data module', () => {
     assert.ok(doc.releases.length > 0);
   });
 
+  it('stays on 0.x until official WeChat release', () => {
+    const doc = require('../data/appRelease');
+    assert.match(String(doc.version), /^0\.\d+\.\d+$/);
+  });
+
   it('is never required as .json anywhere under miniprogram', () => {
     const root = path.join(__dirname, '..');
     const offenders = [];
