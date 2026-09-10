@@ -1,5 +1,5 @@
 // 小程序 require 不支持 .json，数据以 js 模块随包发布。
-// 升版本规则见 docs/versioning.md：正式上线前只用 0.x.y，不要写成 1.0.0。
+// 升版本规则见 docs/versioning.md：只有明确要求发版时才改本文件；正式上线前只用 0.x.y。
 module.exports = {
   version: '0.1.0',
   releases: [

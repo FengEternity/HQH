@@ -16,7 +16,7 @@
 
 日常开发与测试在 **`dev`**。**`main` 只用于发布验证**（上传体验版/正式版）。不要在 `main` 上做功能开发。约定全文：`docs/branching.md`。
 
-版本号与更新说明：`docs/versioning.md`。体验阶段只用 `0.x.y`，正式上线前不要升到 `1.0.0`。关于页数据在 `miniprogram/data/appRelease.js`。
+版本号与更新说明：`docs/versioning.md`。日常改代码不升版本；只有明确要求发版时才改 `miniprogram/data/appRelease.js`。体验阶段只用 `0.x.y`，正式上线前不要升到 `1.0.0`。
 
 ## 打开与上云
 
