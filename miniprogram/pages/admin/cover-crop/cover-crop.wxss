@@ -1,0 +1,168 @@
+page {
+  background: #111111;
+}
+
+.crop-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: #111111;
+  color: #ffffff;
+}
+
+.crop-help {
+  padding: 28rpx 32rpx 16rpx;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.crop-stage {
+  flex: 1;
+  min-height: 560rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.crop-frame {
+  position: relative;
+  width: 92%;
+  height: 51.75vw;
+  aspect-ratio: 16 / 9;
+  overflow: visible;
+  background: #000000;
+  touch-action: none;
+}
+
+.crop-img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.crop-mask,
+.crop-guide,
+.crop-border {
+  position: absolute;
+  pointer-events: none;
+}
+
+.crop-mask {
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.68);
+}
+
+.crop-mask-top,
+.crop-mask-bottom {
+  left: -100vw;
+  width: 200vw;
+  height: 100vh;
+}
+
+.crop-mask-top {
+  bottom: 100%;
+}
+
+.crop-mask-bottom {
+  top: 100%;
+}
+
+.crop-mask-left,
+.crop-mask-right {
+  top: 0;
+  width: 100vw;
+  height: 100%;
+}
+
+.crop-mask-left {
+  right: 100%;
+}
+
+.crop-mask-right {
+  left: 100%;
+}
+
+.crop-guide {
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.crop-guide-v {
+  top: 0;
+  bottom: 0;
+  width: 1rpx;
+}
+
+.crop-guide-h {
+  left: 0;
+  right: 0;
+  height: 1rpx;
+}
+
+.crop-guide-v1 {
+  left: 33.333%;
+}
+
+.crop-guide-v2 {
+  left: 66.666%;
+}
+
+.crop-guide-h1 {
+  top: 33.333%;
+}
+
+.crop-guide-h2 {
+  top: 66.666%;
+}
+
+.crop-border {
+  z-index: 3;
+  inset: 0;
+  box-sizing: border-box;
+  border: 2rpx solid rgba(255, 255, 255, 0.9);
+}
+
+.crop-canvas {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: -1;
+  width: 320px;
+  height: 180px;
+  opacity: 0.01;
+  pointer-events: none;
+}
+
+.crop-bar {
+  padding: 24rpx 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 20rpx;
+  background: #18181b;
+}
+
+.crop-btn {
+  flex: 1;
+  height: 80rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.crop-btn-ghost {
+  background: #27272a;
+  color: #ffffff;
+}
+
+.crop-btn-ok {
+  background: #4b6fdb;
+  color: #ffffff;
+}

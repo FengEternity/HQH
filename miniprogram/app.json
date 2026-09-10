@@ -13,7 +13,8 @@
     "pages/admin/inbox/inbox",
     "pages/admin/brand/brand",
     "pages/admin/videos/videos",
-    "pages/admin/edit/edit"
+    "pages/admin/edit/edit",
+    "pages/admin/cover-crop/cover-crop"
   ],
   "window": {
     "navigationBarTitleText": "优度 · 仪器讲解",

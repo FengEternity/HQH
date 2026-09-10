@@ -68,7 +68,7 @@
         <view wx:if="{{posterUrl}}" class="cover-frame-badge">更换封面</view>
       </view>
       <view wx:if="{{coverHint}}" class="muted" style="margin-top: 12rpx">{{coverHint}}</view>
-      <view class="muted" style="margin-top: 12rpx">未选封面时，上传视频会自动用首帧缩略图。</view>
+      <view class="muted" style="margin-top: 12rpx">未选封面时，上传视频会进入 16:9 裁剪（与首页卡片相同）。可拖动缩放后再确认。</view>
     </view>
     <view class="media-row" bindtap="uploadVideo">
       <view>
