@@ -9,7 +9,7 @@ const {
   nextStatusAfterSave,
 } = require('./lib/videoPublishGate');
 const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
-const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
+const { attachPosterUrls, resolveMediaUrls } = require('./lib/resolveMediaUrls');
 const { listHomeCatalog } = require('./lib/listHome');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
@@ -37,6 +37,10 @@ function publicVideo(doc) {
     status: doc.status,
     publishedAt: doc.publishedAt || 0,
   };
+}
+
+function withCoverPosters(videos) {
+  return attachPosterUrls(videos, (payload) => cloud.getTempFileURL(payload));
 }
 
 async function requireAdmin(ticket) {
@@ -226,7 +230,7 @@ async function listPublished(event) {
   if (event.tag) {
     list = list.filter((item) => (item.tags || []).includes(event.tag));
   }
-  return { ok: true, videos: list };
+  return { ok: true, videos: await withCoverPosters(list) };
 }
 
 async function getVideo(event) {
@@ -246,7 +250,7 @@ async function getVideo(event) {
   return {
     ok: true,
     video: Object.assign({}, video, {
-      posterUrl: media.posterUrl || video.coverFileId || '',
+      posterUrl: media.posterUrl || '',
     }),
     videoUrl: media.videoUrl,
   };
@@ -286,7 +290,7 @@ async function search(event) {
     loadSynonyms(),
   ]);
   const hits = searchPublished(published.data, query, synonyms);
-  return { ok: true, videos: hits.map(publicVideo) };
+  return { ok: true, videos: await withCoverPosters(hits.map(publicVideo)) };
 }
 
 async function adminListVideos(event) {
@@ -317,7 +321,7 @@ async function adminListVideos(event) {
     })
     .limit(100)
     .get();
-  return { ok: true, videos: res.data };
+  return { ok: true, videos: await withCoverPosters(res.data) };
 }
 
 async function adminGetVideo(event) {

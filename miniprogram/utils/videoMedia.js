@@ -1,11 +1,15 @@
 'use strict';
 
+function isHttpPosterUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
 function withPosterUrl(video) {
   if (!video) {
     return video;
   }
-  const posterUrl = String(video.posterUrl || video.coverFileId || '').trim();
-  return Object.assign({}, video, { posterUrl });
+  const raw = String(video.posterUrl || '').trim();
+  return Object.assign({}, video, { posterUrl: isHttpPosterUrl(raw) ? raw : '' });
 }
 
 function withPosterUrls(list) {

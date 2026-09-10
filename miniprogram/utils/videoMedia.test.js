@@ -5,14 +5,22 @@ const assert = require('node:assert/strict');
 const { withPosterUrl, withPosterUrls, planVideoCoverUpload } = require('./videoMedia');
 
 describe('withPosterUrl', () => {
-  it('fills posterUrl from coverFileId when posterUrl is missing', () => {
+  it('does not use cloud:// coverFileId as image src', () => {
     const out = withPosterUrl({
       _id: 'v1',
       title: '测试',
       coverFileId: 'cloud://env/cover/a.jpg',
     });
-    assert.equal(out.posterUrl, 'cloud://env/cover/a.jpg');
+    assert.equal(out.posterUrl, '');
     assert.equal(out.coverFileId, 'cloud://env/cover/a.jpg');
+  });
+
+  it('drops a cloud:// posterUrl leftover', () => {
+    const out = withPosterUrl({
+      coverFileId: 'cloud://env/cover/a.jpg',
+      posterUrl: 'cloud://env/cover/a.jpg',
+    });
+    assert.equal(out.posterUrl, '');
   });
 
   it('keeps an existing posterUrl', () => {
@@ -34,7 +42,7 @@ describe('withPosterUrls', () => {
       { _id: '1', coverFileId: 'cloud://c1' },
       { _id: '2', coverFileId: '', posterUrl: '' },
     ]);
-    assert.equal(list[0].posterUrl, 'cloud://c1');
+    assert.equal(list[0].posterUrl, '');
     assert.equal(list[1].posterUrl, '');
   });
 });

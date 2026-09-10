@@ -33,6 +33,46 @@ function describeFailRow(row) {
   return errMsg ? `status=${status} ${errMsg}` : `status=${status}`;
 }
 
+const TEMP_URL_MAX_AGE = 86400;
+const TEMP_URL_BATCH = 50;
+
+async function attachPosterUrls(videos, getTempFileURL) {
+  const list = Array.isArray(videos) ? videos : [];
+  const ids = [];
+  const seen = new Set();
+  for (const video of list) {
+    const id = String((video && video.coverFileId) || '').trim();
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+  const urlById = Object.create(null);
+  if (ids.length && typeof getTempFileURL === 'function') {
+    try {
+      for (let i = 0; i < ids.length; i += TEMP_URL_BATCH) {
+        const chunk = ids.slice(i, i + TEMP_URL_BATCH);
+        const res = await getTempFileURL({
+          fileList: chunk.map((fileID) => ({ fileID, maxAge: TEMP_URL_MAX_AGE })),
+        });
+        const rows = (res && res.fileList) || [];
+        chunk.forEach((fileID, index) => {
+          const url = tempUrlFromFileList(rows, fileID, index);
+          if (url) {
+            urlById[fileID] = url;
+          }
+        });
+      }
+    } catch (_err) {
+      // 列表页不能因封面换链失败整页挂掉
+    }
+  }
+  return list.map((video) => {
+    const id = String((video && video.coverFileId) || '').trim();
+    return Object.assign({}, video, { posterUrl: (id && urlById[id]) || '' });
+  });
+}
+
 async function resolveMediaUrls(ids, getTempFileURL) {
   const videoFileId = String((ids && ids.videoFileId) || '').trim();
   const coverFileId = String((ids && ids.coverFileId) || '').trim();
@@ -40,9 +80,9 @@ async function resolveMediaUrls(ids, getTempFileURL) {
     return { videoUrl: '', posterUrl: '' };
   }
 
-  const fileList = [{ fileID: videoFileId, maxAge: 86400 }];
+  const fileList = [{ fileID: videoFileId, maxAge: TEMP_URL_MAX_AGE }];
   if (coverFileId && coverFileId !== videoFileId) {
-    fileList.push({ fileID: coverFileId, maxAge: 86400 });
+    fileList.push({ fileID: coverFileId, maxAge: TEMP_URL_MAX_AGE });
   }
 
   const res = await getTempFileURL({ fileList });
@@ -60,4 +100,5 @@ async function resolveMediaUrls(ids, getTempFileURL) {
 module.exports = {
   tempUrlFromFileList,
   resolveMediaUrls,
+  attachPosterUrls,
 };
