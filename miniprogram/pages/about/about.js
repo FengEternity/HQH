@@ -1,5 +1,5 @@
 const { getTicket } = require('../../utils/api');
-const release = require('../../data/app-release.json');
+const release = require('../../data/appRelease');
 const {
   buildAboutView,
   clipboardText,

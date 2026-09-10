@@ -1,5 +1,5 @@
 const { admin } = require('../../../utils/api');
-const release = require('../../../data/app-release.json');
+const release = require('../../../data/appRelease');
 const { normalizeDoc, envLabel } = require('../../../utils/appRelease');
 
 Page({

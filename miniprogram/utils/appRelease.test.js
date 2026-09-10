@@ -2,6 +2,8 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   envLabel,
   normalizeDoc,
@@ -11,6 +13,33 @@ const {
   isStaffMode,
   buildAboutView,
 } = require('./appRelease');
+
+describe('release data module', () => {
+  it('ships as a js module, since wx require cannot load .json', () => {
+    const doc = normalizeDoc(require('../data/appRelease'));
+    assert.notEqual(doc.version, '未知');
+    assert.ok(doc.releases.length > 0);
+  });
+
+  it('is never required as .json anywhere under miniprogram', () => {
+    const root = path.join(__dirname, '..');
+    const offenders = [];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.name.endsWith('.js')) {
+          if (/require\([^)]*\.json['"]\)/.test(fs.readFileSync(full, 'utf8'))) {
+            offenders.push(path.relative(root, full));
+          }
+        }
+      }
+    };
+    walk(root);
+    assert.deepEqual(offenders, []);
+  });
+});
 
 describe('envLabel', () => {
   it('maps WeChat envVersion to Chinese labels', () => {

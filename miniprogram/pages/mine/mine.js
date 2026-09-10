@@ -1,4 +1,4 @@
-const release = require('../../data/app-release.json');
+const release = require('../../data/appRelease');
 const { normalizeDoc } = require('../../utils/appRelease');
 
 Page({
