@@ -471,9 +471,11 @@ page {
   border: 1rpx solid transparent;
 }
 
-/* 与 field-input 同灰底；配合 auto-height：空时约一行，随内容增高 */
+/* 与 field-input 同灰底；配合 auto-height：空时约一行，随内容增高。
+   高度必须写成确定值：auto-height 要等原生层在屏量完才写内联高度，
+   写 height: auto 会让量完前那一帧落到组件自带的超大默认高度。 */
 .field-textarea {
-  height: auto;
+  height: 80rpx;
   min-height: 80rpx;
   line-height: 1.45;
   padding: 18rpx 20rpx;
