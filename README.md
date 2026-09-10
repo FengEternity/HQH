@@ -43,7 +43,7 @@
 ## 检索单测（不依赖微信）
 
 ```bash
-node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/cloudReady.test.js miniprogram/constants/tabs.test.js
+node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/coverCrop.test.js miniprogram/utils/cloudReady.test.js miniprogram/constants/tabs.test.js
 ```
 
 ## 手测清单
@@ -57,6 +57,9 @@ node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/cata
 - 无结果时：关键词搜提示换词或按品牌浏览。
 - 运营新增品牌并上架（封面+视频齐全、有简介）后，首页出现该品牌且可搜索到。
 - 播放页展示标题、品牌、型号、标签、简介，并能播放云存储视频（真机/体验版在存储「仅创建者可读写」下也应能播）。
+- 运营选封面进入 16:9 裁剪，确认后首页卡片比例与预览一致，标题不再被容器上下切掉。
+- 只传视频时也会进入裁剪页；取消则不写封面，已有封面更换后取消仍保留旧图。
+- 未重裁的旧封面仍能显示，但非 16:9 图片可能继续被 `aspectFill` 略微裁切。
 
 ## 不要做的事
 

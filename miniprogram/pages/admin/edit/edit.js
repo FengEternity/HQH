@@ -1,9 +1,26 @@
 const { admin } = require('../../../utils/api');
 const { withPosterUrl, planVideoCoverUpload } = require('../../../utils/videoMedia');
 
-function fileExt(filePath, fallback) {
-  const match = String(filePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
-  return (match && match[1]) || fallback;
+function openCoverCrop(src) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(value);
+    };
+    wx.navigateTo({
+      url: `/pages/admin/cover-crop/cover-crop?src=${encodeURIComponent(src)}`,
+      events: {
+        done: (payload) => finish((payload && payload.path) || null),
+        cancel: () => finish(null),
+      },
+      success: (result) => result.eventChannel.emit('init', { src }),
+      fail: () => finish(null),
+    });
+  });
 }
 
 Page({
@@ -79,10 +96,20 @@ Page({
       mediaType: ['image'],
       success: (res) => {
         const filePath = res.tempFiles[0].tempFilePath;
-        this.ensureSaved()
-          .then(() => this.uploadCloudFile('cover', filePath, 'jpg'))
-          .then((fileID) => {
-            this.setData({ coverFileId: fileID, posterUrl: filePath, coverHint: '' });
+        openCoverCrop(filePath)
+          .then((croppedPath) => {
+            if (!croppedPath) {
+              return null;
+            }
+            return this.ensureSaved()
+              .then(() => this.uploadCloudFile('cover', croppedPath, 'jpg'))
+              .then((fileID) => {
+                this.setData({
+                  coverFileId: fileID,
+                  posterUrl: croppedPath,
+                  coverHint: '',
+                });
+              });
           })
           .catch((err) => wx.showToast({ title: err.message || '封面失败', icon: 'none' }));
       },
@@ -122,18 +149,27 @@ Page({
             if (plan.action === 'missing_thumb') {
               return this.persist(true).then(() => 'missing_thumb');
             }
-            return this.uploadCloudFile('cover', plan.path, fileExt(plan.path, 'jpg')).then((coverId) => {
-              this.setData({
-                coverFileId: coverId,
-                posterUrl: plan.path,
-                coverHint: '未选手动封面，已用视频首帧缩略图',
+            return openCoverCrop(plan.path).then((croppedPath) => {
+              if (!croppedPath) {
+                return this.persist(true).then(() => 'crop_cancelled');
+              }
+              return this.uploadCloudFile('cover', croppedPath, 'jpg').then((coverId) => {
+                this.setData({
+                  coverFileId: coverId,
+                  posterUrl: croppedPath,
+                  coverHint: '未选手动封面，已用视频首帧裁剪',
+                });
+                return this.persist(true).then(() => 'cover');
               });
-              return this.persist(true).then(() => 'cover');
             });
           })
           .then((kind) => {
             if (kind === 'missing_thumb') {
               wx.showToast({ title: '未获取到视频缩略图，请手动选封面', icon: 'none' });
+              return;
+            }
+            if (kind === 'crop_cancelled') {
+              wx.showToast({ title: '视频已保存，请手动选择封面', icon: 'none' });
               return;
             }
             if (kind === 'cover') {

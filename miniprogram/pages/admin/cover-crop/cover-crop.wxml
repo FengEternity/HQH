@@ -1,0 +1,35 @@
+<view class="crop-page">
+  <view class="crop-help">拖动调整位置，双指缩放</view>
+  <view class="crop-stage">
+    <view
+      class="crop-frame"
+      bindtouchstart="onTouchStart"
+      catchtouchmove="onTouchMove"
+      bindtouchend="onTouchEnd"
+      bindtouchcancel="onTouchEnd"
+    >
+      <image
+        wx:if="{{src}}"
+        class="crop-img"
+        src="{{src}}"
+        mode="scaleToFill"
+        style="width: {{displayW}}px; height: {{displayH}}px; transform: translate({{offsetX}}px, {{offsetY}}px);"
+      />
+      <view class="crop-mask crop-mask-top"></view>
+      <view class="crop-mask crop-mask-bottom"></view>
+      <view class="crop-mask crop-mask-left"></view>
+      <view class="crop-mask crop-mask-right"></view>
+      <view class="crop-guide crop-guide-v crop-guide-v1"></view>
+      <view class="crop-guide crop-guide-v crop-guide-v2"></view>
+      <view class="crop-guide crop-guide-h crop-guide-h1"></view>
+      <view class="crop-guide crop-guide-h crop-guide-h2"></view>
+      <view class="crop-border"></view>
+    </view>
+  </view>
+  <canvas type="2d" id="cropCanvas" class="crop-canvas"></canvas>
+  <view class="crop-bar">
+    <view class="crop-btn crop-btn-ghost" bindtap="onReset">重置</view>
+    <view class="crop-btn crop-btn-ghost" bindtap="onCancel">取消</view>
+    <view class="crop-btn crop-btn-ok" bindtap="onConfirm">确认</view>
+  </view>
+</view>
