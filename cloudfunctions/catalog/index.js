@@ -12,6 +12,7 @@ const { ensureCollections, runWithCollections } = require('./lib/ensureCollectio
 const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
 const { listHomeCatalog } = require('./lib/listHome');
 const { normalizeVideoKnowledge } = require('./lib/videoKnowledge');
+const { normalizeVideoMedia } = require('./lib/videoMediaMetadata');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -469,6 +470,14 @@ async function upsertVideo(event) {
       : (prevData && prevData.transcriptSegments) || [],
     transcript: hasSegments ? event.transcript : undefined,
   });
+  const mediaInput = {};
+  if (Object.prototype.hasOwnProperty.call(event, 'durationSec')) {
+    mediaInput.durationSec = event.durationSec;
+  }
+  if (Object.prototype.hasOwnProperty.call(event, 'media')) {
+    mediaInput.media = event.media;
+  }
+  const mediaMeta = normalizeVideoMedia(mediaInput, prevData);
   const payload = {
     title,
     intro,
@@ -481,6 +490,8 @@ async function upsertVideo(event) {
     videoFileId: event.videoFileId || (prevData && prevData.videoFileId) || '',
     transcript: knowledge.transcript,
     transcriptSegments: knowledge.transcriptSegments,
+    durationSec: mediaMeta.durationSec,
+    media: mediaMeta.media,
     searchAbstract: event.searchAbstract || (prevData && prevData.searchAbstract) || '',
     entities: event.entities || (prevData && prevData.entities) || {
       models: [],
