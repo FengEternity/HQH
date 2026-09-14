@@ -7,7 +7,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "smoke:sdk": "node --test sdk-smoke.test.js"
   },
   "dependencies": {
     "@cloudbase/node-sdk": "^3.18.3"

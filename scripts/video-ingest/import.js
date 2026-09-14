@@ -16,6 +16,10 @@ const CREDENTIAL_NAMES = {
   secretKey: 'TCB_SECRET_KEY',
   adminPin: 'ADMIN_PIN',
 };
+const DRY_RUN_WARNINGS = [
+  'brandId、coverFileId、videoFileId 为 dry-run 占位符，不是可写入值',
+  'manifest 是 execute 的幂等凭据；请先备份，丢失后不可从零重跑 execute',
+];
 
 function parseArguments(argv) {
   let manifestPath = '';
@@ -81,6 +85,10 @@ function assertCredentials(credentials) {
   if (missing.length > 0) {
     throw new Error(`缺少运行时环境变量：${missing.join('、')}`);
   }
+}
+
+function hasFailures(summary) {
+  return Number(summary.failed || 0) > 0 || Number(summary.rejected || 0) > 0;
 }
 
 function safeError(error, credentials, manifestDirectory) {
@@ -209,10 +217,12 @@ async function importEntry({
   }
 
   try {
+    const previousVideoId = entry.import.draft?.videoId;
     const payload = buildDraftPayload(entry, {
       brandId,
       coverFileId: entry.import.cover.fileId,
       videoFileId: entry.import.video.fileId,
+      videoId: previousVideoId,
     });
     const saved = await callCatalog(app, {
       action: 'upsertVideo',
@@ -227,6 +237,7 @@ async function importEntry({
     entry.import.status = 'failed';
     entry.import.draft = {
       status: 'failed',
+      ...(entry.import.draft?.videoId ? { videoId: entry.import.draft.videoId } : {}),
       error: safeError(error, credentials, manifestDirectory),
     };
     writeManifest(manifestPath, manifest);
@@ -240,8 +251,13 @@ async function executeImport({ manifestPath, credentials, createApp }) {
   const manifestDirectory = path.dirname(absoluteManifestPath);
   const manifest = readManifest(absoluteManifestPath);
   const plan = buildImportPlan({ entries: manifest.entries, manifestDirectory });
-  if (plan.rejected.length > 0) {
-    throw new Error(`有 ${plan.rejected.length} 条未通过本地导入闸门`);
+  if (plan.ready.length === 0) {
+    return {
+      succeeded: 0,
+      failed: 0,
+      rejected: plan.rejected.length,
+      skipped: plan.skipped.length,
+    };
   }
 
   const app = createApp({
@@ -282,6 +298,7 @@ async function executeImport({ manifestPath, credentials, createApp }) {
   return {
     succeeded,
     failed,
+    rejected: plan.rejected.length,
     skipped: plan.skipped.length,
   };
 }
@@ -294,10 +311,11 @@ function createCloudbaseApp(config) {
 function dryRun(manifestPath) {
   const absoluteManifestPath = path.resolve(manifestPath);
   const manifest = readManifest(absoluteManifestPath);
-  return buildImportPlan({
+  const plan = buildImportPlan({
     entries: manifest.entries,
     manifestDirectory: path.dirname(absoluteManifestPath),
   });
+  return { ...plan, warnings: [...DRY_RUN_WARNINGS] };
 }
 
 async function main() {
@@ -311,6 +329,7 @@ async function main() {
           draftCount: plan.ready.length,
           rejectedCount: plan.rejected.length,
           skippedCount: plan.skipped.length,
+          warnings: plan.warnings,
           drafts: plan.ready,
           rejected: plan.rejected,
           skipped: plan.skipped,
@@ -319,7 +338,7 @@ async function main() {
         2,
       )}\n`,
     );
-    if (plan.rejected.length > 0) {
+    if (hasFailures({ rejected: plan.rejected.length })) {
       process.exitCode = 1;
     }
     return;
@@ -331,9 +350,10 @@ async function main() {
     createApp: createCloudbaseApp,
   });
   process.stdout.write(
-    `执行完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条，跳过 ${result.skipped} 条\n`,
+    `执行完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条，` +
+      `拒绝 ${result.rejected} 条，跳过 ${result.skipped} 条\n`,
   );
-  if (result.failed > 0) {
+  if (hasFailures(result)) {
     process.exitCode = 1;
   }
 }
@@ -348,6 +368,7 @@ if (require.main === module) {
 module.exports = {
   dryRun,
   executeImport,
+  hasFailures,
   parseArguments,
   readCredentials,
 };

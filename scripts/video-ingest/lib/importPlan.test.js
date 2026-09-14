@@ -173,3 +173,76 @@ test('已成功 checkpoint 不重复规划上传', (t) => {
     ['uploadVideo', 'upsertVideo'],
   );
 });
+
+test('空品牌名变成清晰 rejected 而不影响同批合法条目', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [readyEntry({ brandName: '  ' }), readyEntry({ sourceKey: 'valid' })],
+    manifestDirectory,
+  });
+
+  assert.equal(plan.ready.length, 1);
+  assert.deepEqual(plan.rejected[0].issues, ['BRAND_NAME_REQUIRED']);
+});
+
+test('空介绍变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [readyEntry({ intro: '  ' })],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['INTRO_REQUIRED']);
+});
+
+test('非数组 tags 变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [readyEntry({ tags: '点测量' })],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['TAGS_INVALID']);
+});
+
+test('空 transcriptSegments 变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [readyEntry({ transcriptSegments: [] })],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['TRANSCRIPT_SEGMENTS_REQUIRED']);
+});
+
+test('非法 transcript segment 变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        transcriptSegments: [{ startSec: 3, endSec: 2, text: '' }],
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['TRANSCRIPT_SEGMENT_INVALID']);
+});
+
+test('已有 draft videoId 的重试 payload 带 id', () => {
+  const payload = buildDraftPayload(
+    readyEntry({
+      import: {
+        draft: { status: 'failed', videoId: 'video-existing' },
+      },
+    }),
+    {
+      brandId: 'brand-1',
+      coverFileId: 'cloud://cover',
+      videoFileId: 'cloud://video',
+      videoId: 'video-existing',
+    },
+  );
+
+  assert.equal(payload.id, 'video-existing');
+});

@@ -37,6 +37,40 @@ function validateEntry(entry, manifestDirectory) {
   if (entry?.introStatus !== 'reviewed') {
     issues.push('INTRO_NOT_REVIEWED');
   }
+  if (!String(entry?.brandName || '').trim()) {
+    issues.push('BRAND_NAME_REQUIRED');
+  }
+  if (!String(entry?.intro || '').trim()) {
+    issues.push('INTRO_REQUIRED');
+  }
+  if (!Array.isArray(entry?.tags)) {
+    issues.push('TAGS_INVALID');
+  }
+  if (!Array.isArray(entry?.transcriptSegments) || entry.transcriptSegments.length === 0) {
+    issues.push('TRANSCRIPT_SEGMENTS_REQUIRED');
+  } else {
+    let previousStartSec = -Infinity;
+    const invalidSegment = entry.transcriptSegments.some((segment) => {
+      if (!segment || typeof segment !== 'object') {
+        return true;
+      }
+      const { startSec, endSec } = segment;
+      const valid =
+        typeof startSec === 'number' &&
+        Number.isFinite(startSec) &&
+        startSec >= 0 &&
+        typeof endSec === 'number' &&
+        Number.isFinite(endSec) &&
+        endSec > startSec &&
+        startSec >= previousStartSec &&
+        String(segment.text || '').trim();
+      previousStartSec = startSec;
+      return !valid;
+    });
+    if (invalidSegment) {
+      issues.push('TRANSCRIPT_SEGMENT_INVALID');
+    }
+  }
 
   const coverPath = resolvePreparedFile(manifestDirectory, entry?.prepared?.cover);
   const mediaPath = resolvePreparedFile(manifestDirectory, entry?.prepared?.media);
@@ -50,7 +84,7 @@ function validateEntry(entry, manifestDirectory) {
 }
 
 function buildDraftPayload(entry, resolved) {
-  return {
+  const payload = {
     title: entry.title,
     intro: entry.intro,
     brandId: resolved.brandId,
@@ -69,6 +103,10 @@ function buildDraftPayload(entry, resolved) {
     },
     transcriptSegments: entry.transcriptSegments.map((segment) => ({ ...segment })),
   };
+  if (resolved.videoId) {
+    payload.id = resolved.videoId;
+  }
+  return payload;
 }
 
 function buildEntryPlan(entry, manifestDirectory) {
@@ -129,6 +167,7 @@ function buildEntryPlan(entry, manifestDirectory) {
       brandId: `brand:${entry.brandName}`,
       coverFileId,
       videoFileId,
+      videoId: entry.import?.draft?.videoId,
     }),
   };
 }

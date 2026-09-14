@@ -4,9 +4,27 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { executeImport, parseArguments } = require('./import');
+const { dryRun, executeImport, hasFailures, parseArguments } = require('./import');
 
-function fixture(t) {
+function manifestEntry(overrides = {}) {
+  return {
+    sourceKey: 'abc',
+    title: '南方点测量',
+    brandName: '南方',
+    intro: '连接仪器后开始测量。',
+    introStatus: 'reviewed',
+    tags: ['点测量'],
+    modelName: '',
+    durationSec: 12.5,
+    media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: true },
+    prepared: { media: 'media/abc.mp4', cover: 'covers/abc.jpg' },
+    transcriptSegments: [{ startSec: 0, endSec: 2, text: '连接仪器' }],
+    transcription: { status: 'ready' },
+    ...overrides,
+  };
+}
+
+function fixture(t, entries = [manifestEntry()]) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-import-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   fs.mkdirSync(path.join(directory, 'media'));
@@ -18,22 +36,7 @@ function fixture(t) {
     manifestPath,
     JSON.stringify({
       version: 1,
-      entries: [
-        {
-          sourceKey: 'abc',
-          title: '南方点测量',
-          brandName: '南方',
-          intro: '连接仪器后开始测量。',
-          introStatus: 'reviewed',
-          tags: ['点测量'],
-          modelName: '',
-          durationSec: 12.5,
-          media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: true },
-          prepared: { media: 'media/abc.mp4', cover: 'covers/abc.jpg' },
-          transcriptSegments: [{ startSec: 0, endSec: 2, text: '连接仪器' }],
-          transcription: { status: 'ready' },
-        },
-      ],
+      entries,
     }),
   );
   return manifestPath;
@@ -187,4 +190,133 @@ test('执行模式缺少任一凭据时在远端调用前停止', async (t) => {
     /缺少运行时环境变量：TCB_SECRET_KEY/,
   );
   assert.equal(created, false);
+});
+
+test('execute 收集 rejected 并继续导入合法条目', async (t) => {
+  const manifestPath = fixture(t, [
+    manifestEntry({ sourceKey: 'rejected', brandName: '' }),
+    manifestEntry(),
+  ]);
+  const calls = [];
+  const app = {
+    callFunction: async ({ data }) => {
+      calls.push(data.action);
+      if (data.action === 'adminLogin') {
+        return { result: { ok: true, ticket: 'ticket-1' } };
+      }
+      if (data.action === 'adminListBrands') {
+        return { result: { ok: true, brands: [{ _id: 'brand-1', name: '南方' }] } };
+      }
+      if (data.action === 'upsertVideo') {
+        return { result: { ok: true, id: 'video-1' } };
+      }
+      throw new Error(`unexpected ${data.action}`);
+    },
+    uploadFile: async ({ cloudPath, fileContent }) => {
+      for await (const chunk of fileContent) {
+        assert.ok(chunk.length > 0);
+      }
+      return { fileID: `cloud://${cloudPath}` };
+    },
+  };
+
+  const result = await executeImport({
+    manifestPath,
+    credentials: credentials(),
+    createApp: () => app,
+  });
+
+  assert.deepEqual(calls, ['adminLogin', 'adminListBrands', 'upsertVideo']);
+  assert.deepEqual(result, { succeeded: 1, failed: 0, rejected: 1, skipped: 0 });
+});
+
+test('已有 draft videoId 的失败重试更新原草稿', async (t) => {
+  const manifestPath = fixture(t, [
+    manifestEntry({
+      import: {
+        status: 'failed',
+        cover: { status: 'success', fileId: 'cloud://cover/abc.jpg' },
+        video: { status: 'success', fileId: 'cloud://video/abc.mp4' },
+        draft: { status: 'failed', videoId: 'video-existing', error: 'timeout' },
+      },
+    }),
+  ]);
+  let upsert;
+  const app = {
+    callFunction: async ({ data }) => {
+      if (data.action === 'adminLogin') {
+        return { result: { ok: true, ticket: 'ticket-1' } };
+      }
+      if (data.action === 'adminListBrands') {
+        return { result: { ok: true, brands: [{ _id: 'brand-1', name: '南方' }] } };
+      }
+      if (data.action === 'upsertVideo') {
+        upsert = data;
+        return { result: { ok: true, id: 'video-existing' } };
+      }
+      throw new Error(`unexpected ${data.action}`);
+    },
+    uploadFile: async () => {
+      throw new Error('不应重复上传');
+    },
+  };
+
+  await executeImport({
+    manifestPath,
+    credentials: credentials(),
+    createApp: () => app,
+  });
+
+  assert.equal(upsert.id, 'video-existing');
+});
+
+test('更新原草稿再次失败时保留 draft videoId', async (t) => {
+  const manifestPath = fixture(t, [
+    manifestEntry({
+      import: {
+        status: 'failed',
+        cover: { status: 'success', fileId: 'cloud://cover/abc.jpg' },
+        video: { status: 'success', fileId: 'cloud://video/abc.mp4' },
+        draft: { status: 'failed', videoId: 'video-existing', error: 'timeout' },
+      },
+    }),
+  ]);
+  const app = {
+    callFunction: async ({ data }) => {
+      if (data.action === 'adminLogin') {
+        return { result: { ok: true, ticket: 'ticket-1' } };
+      }
+      if (data.action === 'adminListBrands') {
+        return { result: { ok: true, brands: [{ _id: 'brand-1', name: '南方' }] } };
+      }
+      return { result: { ok: false, message: '仍然失败' } };
+    },
+    uploadFile: async () => {
+      throw new Error('不应重复上传');
+    },
+  };
+
+  await executeImport({
+    manifestPath,
+    credentials: credentials(),
+    createApp: () => app,
+  });
+
+  const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(saved.entries[0].import.draft.videoId, 'video-existing');
+});
+
+test('dry-run 明确警告占位符和 manifest 幂等凭据', (t) => {
+  const manifestPath = fixture(t);
+  const plan = dryRun(manifestPath);
+
+  assert.deepEqual(plan.warnings, [
+    'brandId、coverFileId、videoFileId 为 dry-run 占位符，不是可写入值',
+    'manifest 是 execute 的幂等凭据；请先备份，丢失后不可从零重跑 execute',
+  ]);
+});
+
+test('汇总含 rejected 时要求非零退出', () => {
+  assert.equal(hasFailures({ failed: 0, rejected: 1 }), true);
+  assert.equal(hasFailures({ failed: 0, rejected: 0 }), false);
 });
