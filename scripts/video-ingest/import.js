@@ -103,13 +103,35 @@ function safeError(error, credentials, manifestDirectory, ticket = '') {
   return message;
 }
 
+// catalog 的 catch-all 把数据库等基础设施故障也回成 ok:false + code:'FAIL'，
+// 这类结果无法判断草稿是否已写入。只有以下确定性业务码才可判定远端未落库。
+const DETERMINISTIC_REJECTION_CODES = new Set([
+  'BAD_INPUT',
+  'UNAUTHORIZED',
+  'BAD_PIN',
+  'NOT_FOUND',
+  'UNKNOWN_ACTION',
+  'CONTENT_REJECTED',
+]);
+
+function isDeterministicRejection(result) {
+  return (
+    Boolean(result) &&
+    typeof result === 'object' &&
+    result.ok === false &&
+    typeof result.code === 'string' &&
+    DETERMINISTIC_REJECTION_CODES.has(result.code)
+  );
+}
+
 async function callCatalog(app, data) {
   const response = await app.callFunction({ name: 'catalog', data });
   const result = response?.result ?? response;
-  if (!result || result.ok !== true) {
-    const error = new Error(result?.message || 'catalog 调用失败');
-    error.code = result?.code || 'CATALOG_CALL_FAILED';
-    error.remoteRejected = true;
+  if (!result || typeof result !== 'object' || result.ok !== true) {
+    const message = typeof result?.message === 'string' ? result.message : '';
+    const error = new Error(message || 'catalog 调用失败');
+    error.code = typeof result?.code === 'string' && result.code ? result.code : 'CATALOG_CALL_FAILED';
+    error.remoteRejected = isDeterministicRejection(result);
     throw error;
   }
   return result;
@@ -243,10 +265,11 @@ async function importEntry({
       ticket,
       ...payload,
     });
-    if (!String(saved.id || '').trim()) {
+    const savedId = typeof saved.id === 'string' ? saved.id.trim() : '';
+    if (!savedId) {
       throw new Error('upsertVideo 成功响应缺少 id');
     }
-    entry.import.draft = { status: 'success', videoId: saved.id };
+    entry.import.draft = { status: 'success', videoId: savedId };
     entry.import.status = 'success';
     persistManifest(manifestPath, manifest);
     return true;

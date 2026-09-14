@@ -143,9 +143,8 @@ test('真实执行先登录和核验品牌，再上传并写入草稿 checkpoint
   });
 });
 
-test('upsert 明确拒绝写 failed 并允许后续自动重试', async (t) => {
-  const manifestPath = fixture(t);
-  const app = {
+function upsertResponseApp(upsertResponse) {
+  return {
     callFunction: async ({ data }) => {
       if (data.action === 'adminLogin') {
         return { result: { ok: true, ticket: 'ticket-1' } };
@@ -154,7 +153,7 @@ test('upsert 明确拒绝写 failed 并允许后续自动重试', async (t) => {
         return { result: { ok: true, brands: [{ _id: 'brand-1', name: '南方' }] } };
       }
       if (data.action === 'upsertVideo') {
-        return { result: { ok: false, code: 'FAIL', message: '写入失败' } };
+        return upsertResponse;
       }
       throw new Error(`unexpected ${data.action}`);
     },
@@ -165,11 +164,15 @@ test('upsert 明确拒绝写 failed 并允许后续自动重试', async (t) => {
       return { fileID: `cloud://${cloudPath}` };
     },
   };
+}
+
+test('upsert 返回确定性 BAD_INPUT 时写 failed 并允许后续重试', async (t) => {
+  const manifestPath = fixture(t);
 
   const result = await executeImport({
     manifestPath,
     credentials: credentials(),
-    createApp: () => app,
+    createApp: () => upsertResponseApp({ result: { ok: false, code: 'BAD_INPUT', message: '写入失败' } }),
   });
 
   assert.equal(result.succeeded, 0);
@@ -179,6 +182,121 @@ test('upsert 明确拒绝写 failed 并允许后续自动重试', async (t) => {
   assert.equal(saved.entries[0].import.draft.status, 'failed');
   assert.equal(saved.entries[0].import.draft.error, '写入失败');
   assert.equal(dryRun(manifestPath).ready.length, 1);
+});
+
+test('业务拒绝码全部写 failed，可修正后重试', async (t) => {
+  for (const code of [
+    'BAD_INPUT',
+    'UNAUTHORIZED',
+    'BAD_PIN',
+    'NOT_FOUND',
+    'UNKNOWN_ACTION',
+    'CONTENT_REJECTED',
+  ]) {
+    const manifestPath = fixture(t);
+    await executeImport({
+      manifestPath,
+      credentials: credentials(),
+      createApp: () => upsertResponseApp({ result: { ok: false, code, message: `拒绝 ${code}` } }),
+    });
+    const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(saved.entries[0].import.draft.status, 'failed', code);
+  }
+});
+
+test('catch-all FAIL 结果不确定，保持 inflight 并阻断自动重试', async (t) => {
+  const manifestPath = fixture(t);
+
+  const result = await executeImport({
+    manifestPath,
+    credentials: credentials(),
+    createApp: () => upsertResponseApp({ result: { ok: false, code: 'FAIL', message: '写入失败' } }),
+  });
+
+  assert.equal(result.failed, 1);
+  const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(saved.entries[0].import.draft.status, 'inflight');
+  const plan = dryRun(manifestPath);
+  assert.equal(plan.ready.length, 0);
+  assert.deepEqual(plan.rejected[0].issues, ['DRAFT_INFLIGHT_REQUIRES_REVIEW']);
+});
+
+test('数据库等未知错误码结果不确定，保持 inflight', async (t) => {
+  for (const code of ['DATABASE_REQUEST_FAILED', 'BRAND_NOT_EMPTY', 'TIMEOUT']) {
+    const manifestPath = fixture(t);
+    await executeImport({
+      manifestPath,
+      credentials: credentials(),
+      createApp: () => upsertResponseApp({ result: { ok: false, code, message: '失败' } }),
+    });
+    const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(saved.entries[0].import.draft.status, 'inflight', code);
+  }
+});
+
+test('缺少响应信封或 ok 非布尔时结果不确定，保持 inflight', async (t) => {
+  for (const upsertResponse of [
+    undefined,
+    null,
+    {},
+    { result: null },
+    { result: {} },
+    { result: { ok: 'false', code: 'BAD_INPUT' } },
+    { result: { ok: 0, code: 'BAD_INPUT' } },
+    { result: { ok: false } },
+  ]) {
+    const manifestPath = fixture(t);
+    await executeImport({
+      manifestPath,
+      credentials: credentials(),
+      createApp: () => upsertResponseApp(upsertResponse),
+    });
+    const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(
+      saved.entries[0].import.draft.status,
+      'inflight',
+      JSON.stringify(upsertResponse ?? null),
+    );
+  }
+});
+
+test('upsert 返回非字符串 id 时不写成功 checkpoint', async (t) => {
+  for (const id of [123, true, { _id: 'video-1' }, ['video-1'], '   ']) {
+    const manifestPath = fixture(t);
+    const result = await executeImport({
+      manifestPath,
+      credentials: credentials(),
+      createApp: () => upsertResponseApp({ result: { ok: true, id } }),
+    });
+    assert.equal(result.succeeded, 0, JSON.stringify(id));
+    const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.equal(saved.entries[0].import.draft.status, 'inflight');
+    assert.equal(saved.entries[0].import.draft.videoId, undefined);
+  }
+});
+
+test('草稿 payload 的 tags 去空白并去重，与云端存储结果一致', async (t) => {
+  const manifestPath = fixture(t, [
+    manifestEntry({ tags: [' 点测量 ', '点测量', '放样', ' 放样'] }),
+  ]);
+  let upsert;
+  const app = upsertResponseApp({ result: { ok: true, id: 'video-1' } });
+  const inner = app.callFunction;
+  app.callFunction = async (request) => {
+    if (request.data.action === 'upsertVideo') {
+      upsert = request.data;
+    }
+    return inner(request);
+  };
+
+  await executeImport({
+    manifestPath,
+    credentials: credentials(),
+    createApp: () => app,
+  });
+
+  assert.deepEqual(upsert.tags, ['点测量', '放样']);
+  assert.deepEqual(dryRun(manifestPath).skipped.length, 1);
 });
 
 test('执行模式缺少任一凭据时在远端调用前停止', async (t) => {

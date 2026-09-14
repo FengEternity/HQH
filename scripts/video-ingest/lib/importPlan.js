@@ -119,13 +119,25 @@ function validateEntry(entry, manifestDirectory) {
   return { issues, coverPath, mediaPath };
 }
 
+// 云函数保存前会 trim 并丢弃空串；此处先归一并去重，dry-run 输出才等于云端最终存储值。
+function normalizeTags(tags) {
+  const normalized = new Set();
+  for (const tag of tags) {
+    const trimmed = String(tag).trim();
+    if (trimmed) {
+      normalized.add(trimmed);
+    }
+  }
+  return [...normalized];
+}
+
 function buildDraftPayload(entry, resolved) {
   const payload = {
     title: entry.title,
     intro: entry.intro,
     brandId: resolved.brandId,
     modelName: entry.modelName || '',
-    tags: [...entry.tags],
+    tags: normalizeTags(entry.tags),
     coverFileId: resolved.coverFileId,
     videoFileId: resolved.videoFileId,
     durationSec: entry.durationSec,

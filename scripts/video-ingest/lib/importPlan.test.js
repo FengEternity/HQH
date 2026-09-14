@@ -119,6 +119,22 @@ test('草稿 payload 只含允许字段且知识派生字段明确留空', () =>
   assert.equal(Object.hasOwn(payload, 'status'), false);
 });
 
+test('草稿 payload 的 tags 去空白并去重，dry-run 与云端存储结果一致', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const entry = readyEntry({ tags: [' 点测量 ', '点测量', '放样', '放样 '] });
+
+  const payload = buildDraftPayload(entry, {
+    brandId: 'brand-1',
+    coverFileId: 'cloud://cover',
+    videoFileId: 'cloud://video',
+  });
+  assert.deepEqual(payload.tags, ['点测量', '放样']);
+
+  const plan = buildImportPlan({ entries: [entry], manifestDirectory });
+  assert.deepEqual(plan.ready[0].draftPayload.tags, ['点测量', '放样']);
+  assert.deepEqual(entry.tags, [' 点测量 ', '点测量', '放样', '放样 ']);
+});
+
 test('导入计划不产生 publishVideo action', (t) => {
   const manifestDirectory = preparedFixture(t);
   const plan = buildImportPlan({
