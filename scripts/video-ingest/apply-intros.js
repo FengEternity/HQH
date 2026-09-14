@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { writeJsonAtomic } = require('./lib/atomicJson');
 const { buildIntroPlan } = require('./lib/intro');
 const content = require('./content.zh-CN.json');
 
@@ -53,12 +54,6 @@ function readReviews(filePath) {
   return payload.reviews;
 }
 
-function writeManifest(manifestPath, manifest) {
-  const temporaryPath = `${manifestPath}.tmp`;
-  fs.writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  fs.renameSync(temporaryPath, manifestPath);
-}
-
 function describeResult(result) {
   const codes = result.issues.map((item) => item.code).join(',');
   const detail = result.action === 'applied' ? `${result.length} 字` : codes;
@@ -83,7 +78,7 @@ function applyIntros({ manifestPath, reviewsPath, dryRun }) {
   }
 
   if (!dryRun) {
-    writeManifest(manifestPath, { ...manifest, entries: plan.entries });
+    writeJsonAtomic(manifestPath, { ...manifest, entries: plan.entries });
   }
 
   return { plan, lines };

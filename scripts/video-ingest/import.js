@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { writeJsonAtomic } = require('./lib/atomicJson');
 const {
   buildDraftPayload,
   buildImportPlan,
@@ -62,11 +63,7 @@ function readManifest(manifestPath) {
 }
 
 function writeManifest(manifestPath, manifest) {
-  const temporaryPath = `${manifestPath}.tmp`;
-  fs.writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  fs.renameSync(temporaryPath, manifestPath);
+  writeJsonAtomic(manifestPath, manifest);
 }
 
 function readCredentials(env = process.env) {

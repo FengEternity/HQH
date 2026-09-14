@@ -189,6 +189,19 @@ test('copy 与 transcode 路径可在同一 output 连续运行两次', () => {
   ]);
 });
 
+test('写出的 manifest 只对属主可读写', () => {
+  const { input, output } = createSingleVideoFixture();
+
+  preprocess({
+    inputDirectory: input,
+    outputDirectory: output,
+    runCommand: createFakeRunner(),
+  });
+
+  const manifestPath = path.join(output, 'manifest.json');
+  assert.equal(fs.statSync(manifestPath).mode & 0o777, 0o600);
+});
+
 test('拒绝输出目录位于输入目录内', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-video-ingest-'));
   const input = path.join(root, 'input');

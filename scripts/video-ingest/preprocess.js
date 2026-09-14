@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+const { writeJsonAtomic } = require('./lib/atomicJson');
 const {
   buildManifestEntry,
   selectCandidates,
@@ -324,9 +325,7 @@ function preprocess({
     entries,
   };
   const manifestPath = path.join(directories.output, 'manifest.json');
-  const temporaryPath = `${manifestPath}.tmp`;
-  fs.writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`);
-  fs.renameSync(temporaryPath, manifestPath);
+  writeJsonAtomic(manifestPath, manifest);
   return manifest;
 }
 
