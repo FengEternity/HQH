@@ -18,8 +18,8 @@
 
 | 期 | 产出 | 问答能否用 |
 | --- | --- | --- |
-| A1 入库 | 云存储文件 + `videos` **草稿**（卡片文案 + 最小媒体元数据） | 只能复述标题/简介/标签 |
-| A2 转写 | 写入 `transcriptSegments`；`transcript` 与 `searchBlob` 由保存时生成 | `video_doc` 可按当前播放秒引用口播 |
+| A1 入库 | 云存储文件 + `videos` **草稿**（占位 intro + 最小媒体元数据） | 只能复述标题/占位简介/标签 |
+| A2 转写 | 写入 `transcriptSegments`；用口播 + **本地**关键帧重写 `intro`；`transcript` / `searchBlob` 保存时生成 | `video_doc` 用 intro 看全片步骤，用分段对齐当前秒 |
 
 C 端仍只看到 `status=published`。本批默认 **不自动上架**；运营在管理端核对封面、品牌、简介后再 `publishVideo`。
 
@@ -35,7 +35,7 @@ C 端仍只看到 `status=published`。本批默认 **不自动上架**；运营
 4. **HEVC 须转码后再上传：** `南方/南方数据导出.mp4`、`南方/南方面测量.mp4`。目标：H.264 + AAC、宽边不超过 1280、`+faststart`。原片保留在本地，不覆盖 Downloads 源文件。
 5. **其余 H.264 片** 可直接上传；封面用 ffmpeg 抽第 1 秒 JPEG（若第 1 秒黑场，改抽第 3 秒）。
 
-入库标题用去扩展名后的文件名（去掉首尾空格，如 `南方手簿有线升级 .mp4` → `南方手簿有线升级`）。简介与标签用附录；**不写** `searchAbstract`、**不写** `entities`。`modelName` 本批多数为空，仅 `南方C10手簿软件升级` 填 `C10`。
+入库标题用去扩展名后的文件名（去掉首尾空格，如 `南方手簿有线升级 .mp4` → `南方手簿有线升级`）。A1 的 intro 与标签用附录占位；**不写** `searchAbstract`、**不写** `entities`。A2 完成后用口播+关键帧**覆盖** intro（见 §3.4）。`modelName` 本批多数为空，仅 `南方C10手簿软件升级` 填 `C10`。
 
 品牌记录：若库中尚无「中海达」「南方」「司南」，入库脚本先 `upsert` 品牌再挂 `brandId`。不在本批创建 `shop_products` 或 `video_shop_links`。
 
@@ -45,7 +45,8 @@ C 端仍只看到 `status=published`。本批默认 **不自动上架**；运营
 
 | 字段 | 职责 |
 | --- | --- |
-| `title` / `intro` / `tags` | 卡片与管理端可见文案；tags 是本批唯一关键词列表 |
+| `title` / `tags` | 卡片与管理端；tags 是本批唯一关键词列表 |
+| `intro` | A1 为占位一句；A2 起是按步骤写的操作说明（§3.4），不是固定长文 |
 | `brandId` | 品牌关联；`brandName` 保存时从 `brands` 冗余过来（现网已有，不改） |
 | `productId` / `modelName` | 可选型号；本批仅 C10 填 `modelName`，不挂 `productId` |
 | `coverFileId` / `videoFileId` | 云存储资产 |
@@ -73,6 +74,20 @@ C 端仍只看到 `status=published`。本批默认 **不自动上架**；运营
 
 不把本地绝对路径、OPENID、ASR 密钥写入集合。不把 `media` 拼进 `searchBlob`。
 
+### 3.4 A2 之后的 intro：按步骤伸缩，不设 300 字起步
+
+口播是证据；intro 是步骤目录。关键帧只在**开发机**抽取（镜头变化或约 5～10 秒一帧），用来看清按钮名，**不上传、不进 git、不注入 `video_doc` 运行时**。封面仍只一张。禁止把关键帧发给云端多模态 API。
+
+写法：从字幕里分出操作步骤，**每步一句**（动作 + 界面要点；口播或关键帧里出现过的名字才能写）。可在句末标大约秒数，方便和分段对齐。口播没有、帧上也看不清的，不编。
+
+篇幅随内容变，不按「300～800 字」灌：
+
+- 短片两三个动作 → 几十字到一百多字是正常的（本批大量 40～70 秒升级/导入片走这条）
+- 步骤多的长片 → 句子随步骤增加
+- **上限 400 字**：再多的细节只留在 `transcriptSegments`，让问答按当前秒去取，不把播放页简介写成说明书
+
+A1 附录占位在 A2 成功后必须被这篇步骤说明覆盖。ASR 失败则保留占位 intro，不强行写长文。
+
 实现时改 `upsertVideo`：在 `buildSearchBlob` 之前用分段生成 `transcript`；本批入库脚本不传 `searchAbstract` / `entities`（走现网空默认）。管理端保存若未带这两项，继续保留库中旧值（兼容已有记录），**新草稿**不得被脚本写成摘要/entities 副本。
 
 ## 4. 信息流
@@ -86,7 +101,9 @@ Downloads/视频合集
   → 管理端人工核对 → publishVideo
 
 A2（可晚于上架）：
-  本地抽音频 → ASR → 规范化 segments → upsertVideo 只带 transcriptSegments
+  本地抽音频 → ASR → 规范化 segments
+  → 本地抽关键帧（不上传）→ 按步骤写 intro 覆盖占位
+  → upsertVideo 带 transcriptSegments + 新 intro
   → 服务端生成 transcript 并重建 searchBlob
 ```
 
@@ -96,7 +113,7 @@ ASR 在开发机跑，不进云函数。模型文件不进仓库。默认引擎�
 
 播放页问答（其它分支）使用方式（本分支只保证字段就绪）：
 
-- 注入当前片 `title` / `intro` / `tags` / `brandName` / `modelName`；`searchAbstract` 为空则不注入
+- 注入当前片 `title` / `intro`（步骤说明，可短可长） / `tags` / `brandName` / `modelName`；`searchAbstract` 为空则不注入；不注入关键帧图片
 - 若有 `transcriptSegments`：用请求里的 `currentTimeSec`（缺省当 0）取重叠区间 **[t-15s, t+15s]** 的段落，上限约 800 字；没有进度则取片头 60 秒内段落
 - 仍遵守 `video_doc`：不读其它 `videoId` 的转写
 
@@ -117,13 +134,16 @@ ASR 在开发机跑，不进云函数。模型文件不进仓库。默认引擎�
 
 - 有音轨的入库片能生成合法 `transcriptSegments`，时间落在 `[0, durationSec]`
 - 同记录 `transcript` 等于分段 `text` 换行拼接，无第三份手写全文
-- 抽检：任意一条「点测量」转写含测量相关词，而不是空串或纯噪声
-- 无音轨或 ASR 失败：记录保持可播放草稿/上架态，不写假字幕
+- A2 成功后 intro 已覆盖附录占位，且能按步骤点名片中出现过的操作；字数随步骤数变化，**不**以满 300 字为验收
+- 抽检：任意一条「点测量」转写含测量相关词；对应 intro 短于 400 字
+- 无音轨或 ASR 失败：记录保持可播放草稿/上架态，不写假字幕，intro 可仍为占位
+- 仓库与云存储不出现「除封面外」的关键帧文件清单作为问答素材
 
 **不做**
 
 - `search` / `agent` 云函数与播放页对话 UI
-- 把 mp4/帧送给视频理解 API
+- 把 mp4/关键帧送给云端视频理解 API；运行时 `video_doc` 带图
+- 把 intro 写成固定 300～800 字散文
 - 云函数内实时 ASR
 - 本批商品关联、自动上架、向量库 `search_chunks`
 - 按播放进度 seek 到章节（`currentTimeSec` 只作文本上下文）
@@ -139,10 +159,11 @@ ASR 在开发机跑，不进云函数。模型文件不进仓库。默认引擎�
 6. A2 默认 `faster-whisper` + `medium` + `language=zh`。
 7. 事实源：卡片文案、fileId、`brandId`、分段字幕、最小 `media`。`searchBlob` / `transcript` / `brandName` 为派生。
 8. 本批不填 `searchAbstract` 与 `entities`；动作类词只进 `tags`。
+9. A2 用口播 + 本地关键帧重写 intro：每步一句，篇幅随步骤数变；上限 400 字；帧不外发、不入库（封面除外）。
 
-## 附录：运营草案（A1 只写 intro / tags）
+## 附录：运营草案（A1 占位 intro / tags）
 
-简介可在管理端改；A1 用下列中文短句，避免空 intro 导致无法保存。
+仅保证保存闸门；A2 成功后必须换成 §3.4 的步骤说明，不要把本表当问答知识库。
 
 | 品牌 | 标题 | tags | intro |
 | --- | --- | --- | --- |
