@@ -91,9 +91,9 @@ function hasFailures(summary) {
   return Number(summary.failed || 0) > 0 || Number(summary.rejected || 0) > 0;
 }
 
-function safeError(error, credentials, manifestDirectory) {
+function safeError(error, credentials, manifestDirectory, ticket = '') {
   let message = String(error?.message || error || '未知错误');
-  for (const value of Object.values(credentials)) {
+  for (const value of [...Object.values(credentials), ticket]) {
     if (value) {
       message = message.split(value).join('[REDACTED]');
     }
@@ -124,6 +124,7 @@ async function uploadCheckpoint({
   manifestPath,
   credentials,
   manifestDirectory,
+  ticket,
 }) {
   try {
     const result = await app.uploadFile({
@@ -140,7 +141,7 @@ async function uploadCheckpoint({
     entry.import.status = 'failed';
     entry.import[checkpoint] = {
       status: 'failed',
-      error: safeError(error, credentials, manifestDirectory),
+      error: safeError(error, credentials, manifestDirectory, ticket),
     };
     writeManifest(manifestPath, manifest);
     return false;
@@ -194,6 +195,7 @@ async function importEntry({
       manifestPath,
       credentials,
       manifestDirectory,
+      ticket,
     });
     if (!uploaded) {
       return false;
@@ -210,20 +212,27 @@ async function importEntry({
       manifestPath,
       credentials,
       manifestDirectory,
+      ticket,
     });
     if (!uploaded) {
       return false;
     }
   }
 
+  const previousVideoId = entry.import.draft?.videoId;
+  const payload = buildDraftPayload(entry, {
+    brandId,
+    coverFileId: entry.import.cover.fileId,
+    videoFileId: entry.import.video.fileId,
+    videoId: previousVideoId,
+  });
+  entry.import.draft = {
+    status: 'inflight',
+    ...(previousVideoId ? { videoId: previousVideoId } : {}),
+  };
+  writeManifest(manifestPath, manifest);
+
   try {
-    const previousVideoId = entry.import.draft?.videoId;
-    const payload = buildDraftPayload(entry, {
-      brandId,
-      coverFileId: entry.import.cover.fileId,
-      videoFileId: entry.import.video.fileId,
-      videoId: previousVideoId,
-    });
     const saved = await callCatalog(app, {
       action: 'upsertVideo',
       ticket,
@@ -236,9 +245,9 @@ async function importEntry({
   } catch (error) {
     entry.import.status = 'failed';
     entry.import.draft = {
-      status: 'failed',
+      status: 'inflight',
       ...(entry.import.draft?.videoId ? { videoId: entry.import.draft.videoId } : {}),
-      error: safeError(error, credentials, manifestDirectory),
+      error: safeError(error, credentials, manifestDirectory, ticket),
     };
     writeManifest(manifestPath, manifest);
     return false;

@@ -37,6 +37,9 @@ function validateEntry(entry, manifestDirectory) {
   if (entry?.introStatus !== 'reviewed') {
     issues.push('INTRO_NOT_REVIEWED');
   }
+  if (!String(entry?.title || '').trim()) {
+    issues.push('TITLE_REQUIRED');
+  }
   if (!String(entry?.brandName || '').trim()) {
     issues.push('BRAND_NAME_REQUIRED');
   }
@@ -45,6 +48,31 @@ function validateEntry(entry, manifestDirectory) {
   }
   if (!Array.isArray(entry?.tags)) {
     issues.push('TAGS_INVALID');
+  }
+  if (
+    typeof entry?.durationSec !== 'number' ||
+    !Number.isFinite(entry.durationSec) ||
+    entry.durationSec < 0
+  ) {
+    issues.push('DURATION_INVALID');
+  }
+  const media = entry?.media;
+  if (!media || typeof media !== 'object' || Array.isArray(media)) {
+    issues.push('MEDIA_INVALID');
+  } else {
+    const allowedFields = new Set(['videoCodec', 'audioCodec', 'hasAudio']);
+    if (Object.keys(media).some((field) => !allowedFields.has(field))) {
+      issues.push('MEDIA_FIELDS_INVALID');
+    }
+    if (typeof media.videoCodec !== 'string') {
+      issues.push('VIDEO_CODEC_INVALID');
+    }
+    if (typeof media.audioCodec !== 'string') {
+      issues.push('AUDIO_CODEC_INVALID');
+    }
+    if (typeof media.hasAudio !== 'boolean') {
+      issues.push('HAS_AUDIO_INVALID');
+    }
   }
   if (!Array.isArray(entry?.transcriptSegments) || entry.transcriptSegments.length === 0) {
     issues.push('TRANSCRIPT_SEGMENTS_REQUIRED');
@@ -70,6 +98,9 @@ function validateEntry(entry, manifestDirectory) {
     if (invalidSegment) {
       issues.push('TRANSCRIPT_SEGMENT_INVALID');
     }
+  }
+  if (entry?.import?.draft?.status === 'inflight' && !entry.import.draft.videoId) {
+    issues.push('DRAFT_INFLIGHT_REQUIRES_REVIEW');
   }
 
   const coverPath = resolvePreparedFile(manifestDirectory, entry?.prepared?.cover);

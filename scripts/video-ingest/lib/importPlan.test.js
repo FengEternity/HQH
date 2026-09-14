@@ -246,3 +246,136 @@ test('已有 draft videoId 的重试 payload 带 id', () => {
 
   assert.equal(payload.id, 'video-existing');
 });
+
+test('空标题变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [readyEntry({ title: '  ' })],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['TITLE_REQUIRED']);
+});
+
+test('非法 durationSec 变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+
+  for (const durationSec of [Number.NaN, Number.POSITIVE_INFINITY, -0.1, '12']) {
+    const plan = buildImportPlan({
+      entries: [readyEntry({ durationSec })],
+      manifestDirectory,
+    });
+    assert.deepEqual(plan.rejected[0].issues, ['DURATION_INVALID']);
+  }
+});
+
+test('media 非对象变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+
+  for (const media of [null, [], 'h264']) {
+    const plan = buildImportPlan({
+      entries: [readyEntry({ media })],
+      manifestDirectory,
+    });
+    assert.deepEqual(plan.rejected[0].issues, ['MEDIA_INVALID']);
+  }
+});
+
+test('media 出现额外字段变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        media: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          hasAudio: true,
+          width: 1280,
+        },
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['MEDIA_FIELDS_INVALID']);
+});
+
+test('media codec 非字符串变成对应 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const videoPlan = buildImportPlan({
+    entries: [
+      readyEntry({
+        media: { videoCodec: 264, audioCodec: 'aac', hasAudio: true },
+      }),
+    ],
+    manifestDirectory,
+  });
+  const audioPlan = buildImportPlan({
+    entries: [
+      readyEntry({
+        media: { videoCodec: 'h264', audioCodec: null, hasAudio: true },
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(videoPlan.rejected[0].issues, ['VIDEO_CODEC_INVALID']);
+  assert.deepEqual(audioPlan.rejected[0].issues, ['AUDIO_CODEC_INVALID']);
+});
+
+test('media hasAudio 非布尔变成清晰 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: 1 },
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['HAS_AUDIO_INVALID']);
+});
+
+test('无 videoId 的 inflight 草稿拒绝自动重试', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        import: {
+          status: 'failed',
+          cover: { status: 'success', fileId: 'cloud://cover' },
+          video: { status: 'success', fileId: 'cloud://video' },
+          draft: { status: 'inflight' },
+        },
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.equal(plan.ready.length, 0);
+  assert.deepEqual(plan.rejected[0].issues, ['DRAFT_INFLIGHT_REQUIRES_REVIEW']);
+});
+
+test('有 videoId 的 inflight 草稿允许幂等更新', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        import: {
+          status: 'failed',
+          cover: { status: 'success', fileId: 'cloud://cover' },
+          video: { status: 'success', fileId: 'cloud://video' },
+          draft: { status: 'inflight', videoId: 'video-existing' },
+        },
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(
+    plan.ready[0].actions.map((action) => action.type),
+    ['upsertVideo'],
+  );
+  assert.equal(plan.ready[0].draftPayload.id, 'video-existing');
+});

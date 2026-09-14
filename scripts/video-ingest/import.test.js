@@ -137,7 +137,7 @@ test('真实执行先登录和核验品牌，再上传并写入草稿 checkpoint
   });
 });
 
-test('失败 checkpoint 保留错误状态且不声称成功', async (t) => {
+test('upsert 失败保留 inflight 状态且不声称成功', async (t) => {
   const manifestPath = fixture(t);
   const app = {
     callFunction: async ({ data }) => {
@@ -170,7 +170,7 @@ test('失败 checkpoint 保留错误状态且不声称成功', async (t) => {
   assert.equal(result.failed, 1);
   const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert.equal(saved.entries[0].import.status, 'failed');
-  assert.equal(saved.entries[0].import.draft.status, 'failed');
+  assert.equal(saved.entries[0].import.draft.status, 'inflight');
   assert.equal(saved.entries[0].import.draft.error, '写入失败');
 });
 
@@ -319,4 +319,69 @@ test('dry-run 明确警告占位符和 manifest 幂等凭据', (t) => {
 test('汇总含 rejected 时要求非零退出', () => {
   assert.equal(hasFailures({ failed: 0, rejected: 1 }), true);
   assert.equal(hasFailures({ failed: 0, rejected: 0 }), false);
+});
+
+test('调用 upsertVideo 前先落盘 inflight checkpoint', async (t) => {
+  const manifestPath = fixture(t);
+  let observedDraftStatus;
+  const app = {
+    callFunction: async ({ data }) => {
+      if (data.action === 'adminLogin') {
+        return { result: { ok: true, ticket: 'ticket-1' } };
+      }
+      if (data.action === 'adminListBrands') {
+        return { result: { ok: true, brands: [{ _id: 'brand-1', name: '南方' }] } };
+      }
+      const snapshot = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      observedDraftStatus = snapshot.entries[0].import.draft?.status;
+      return { result: { ok: true, id: 'video-1' } };
+    },
+    uploadFile: async ({ cloudPath, fileContent }) => {
+      for await (const chunk of fileContent) {
+        assert.ok(chunk.length > 0);
+      }
+      return { fileID: `cloud://${cloudPath}` };
+    },
+  };
+
+  await executeImport({
+    manifestPath,
+    credentials: credentials(),
+    createApp: () => app,
+  });
+  assert.equal(observedDraftStatus, 'inflight');
+});
+
+test('upsert 超时错误不向 manifest 泄漏 adminLogin ticket', async (t) => {
+  const manifestPath = fixture(t);
+  const app = {
+    callFunction: async ({ data }) => {
+      if (data.action === 'adminLogin') {
+        return { result: { ok: true, ticket: 'ticket-runtime-secret' } };
+      }
+      if (data.action === 'adminListBrands') {
+        return { result: { ok: true, brands: [{ _id: 'brand-1', name: '南方' }] } };
+      }
+      throw new Error('请求 ticket-runtime-secret 超时');
+    },
+    uploadFile: async ({ cloudPath, fileContent }) => {
+      for await (const chunk of fileContent) {
+        assert.ok(chunk.length > 0);
+      }
+      return { fileID: `cloud://${cloudPath}` };
+    },
+  };
+
+  const result = await executeImport({
+    manifestPath,
+    credentials: credentials(),
+    createApp: () => app,
+  });
+
+  assert.equal(result.succeeded, 0);
+  const savedText = fs.readFileSync(manifestPath, 'utf8');
+  assert.equal(savedText.includes('ticket-runtime-secret'), false);
+  const saved = JSON.parse(savedText);
+  assert.equal(saved.entries[0].import.draft.status, 'inflight');
+  assert.equal(saved.entries[0].import.draft.error, '请求 [REDACTED] 超时');
 });
