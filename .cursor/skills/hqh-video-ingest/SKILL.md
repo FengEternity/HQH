@@ -1,51 +1,25 @@
 ---
 name: hqh-video-ingest
-description: 指导 HQH 仓库中的本地讲解视频批量预处理、ASR 转写、步骤 intro 审核及 CloudBase draft 导入。适用于用户要求批量处理本地视频、生成问答资料或触发视频草稿入库时。
+description: Use when preprocessing and importing local survey-instrument videos into the HQH videos collection for search and video_doc Q&A
 ---
 
 # HQH 讲解视频入库
 
-## 开始前
+## 权威入口
 
 先读取并遵循：
 
-- `scripts/video-ingest/README.md`：命令、凭据、幂等和失败恢复。
+- `scripts/video-ingest/README.md`：所有具体命令、凭据、幂等和失败恢复的唯一来源。
 - `docs/superpowers/specs/2026-09-14-video-kb-ingest-asr-design.md`：数据契约、隐私边界和验收标准。
 
-令 `INPUT_DIR` 指向用户明确提供的本地视频目录；运行产物只写入已忽略的 `.video-ingest/prepared`。
+不要在 skill 中推断或重写命令；执行时以 README 当前内容为准。
 
-## 命令顺序
+## 流程判断
 
-按顺序执行，不跳步：
-
-```bash
-npm ci --ignore-scripts --prefix scripts/video-ingest
-
-node scripts/video-ingest/preprocess.js \
-  --input "$INPUT_DIR" \
-  --output .video-ingest/prepared
-
-.video-ingest/venv/bin/python scripts/video-ingest/transcribe.py \
-  --manifest .video-ingest/prepared/manifest.json \
-  --model medium \
-  --language zh
-
-node scripts/video-ingest/apply-intros.js \
-  --manifest .video-ingest/prepared/manifest.json \
-  --reviews .video-ingest/prepared/intros.review.json
-
-node scripts/video-ingest/import.js \
-  --manifest .video-ingest/prepared/manifest.json \
-  --dry-run
-```
-
-仅在 README 的凭据、目标环境、部署版本、导入闸门和 manifest 备份全部确认后运行：
-
-```bash
-node scripts/video-ingest/import.js \
-  --manifest .video-ingest/prepared/manifest.json \
-  --execute
-```
+1. 确认用户提供的本地视频目录，并按 README 完成本地依赖与 ASR 环境初始化。
+2. 按 README 依次完成预处理、ASR、步骤 intro 审核应用和 dry-run。
+3. 检查 manifest、dry-run 计划及下列硬停止条件。
+4. 只有 README 规定的凭据、目标环境、部署版本、导入闸门和 manifest 备份全部确认后，才允许执行 CloudBase 草稿导入。
 
 ## 硬停止条件
 

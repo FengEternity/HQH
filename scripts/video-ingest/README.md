@@ -8,6 +8,43 @@ npm ci --ignore-scripts --prefix scripts/video-ingest
 
 当前 lock 固定 `@cloudbase/node-sdk 3.18.3`。截至本次验证，`npm ci` 的依赖审计报告为 **1 个 moderate、4 个 high** 传递依赖风险；不要据此声称依赖无漏洞，也不要盲目运行可能引入破坏性变更的 `npm audit fix --force`。该脚本只供受控本机运营使用，每次 `--execute` 前都应重新评估风险，并优先验证可用的 SDK 升级。
 
+## 本地准备流程
+
+令 `INPUT_DIR` 指向用户明确提供的本地视频目录。预处理输出必须留在已忽略的 `.video-ingest/prepared`：
+
+```bash
+node scripts/video-ingest/preprocess.js \
+  --input "$INPUT_DIR" \
+  --output .video-ingest/prepared
+```
+
+首次运行 ASR 时，创建独立虚拟环境并在该环境安装依赖：
+
+```bash
+python3 -m venv .video-ingest/venv
+.video-ingest/venv/bin/pip install \
+  -r scripts/video-ingest/requirements-asr.txt
+```
+
+后续转写统一使用该虚拟环境；已为 `ready` 的条目默认跳过：
+
+```bash
+.video-ingest/venv/bin/python scripts/video-ingest/transcribe.py \
+  --manifest .video-ingest/prepared/manifest.json \
+  --model medium \
+  --language zh
+```
+
+人工或 agent 根据字幕与仅限本地查看的关键帧完成 `intros.review.json` 后，应用审核稿：
+
+```bash
+node scripts/video-ingest/apply-intros.js \
+  --manifest .video-ingest/prepared/manifest.json \
+  --reviews .video-ingest/prepared/intros.review.json
+```
+
+然后按下文先执行 import dry-run；只有所有安全与导入闸门都满足后，才可执行草稿导入。
+
 ## 安全边界
 
 - 无云端凭据时，可以运行 `preprocess`、`transcribe`、`apply-intros` 和 `import --dry-run`。
