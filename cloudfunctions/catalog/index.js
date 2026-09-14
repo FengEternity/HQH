@@ -11,6 +11,7 @@ const {
 const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
 const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
 const { listHomeCatalog } = require('./lib/listHome');
+const { normalizeVideoKnowledge } = require('./lib/videoKnowledge');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -461,6 +462,13 @@ async function upsertVideo(event) {
         .map((tag) => tag.trim())
         .filter(Boolean);
   const prevData = event.id ? (await db.collection('videos').doc(event.id).get()).data : null;
+  const hasSegments = Object.prototype.hasOwnProperty.call(event, 'transcriptSegments');
+  const knowledge = normalizeVideoKnowledge({
+    transcriptSegments: hasSegments
+      ? event.transcriptSegments
+      : (prevData && prevData.transcriptSegments) || [],
+    transcript: hasSegments ? event.transcript : undefined,
+  });
   const payload = {
     title,
     intro,
@@ -471,8 +479,8 @@ async function upsertVideo(event) {
     tags,
     coverFileId: event.coverFileId || (prevData && prevData.coverFileId) || '',
     videoFileId: event.videoFileId || (prevData && prevData.videoFileId) || '',
-    transcript: event.transcript || (prevData && prevData.transcript) || '',
-    transcriptSegments: event.transcriptSegments || (prevData && prevData.transcriptSegments) || [],
+    transcript: knowledge.transcript,
+    transcriptSegments: knowledge.transcriptSegments,
     searchAbstract: event.searchAbstract || (prevData && prevData.searchAbstract) || '',
     entities: event.entities || (prevData && prevData.entities) || {
       models: [],
