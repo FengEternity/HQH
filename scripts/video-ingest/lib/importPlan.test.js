@@ -379,3 +379,25 @@ test('有 videoId 的 inflight 草稿允许幂等更新', (t) => {
   );
   assert.equal(plan.ready[0].draftPayload.id, 'video-existing');
 });
+
+test('tags 含非空字符串以外元素时 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+
+  for (const tags of [['点测量', {}], ['点测量', '  ']]) {
+    const plan = buildImportPlan({
+      entries: [readyEntry({ tags })],
+      manifestDirectory,
+    });
+    assert.deepEqual(plan.rejected[0].issues, ['TAG_ELEMENTS_INVALID']);
+  }
+});
+
+test('modelName 非字符串时 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [readyEntry({ modelName: { name: 'C10' } })],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['MODEL_NAME_INVALID']);
+});

@@ -48,6 +48,11 @@ function validateEntry(entry, manifestDirectory) {
   }
   if (!Array.isArray(entry?.tags)) {
     issues.push('TAGS_INVALID');
+  } else if (entry.tags.some((tag) => typeof tag !== 'string' || !tag.trim())) {
+    issues.push('TAG_ELEMENTS_INVALID');
+  }
+  if (typeof entry?.modelName !== 'string') {
+    issues.push('MODEL_NAME_INVALID');
   }
   if (
     typeof entry?.durationSec !== 'number' ||

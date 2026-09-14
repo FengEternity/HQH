@@ -109,6 +109,7 @@ async function callCatalog(app, data) {
   if (!result || result.ok !== true) {
     const error = new Error(result?.message || 'catalog 调用失败');
     error.code = result?.code || 'CATALOG_CALL_FAILED';
+    error.remoteRejected = true;
     throw error;
   }
   return result;
@@ -125,6 +126,7 @@ async function uploadCheckpoint({
   credentials,
   manifestDirectory,
   ticket,
+  persistManifest,
 }) {
   try {
     const result = await app.uploadFile({
@@ -135,7 +137,7 @@ async function uploadCheckpoint({
       throw new Error(`上传 ${checkpoint} 未返回 fileID`);
     }
     entry.import[checkpoint] = { status: 'success', fileId: result.fileID };
-    writeManifest(manifestPath, manifest);
+    persistManifest(manifestPath, manifest);
     return true;
   } catch (error) {
     entry.import.status = 'failed';
@@ -143,7 +145,7 @@ async function uploadCheckpoint({
       status: 'failed',
       error: safeError(error, credentials, manifestDirectory, ticket),
     };
-    writeManifest(manifestPath, manifest);
+    persistManifest(manifestPath, manifest);
     return false;
   }
 }
@@ -178,6 +180,7 @@ async function importEntry({
   manifestPath,
   credentials,
   manifestDirectory,
+  persistManifest,
 }) {
   entry.import = entry.import || { status: 'pending' };
   entry.import.status = 'pending';
@@ -196,6 +199,7 @@ async function importEntry({
       credentials,
       manifestDirectory,
       ticket,
+      persistManifest,
     });
     if (!uploaded) {
       return false;
@@ -213,6 +217,7 @@ async function importEntry({
       credentials,
       manifestDirectory,
       ticket,
+      persistManifest,
     });
     if (!uploaded) {
       return false;
@@ -230,7 +235,7 @@ async function importEntry({
     status: 'inflight',
     ...(previousVideoId ? { videoId: previousVideoId } : {}),
   };
-  writeManifest(manifestPath, manifest);
+  persistManifest(manifestPath, manifest);
 
   try {
     const saved = await callCatalog(app, {
@@ -238,23 +243,32 @@ async function importEntry({
       ticket,
       ...payload,
     });
+    if (!String(saved.id || '').trim()) {
+      throw new Error('upsertVideo 成功响应缺少 id');
+    }
     entry.import.draft = { status: 'success', videoId: saved.id };
     entry.import.status = 'success';
-    writeManifest(manifestPath, manifest);
+    persistManifest(manifestPath, manifest);
     return true;
   } catch (error) {
     entry.import.status = 'failed';
     entry.import.draft = {
-      status: 'inflight',
+      status: error.remoteRejected ? 'failed' : 'inflight',
       ...(entry.import.draft?.videoId ? { videoId: entry.import.draft.videoId } : {}),
       error: safeError(error, credentials, manifestDirectory, ticket),
     };
-    writeManifest(manifestPath, manifest);
+    persistManifest(manifestPath, manifest);
     return false;
   }
 }
 
-async function executeImport({ manifestPath, credentials, createApp }) {
+async function executeImport({
+  manifestPath,
+  credentials,
+  createApp,
+  persistManifest = writeManifest,
+  runtime = {},
+}) {
   assertCredentials(credentials);
   const absoluteManifestPath = path.resolve(manifestPath);
   const manifestDirectory = path.dirname(absoluteManifestPath);
@@ -278,6 +292,7 @@ async function executeImport({ manifestPath, credentials, createApp }) {
     action: 'adminLogin',
     pin: credentials.adminPin,
   });
+  runtime.ticket = String(login.ticket || '');
   const brandNames = [...new Set(plan.ready.map((item) => item.brandName))].sort((left, right) =>
     left.localeCompare(right, 'zh-CN'),
   );
@@ -296,6 +311,7 @@ async function executeImport({ manifestPath, credentials, createApp }) {
       manifestPath: absoluteManifestPath,
       credentials,
       manifestDirectory,
+      persistManifest,
     });
     if (success) {
       succeeded += 1;
@@ -327,50 +343,65 @@ function dryRun(manifestPath) {
   return { ...plan, warnings: [...DRY_RUN_WARNINGS] };
 }
 
-async function main() {
-  const options = parseArguments(process.argv.slice(2));
-  if (!options.execute) {
-    const plan = dryRun(options.manifestPath);
-    process.stdout.write(
-      `${JSON.stringify(
-        {
-          mode: 'dry-run',
-          draftCount: plan.ready.length,
-          rejectedCount: plan.rejected.length,
-          skippedCount: plan.skipped.length,
-          warnings: plan.warnings,
-          drafts: plan.ready,
-          rejected: plan.rejected,
-          skipped: plan.skipped,
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    if (hasFailures({ rejected: plan.rejected.length })) {
-      process.exitCode = 1;
-    }
-    return;
-  }
+async function runCli({
+  argv = process.argv.slice(2),
+  env = process.env,
+  createApp = createCloudbaseApp,
+  persistManifest = writeManifest,
+  stdout = process.stdout,
+  stderr = process.stderr,
+} = {}) {
+  const credentials = readCredentials(env);
+  const runtime = { ticket: '' };
+  let manifestDirectory = process.cwd();
 
-  const result = await executeImport({
-    manifestPath: options.manifestPath,
-    credentials: readCredentials(),
-    createApp: createCloudbaseApp,
-  });
-  process.stdout.write(
-    `执行完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条，` +
-      `拒绝 ${result.rejected} 条，跳过 ${result.skipped} 条\n`,
-  );
-  if (hasFailures(result)) {
-    process.exitCode = 1;
+  try {
+    const options = parseArguments(argv);
+    manifestDirectory = path.dirname(path.resolve(options.manifestPath));
+    if (!options.execute) {
+      const plan = dryRun(options.manifestPath);
+      stdout.write(
+        `${JSON.stringify(
+          {
+            mode: 'dry-run',
+            draftCount: plan.ready.length,
+            rejectedCount: plan.rejected.length,
+            skippedCount: plan.skipped.length,
+            warnings: plan.warnings,
+            drafts: plan.ready,
+            rejected: plan.rejected,
+            skipped: plan.skipped,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      return hasFailures({ rejected: plan.rejected.length }) ? 1 : 0;
+    }
+
+    const result = await executeImport({
+      manifestPath: options.manifestPath,
+      credentials,
+      createApp,
+      persistManifest,
+      runtime,
+    });
+    stdout.write(
+      `执行完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条，` +
+        `拒绝 ${result.rejected} 条，跳过 ${result.skipped} 条\n`,
+    );
+    return hasFailures(result) ? 1 : 0;
+  } catch (error) {
+    stderr.write(
+      `${safeError(error, credentials, manifestDirectory, runtime.ticket)}\n`,
+    );
+    return 1;
   }
 }
 
 if (require.main === module) {
-  main().catch((error) => {
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = 1;
+  runCli().then((exitCode) => {
+    process.exitCode = exitCode;
   });
 }
 
@@ -380,4 +411,5 @@ module.exports = {
   hasFailures,
   parseArguments,
   readCredentials,
+  runCli,
 };

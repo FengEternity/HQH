@@ -4,7 +4,13 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { dryRun, executeImport, hasFailures, parseArguments } = require('./import');
+const {
+  dryRun,
+  executeImport,
+  hasFailures,
+  parseArguments,
+  runCli,
+} = require('./import');
 
 function manifestEntry(overrides = {}) {
   return {
@@ -137,7 +143,7 @@ test('真实执行先登录和核验品牌，再上传并写入草稿 checkpoint
   });
 });
 
-test('upsert 失败保留 inflight 状态且不声称成功', async (t) => {
+test('upsert 明确拒绝写 failed 并允许后续自动重试', async (t) => {
   const manifestPath = fixture(t);
   const app = {
     callFunction: async ({ data }) => {
@@ -170,8 +176,9 @@ test('upsert 失败保留 inflight 状态且不声称成功', async (t) => {
   assert.equal(result.failed, 1);
   const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert.equal(saved.entries[0].import.status, 'failed');
-  assert.equal(saved.entries[0].import.draft.status, 'inflight');
+  assert.equal(saved.entries[0].import.draft.status, 'failed');
   assert.equal(saved.entries[0].import.draft.error, '写入失败');
+  assert.equal(dryRun(manifestPath).ready.length, 1);
 });
 
 test('执行模式缺少任一凭据时在远端调用前停止', async (t) => {
@@ -384,4 +391,143 @@ test('upsert 超时错误不向 manifest 泄漏 adminLogin ticket', async (t) =>
   const saved = JSON.parse(savedText);
   assert.equal(saved.entries[0].import.draft.status, 'inflight');
   assert.equal(saved.entries[0].import.draft.error, '请求 [REDACTED] 超时');
+});
+
+test('upsert 成功响应缺少 id 时不写成功 checkpoint', async (t) => {
+  const manifestPath = fixture(t);
+  const app = {
+    callFunction: async ({ data }) => {
+      if (data.action === 'adminLogin') {
+        return { result: { ok: true, ticket: 'ticket-1' } };
+      }
+      if (data.action === 'adminListBrands') {
+        return { result: { ok: true, brands: [{ _id: 'brand-1', name: '南方' }] } };
+      }
+      return { result: { ok: true, id: '' } };
+    },
+    uploadFile: async ({ cloudPath, fileContent }) => {
+      for await (const chunk of fileContent) {
+        assert.ok(chunk.length > 0);
+      }
+      return { fileID: `cloud://${cloudPath}` };
+    },
+  };
+
+  const result = await executeImport({
+    manifestPath,
+    credentials: credentials(),
+    createApp: () => app,
+  });
+
+  assert.equal(result.succeeded, 0);
+  assert.equal(result.failed, 1);
+  const saved = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(saved.entries[0].import.status, 'failed');
+  assert.equal(saved.entries[0].import.draft.status, 'inflight');
+  assert.equal(saved.entries[0].import.draft.videoId, undefined);
+  assert.equal(dryRun(manifestPath).skipped.length, 0);
+});
+
+test('adminLogin stderr 脱敏四项环境凭据', async (t) => {
+  const manifestPath = fixture(t);
+  let stderr = '';
+  const env = {
+    TCB_ENV_ID: 'env-runtime-secret',
+    TCB_SECRET_ID: 'id-runtime-secret',
+    TCB_SECRET_KEY: 'key-runtime-secret',
+    ADMIN_PIN: 'pin-runtime-secret',
+  };
+
+  const exitCode = await runCli({
+    argv: ['--manifest', manifestPath, '--execute'],
+    env,
+    createApp: () => ({
+      callFunction: async () => {
+        throw new Error(
+          '登录失败 env-runtime-secret id-runtime-secret key-runtime-secret pin-runtime-secret',
+        );
+      },
+    }),
+    stdout: { write() {} },
+    stderr: { write(value) { stderr += value; } },
+  });
+
+  assert.equal(exitCode, 1);
+  for (const secret of Object.values(env)) {
+    assert.equal(stderr.includes(secret), false);
+  }
+  assert.match(stderr, /登录失败 \[REDACTED\]/);
+});
+
+test('品牌阶段 stderr 同时脱敏 ADMIN_PIN 与运行时 ticket', async (t) => {
+  const manifestPath = fixture(t);
+  let stderr = '';
+
+  const exitCode = await runCli({
+    argv: ['--manifest', manifestPath, '--execute'],
+    env: {
+      TCB_ENV_ID: 'env-id',
+      TCB_SECRET_ID: 'secret-id',
+      TCB_SECRET_KEY: 'secret-key',
+      ADMIN_PIN: 'admin-pin',
+    },
+    createApp: () => ({
+      callFunction: async ({ data }) => {
+        if (data.action === 'adminLogin') {
+          return { result: { ok: true, ticket: 'ticket-runtime-secret' } };
+        }
+        throw new Error('品牌失败 admin-pin ticket-runtime-secret');
+      },
+    }),
+    stdout: { write() {} },
+    stderr: { write(value) { stderr += value; } },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(stderr.includes('admin-pin'), false);
+  assert.equal(stderr.includes('ticket-runtime-secret'), false);
+  assert.equal(stderr, '品牌失败 [REDACTED] [REDACTED]\n');
+});
+
+test('inflight manifest 写失败的顶层 stderr 脱敏凭据与 ticket', async (t) => {
+  const manifestPath = fixture(t);
+  let stderr = '';
+
+  const exitCode = await runCli({
+    argv: ['--manifest', manifestPath, '--execute'],
+    env: {
+      TCB_ENV_ID: 'env-id',
+      TCB_SECRET_ID: 'secret-id',
+      TCB_SECRET_KEY: 'secret-key',
+      ADMIN_PIN: 'admin-pin',
+    },
+    createApp: () => ({
+      callFunction: async ({ data }) => {
+        if (data.action === 'adminLogin') {
+          return { result: { ok: true, ticket: 'ticket-runtime-secret' } };
+        }
+        if (data.action === 'adminListBrands') {
+          return { result: { ok: true, brands: [{ _id: 'brand-1', name: '南方' }] } };
+        }
+        throw new Error('不应调用 upsertVideo');
+      },
+      uploadFile: async ({ cloudPath, fileContent }) => {
+        for await (const chunk of fileContent) {
+          assert.ok(chunk.length > 0);
+        }
+        return { fileID: `cloud://${cloudPath}` };
+      },
+    }),
+    persistManifest: (targetPath, manifest) => {
+      if (manifest.entries[0].import?.draft?.status === 'inflight') {
+        throw new Error('落盘失败 admin-pin ticket-runtime-secret');
+      }
+      fs.writeFileSync(targetPath, JSON.stringify(manifest));
+    },
+    stdout: { write() {} },
+    stderr: { write(value) { stderr += value; } },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(stderr, '落盘失败 [REDACTED] [REDACTED]\n');
 });

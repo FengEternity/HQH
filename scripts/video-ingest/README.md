@@ -39,7 +39,7 @@ manifest 的 `import` 字段按 `cover`、`video`、`draft` 三个 checkpoint �
 
 **manifest 是 execute 的幂等凭据。** 首次执行前必须备份，执行期间不得删除、覆盖或从旧副本恢复。若 manifest 整体丢失，不可从零重跑 `--execute`，否则脚本无法识别已经上传的文件和已经创建的草稿；应先人工恢复最新备份并核对云端 checkpoint。已有 `draft.videoId` 的失败重试会把该 ID 传回 `upsertVideo`，更新原草稿而不是新增。
 
-调用 `upsertVideo` 前，脚本会先落盘 `draft.status=inflight`。若进程中断或调用结果不确定，下一次运行看到没有 `videoId` 的 inflight 条目会拒绝自动重试；必须先在管理端核对云端是否已有对应草稿，再人工修复 manifest。若 inflight 已有 `videoId`，则可继续用该 ID 幂等更新。
+调用 `upsertVideo` 前，脚本会先落盘 `draft.status=inflight`。云函数明确返回 `ok: false` 时改记 `failed`，允许修正输入后自动重试；网络异常、超时或成功响应缺少非空 `id` 时结果不确定，继续保留 inflight。下一次运行看到没有 `videoId` 的 inflight 条目会拒绝自动重试；必须先在管理端核对云端是否已有对应草稿，再人工修复 manifest。若 inflight 已有 `videoId`，则可继续用该 ID 幂等更新。
 
 单条本地闸门失败不会中止整批：dry-run 和 execute 都会把它列入 rejected，并继续处理其他合法条目；最终汇总返回非零，提醒运营修复被拒绝条目。闸门不会因此放宽。
 
