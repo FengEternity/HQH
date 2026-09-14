@@ -144,6 +144,23 @@ def transcribe_manifest(manifest_path, model_name, language, force=False):
         return manifest
 
     model = None
+    requires_model = any(
+        isinstance(entry.get("media"), dict)
+        and entry["media"].get("hasAudio") is True
+        for entry in pending
+    )
+    if requires_model:
+        if WhisperModel is None:
+            raise RuntimeError(
+                "faster-whisper is unavailable; install requirements-asr.txt"
+            )
+        try:
+            model = WhisperModel(model_name, device="cpu", compute_type="int8")
+        except Exception as error:
+            raise RuntimeError(
+                f"failed to initialize faster-whisper model {model_name}: {error}"
+            ) from error
+
     total = len(pending)
     for index, entry in enumerate(pending, start=1):
         title = entry.get("title") or entry.get("sourceKey", "")[:16] or "untitled"
@@ -158,12 +175,6 @@ def transcribe_manifest(manifest_path, model_name, language, force=False):
                 }
                 print(f"[{index}/{total}] Skipped (no audio)", flush=True)
                 continue
-            if model is None:
-                if WhisperModel is None:
-                    raise RuntimeError(
-                        "faster-whisper is unavailable; install requirements-asr.txt"
-                    )
-                model = WhisperModel(model_name, device="cpu", compute_type="int8")
             media_path = _media_path(manifest_path, entry)
             raw_segments, _ = model.transcribe(
                 str(media_path),

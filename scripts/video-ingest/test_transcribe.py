@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import transcribe
@@ -96,7 +96,7 @@ class TranscribeManifestTest(unittest.TestCase):
                     }
                 ],
             )
-            model = unittest.mock.Mock()
+            model = Mock()
             model.transcribe.return_value = (iter(()), None)
 
             with patch.object(transcribe, "WhisperModel", return_value=model):
@@ -154,6 +154,109 @@ class TranscribeManifestTest(unittest.TestCase):
 
             self.assertEqual(len(result["entries"]), 2)
 
+    def test_missing_whisper_aborts_without_rewriting_manifest(self):
+        with tempfile.TemporaryDirectory() as root:
+            media_path = Path(root) / "media" / "video.mp4"
+            media_path.parent.mkdir()
+            media_path.touch()
+            manifest_path = write_manifest(
+                root,
+                [
+                    {
+                        "durationSec": 10,
+                        "media": {"hasAudio": True},
+                        "prepared": {"media": "media/video.mp4"},
+                    }
+                ],
+            )
+            original = manifest_path.read_bytes()
+
+            with patch.object(transcribe, "WhisperModel", None):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "faster-whisper is unavailable; install requirements-asr.txt",
+                ):
+                    transcribe.transcribe_manifest(manifest_path, "medium", "zh")
+
+            self.assertEqual(manifest_path.read_bytes(), original)
+
+    def test_model_initialization_failure_aborts_without_rewriting_manifest(self):
+        with tempfile.TemporaryDirectory() as root:
+            media_path = Path(root) / "media" / "video.mp4"
+            media_path.parent.mkdir()
+            media_path.touch()
+            manifest_path = write_manifest(
+                root,
+                [
+                    {
+                        "durationSec": 10,
+                        "media": {"hasAudio": True},
+                        "prepared": {"media": "media/video.mp4"},
+                    }
+                ],
+            )
+            original = manifest_path.read_bytes()
+
+            with patch.object(
+                transcribe,
+                "WhisperModel",
+                side_effect=RuntimeError("model download failed"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "failed to initialize faster-whisper model medium: "
+                    "model download failed",
+                ):
+                    transcribe.transcribe_manifest(manifest_path, "medium", "zh")
+
+            self.assertEqual(manifest_path.read_bytes(), original)
+
+    def test_existing_skipped_entry_only_retries_with_force(self):
+        with tempfile.TemporaryDirectory() as root:
+            media_path = Path(root) / "media" / "video.mp4"
+            media_path.parent.mkdir()
+            media_path.touch()
+            manifest_path = write_manifest(
+                root,
+                [
+                    {
+                        "durationSec": 10,
+                        "media": {"hasAudio": True},
+                        "prepared": {"media": "media/video.mp4"},
+                        "transcription": {
+                            "status": "skipped",
+                            "reason": "media has no audio track",
+                        },
+                    }
+                ],
+            )
+            original = manifest_path.read_bytes()
+            model = Mock()
+            model.transcribe.return_value = (
+                iter([{"start": 0, "end": 1, "text": "有效字幕"}]),
+                None,
+            )
+            model_factory = Mock(return_value=model)
+
+            with patch.object(transcribe, "WhisperModel", model_factory):
+                transcribe.transcribe_manifest(manifest_path, "medium", "zh")
+                model_factory.assert_not_called()
+                model.transcribe.assert_not_called()
+                self.assertEqual(manifest_path.read_bytes(), original)
+
+                transcribe.transcribe_manifest(
+                    manifest_path,
+                    "medium",
+                    "zh",
+                    force=True,
+                )
+
+            model_factory.assert_called_once()
+            model.transcribe.assert_called_once()
+            entry = json.loads(manifest_path.read_text(encoding="utf-8"))["entries"][0]
+            self.assertEqual(entry["transcription"]["status"], "ready")
+            self.assertEqual(entry["transcriptSegments"][0]["text"], "有效字幕")
+
     def test_null_transcription_is_processed_and_checkpointed(self):
         with tempfile.TemporaryDirectory() as root:
             manifest_path = write_manifest(
@@ -168,7 +271,7 @@ class TranscribeManifestTest(unittest.TestCase):
                 ],
             )
 
-            with patch.object(transcribe, "WhisperModel", return_value=unittest.mock.Mock()):
+            with patch.object(transcribe, "WhisperModel", return_value=Mock()):
                 transcribe.transcribe_manifest(manifest_path, "medium", "zh")
 
             entry = json.loads(manifest_path.read_text(encoding="utf-8"))["entries"][0]
