@@ -8,6 +8,7 @@ const { preprocess } = require('./preprocess');
 
 function createFakeRunner({
   durationSec,
+  rejectExistingTranscodeOutput = false,
   successfulCoverSeeks,
   writeKeyframes = true,
 } = {}) {
@@ -39,6 +40,19 @@ function createFakeRunner({
     }
 
     assert.equal(command, 'ffmpeg');
+    const outputArgument = args.at(-1);
+    const isTranscode = args.includes('libx264');
+    if (
+      isTranscode &&
+      rejectExistingTranscodeOutput &&
+      fs.existsSync(outputArgument)
+    ) {
+      return {
+        status: 1,
+        stdout: Buffer.alloc(0),
+        stderr: Buffer.from('refusing to replace stale media'),
+      };
+    }
     const isKeyframeExtraction = args.includes('fps=1/8');
     const seekIndex = args.indexOf('-ss');
     const seek = seekIndex >= 0 ? args[seekIndex + 1] : null;
@@ -93,6 +107,86 @@ test('预处理使用数组命令并生成转码媒体、封面、关键帧与�
     fs.readFileSync(path.join(input, '南方', '南方数据导出.mp4'), 'utf8'),
     'hevc-source',
   );
+});
+
+test('copy 与 transcode 路径可在同一 output 连续运行两次', () => {
+  const scenarios = [
+    {
+      brand: '中海达',
+      title: '中海达点测量',
+      runner: createFakeRunner(),
+      sourceMode: 0o444,
+    },
+    {
+      brand: '南方',
+      title: '南方数据导出',
+      runner: createFakeRunner({ rejectExistingTranscodeOutput: true }),
+      sourceMode: 0o644,
+    },
+  ];
+  const outcomes = [];
+
+  for (const scenario of scenarios) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-video-ingest-'));
+    const input = path.join(root, 'input');
+    const output = path.join(root, 'output');
+    const source = path.join(
+      input,
+      scenario.brand,
+      `${scenario.title}.mp4`,
+    );
+    fs.mkdirSync(path.dirname(source), { recursive: true });
+    fs.writeFileSync(source, 'source');
+    fs.chmodSync(source, scenario.sourceMode);
+    const sourceModeBefore = fs.statSync(source).mode & 0o777;
+
+    try {
+      const first = preprocess({
+        inputDirectory: input,
+        outputDirectory: output,
+        runCommand: scenario.runner,
+      });
+      const second = preprocess({
+        inputDirectory: input,
+        outputDirectory: output,
+        runCommand: scenario.runner,
+      });
+      const mediaFiles = fs
+        .readdirSync(path.join(output, 'media'))
+        .filter((fileName) => fileName.endsWith('.mp4'));
+      const preparedMedia = path.join(
+        output,
+        second.entries[0].prepared.media,
+      );
+      outcomes.push({
+        firstEntries: first.entries.length,
+        secondEntries: second.entries.length,
+        mediaFiles: mediaFiles.length,
+        preparedWritable: Boolean(fs.statSync(preparedMedia).mode & 0o200),
+        sourceModeUnchanged:
+          (fs.statSync(source).mode & 0o777) === sourceModeBefore,
+      });
+    } catch (error) {
+      outcomes.push({ error: error.message });
+    }
+  }
+
+  assert.deepEqual(outcomes, [
+    {
+      firstEntries: 1,
+      secondEntries: 1,
+      mediaFiles: 1,
+      preparedWritable: true,
+      sourceModeUnchanged: true,
+    },
+    {
+      firstEntries: 1,
+      secondEntries: 1,
+      mediaFiles: 1,
+      preparedWritable: true,
+      sourceModeUnchanged: true,
+    },
+  ]);
 });
 
 test('拒绝输出目录位于输入目录内', () => {

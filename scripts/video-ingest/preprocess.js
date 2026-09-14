@@ -116,10 +116,26 @@ function runFfmpeg(args, runCommand) {
   assertCommandSuccess(result, 'ffmpeg');
 }
 
-function prepareMedia(sourcePath, destinationPath, transcodeRequired, runCommand) {
+function prepareMedia(
+  sourcePath,
+  destinationPath,
+  transcodeRequired,
+  outputDirectory,
+  runCommand,
+) {
+  const canonicalDestination = resolveCanonicalPath(destinationPath);
+  if (!containsPath(outputDirectory, canonicalDestination)) {
+    throw new Error('prepared 媒体路径超出已验证输出目录');
+  }
+
   fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+  fs.rmSync(destinationPath, { force: true });
   if (!transcodeRequired) {
     fs.copyFileSync(sourcePath, destinationPath);
+    fs.chmodSync(
+      destinationPath,
+      fs.statSync(destinationPath).mode | 0o200,
+    );
     return;
   }
 
@@ -149,6 +165,10 @@ function prepareMedia(sourcePath, destinationPath, transcodeRequired, runCommand
       destinationPath,
     ],
     runCommand,
+  );
+  fs.chmodSync(
+    destinationPath,
+    fs.statSync(destinationPath).mode | 0o200,
   );
 }
 
@@ -285,6 +305,7 @@ function preprocess({
       file.absolutePath,
       mediaPath,
       entry.transcodeRequired,
+      directories.output,
       runCommand,
     );
     extractImages(
