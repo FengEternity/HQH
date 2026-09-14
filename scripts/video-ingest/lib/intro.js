@@ -112,11 +112,27 @@ function indexReviews(reviews) {
   return bySourceKey;
 }
 
-function keepIntro(entry) {
-  return {
-    ...entry,
-    introStatus: entry.introStatus === 'reviewed' ? 'reviewed' : 'placeholder',
-  };
+// 校验不过的条目必须离开 reviewed，否则导入闸门会放过陈旧 intro。
+function statusAfterFailure(entry) {
+  return entry.introStatus === 'reviewed' ? 'needs_review' : 'placeholder';
+}
+
+function checkAgainstTranscript(entry, intro, placeholderIntro) {
+  const status = (entry.transcription && entry.transcription.status) || '';
+  if (status !== 'ready') {
+    return {
+      valid: false,
+      issues: [issue('NOT_READY', `字幕状态为 ${status || '未转写'}`)],
+      intro: '',
+      length: 0,
+    };
+  }
+
+  return validateReviewedIntro({
+    intro,
+    transcriptSegments: entry.transcriptSegments,
+    placeholderIntro,
+  });
 }
 
 function buildIntroPlan({ entries, reviews, content }) {
@@ -136,50 +152,45 @@ function buildIntroPlan({ entries, reviews, content }) {
     const review = reviewBySourceKey.get(entry.sourceKey);
     const base = { sourceKey: entry.sourceKey, title: entry.title };
 
-    if (!review) {
+    const reject = (issues, length = 0) => {
+      results.push({ ...base, action: 'rejected', issues, length });
+      return { ...entry, introStatus: statusAfterFailure(entry) };
+    };
+    const skip = (length) => {
       results.push({
         ...base,
         action: 'skipped',
         issues: [issue('NO_REVIEW', '未提交审核稿')],
-        length: 0,
+        length,
       });
-      return keepIntro(entry);
+    };
+
+    if (!review) {
+      if (entry.introStatus !== 'reviewed') {
+        skip(0);
+        return { ...entry, introStatus: 'placeholder' };
+      }
+
+      // 已 reviewed 的条目按当前字幕复核，字幕回退或旧介绍失效都要降级。
+      const recheck = checkAgainstTranscript(entry, entry.intro, placeholderIntro);
+      if (!recheck.valid) {
+        return reject(recheck.issues, recheck.length);
+      }
+      skip(recheck.length);
+      return { ...entry, introStatus: 'reviewed' };
     }
 
-    if (typeof review.title === 'string' && review.title !== entry.title) {
-      results.push({
-        ...base,
-        action: 'rejected',
-        issues: [issue('TITLE_MISMATCH', `审核稿标题为 ${review.title}`)],
-        length: 0,
-      });
-      return keepIntro(entry);
+    if (typeof review.title !== 'string' || review.title.trim() === '') {
+      return reject([issue('TITLE_REQUIRED', '审核稿缺少 title，无法核对条目')]);
     }
 
-    const status = (entry.transcription && entry.transcription.status) || '';
-    if (status !== 'ready') {
-      results.push({
-        ...base,
-        action: 'rejected',
-        issues: [issue('NOT_READY', `字幕状态为 ${status || '未转写'}`)],
-        length: 0,
-      });
-      return keepIntro(entry);
+    if (review.title !== entry.title) {
+      return reject([issue('TITLE_MISMATCH', `审核稿标题为 ${review.title}`)]);
     }
 
-    const validation = validateReviewedIntro({
-      intro: review.intro,
-      transcriptSegments: entry.transcriptSegments,
-      placeholderIntro,
-    });
+    const validation = checkAgainstTranscript(entry, review.intro, placeholderIntro);
     if (!validation.valid) {
-      results.push({
-        ...base,
-        action: 'rejected',
-        issues: validation.issues,
-        length: validation.length,
-      });
-      return keepIntro(entry);
+      return reject(validation.issues, validation.length);
     }
 
     results.push({ ...base, action: 'applied', issues: [], length: validation.length });

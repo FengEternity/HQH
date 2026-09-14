@@ -153,6 +153,18 @@ function skippedEntry() {
   };
 }
 
+function reviewedEntry(overrides = {}) {
+  return {
+    sourceKey: 'a'.repeat(64),
+    title: '南方点测量',
+    intro: '点击右下角的测量栏，再点击点测量。',
+    introStatus: 'reviewed',
+    transcriptSegments: SEGMENTS,
+    transcription: { status: 'ready' },
+    ...overrides,
+  };
+}
+
 test('合格介绍写入 intro 并标记 reviewed', () => {
   const entries = [readyEntry(), skippedEntry()];
   const plan = buildIntroPlan({
@@ -175,12 +187,120 @@ test('合格介绍写入 intro 并标记 reviewed', () => {
   assert.equal(plan.entries[1].introStatus, 'placeholder');
 });
 
+test('审核稿缺少 title 时直接拒绝，不靠 sourceKey 单独放行', () => {
+  const plan = buildIntroPlan({
+    entries: [readyEntry()],
+    reviews: [
+      {
+        sourceKey: 'a'.repeat(64),
+        intro: '点击右下角的测量栏，再点击点测量。',
+      },
+    ],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.appliedCount, 0);
+  assert.equal(plan.rejectedCount, 1);
+  assert.deepEqual(
+    plan.results[0].issues.map((item) => item.code),
+    ['TITLE_REQUIRED'],
+  );
+  assert.equal(plan.entries[0].intro, PLACEHOLDER);
+  assert.equal(plan.entries[0].introStatus, 'placeholder');
+});
+
+test('原本 reviewed 的条目字幕退回非 ready 时降级为 needs_review', () => {
+  const plan = buildIntroPlan({
+    entries: [
+      reviewedEntry({ transcription: { status: 'skipped' }, transcriptSegments: [] }),
+    ],
+    reviews: [
+      {
+        sourceKey: 'a'.repeat(64),
+        title: '南方点测量',
+        intro: '点击右下角的测量栏，再点击点测量。',
+      },
+    ],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.rejectedCount, 1);
+  assert.deepEqual(
+    plan.results[0].issues.map((item) => item.code),
+    ['NOT_READY'],
+  );
+  assert.equal(plan.entries[0].introStatus, 'needs_review');
+});
+
+test('原本 reviewed 的条目新稿校验失败时降级为 needs_review', () => {
+  const plan = buildIntroPlan({
+    entries: [reviewedEntry()],
+    reviews: [
+      {
+        sourceKey: 'a'.repeat(64),
+        title: '南方点测量',
+        intro: '打开电脑浏览器登录官网下载驱动安装包并解压。',
+      },
+    ],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.rejectedCount, 1);
+  assert.equal(plan.entries[0].introStatus, 'needs_review');
+  assert.equal(plan.entries[0].intro, '点击右下角的测量栏，再点击点测量。');
+});
+
+test('未提交审核稿但字幕已退回非 ready 时旧 reviewed 也要降级', () => {
+  const plan = buildIntroPlan({
+    entries: [
+      reviewedEntry({ transcription: { status: 'failed' }, transcriptSegments: [] }),
+    ],
+    reviews: [],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.entries[0].introStatus, 'needs_review');
+  assert.deepEqual(
+    plan.results[0].issues.map((item) => item.code),
+    ['NOT_READY'],
+  );
+});
+
+test('未提交审核稿且旧 intro 已脱离新字幕时降级为 needs_review', () => {
+  const plan = buildIntroPlan({
+    entries: [reviewedEntry({ intro: '打开电脑浏览器登录官网下载驱动安装包并解压。' })],
+    reviews: [],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.entries[0].introStatus, 'needs_review');
+  assert.deepEqual(
+    plan.results[0].issues.map((item) => item.code),
+    ['NOT_GROUNDED'],
+  );
+});
+
+test('未提交审核稿但旧 intro 仍能通过校验时保持 reviewed', () => {
+  const plan = buildIntroPlan({
+    entries: [reviewedEntry()],
+    reviews: [],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.appliedCount, 0);
+  assert.equal(plan.rejectedCount, 0);
+  assert.equal(plan.skippedCount, 1);
+  assert.equal(plan.entries[0].introStatus, 'reviewed');
+  assert.equal(plan.entries[0].intro, '点击右下角的测量栏，再点击点测量。');
+});
+
 test('校验失败的条目保留 A1 占位 intro', () => {
   const plan = buildIntroPlan({
     entries: [readyEntry()],
     reviews: [
       {
         sourceKey: 'a'.repeat(64),
+        title: '南方点测量',
         intro: '打开电脑浏览器登录官网下载驱动安装包并解压。',
       },
     ],
@@ -203,6 +323,7 @@ test('字幕未 ready 的条目即使提交审核稿也不覆盖', () => {
     reviews: [
       {
         sourceKey: 'b'.repeat(64),
+        title: '南方数据导出',
         intro: '点击右下角的测量栏，再点击点测量。',
       },
     ],
@@ -254,7 +375,7 @@ test('未提交审核稿的条目记为跳过且不报错', () => {
 test('review 文件里的未知 sourceKey 被单独报出', () => {
   const plan = buildIntroPlan({
     entries: [readyEntry()],
-    reviews: [{ sourceKey: 'c'.repeat(64), intro: '点击测量栏。' }],
+    reviews: [{ sourceKey: 'c'.repeat(64), title: '别的片子', intro: '点击测量栏。' }],
     content: CONTENT,
   });
 
@@ -268,8 +389,8 @@ test('review 文件重复 sourceKey 直接失败', () => {
       buildIntroPlan({
         entries: [readyEntry()],
         reviews: [
-          { sourceKey: 'a'.repeat(64), intro: '点击测量栏进入点测量。' },
-          { sourceKey: 'a'.repeat(64), intro: '点击测量栏再点点测量。' },
+          { sourceKey: 'a'.repeat(64), title: '南方点测量', intro: '点击测量栏进入点测量。' },
+          { sourceKey: 'a'.repeat(64), title: '南方点测量', intro: '点击测量栏再点点测量。' },
         ],
         content: CONTENT,
       }),
@@ -281,6 +402,7 @@ test('重复应用同一份审核稿结果稳定', () => {
   const reviews = [
     {
       sourceKey: 'a'.repeat(64),
+      title: '南方点测量',
       intro: '点击右下角的测量栏，再点击点测量。',
     },
   ];

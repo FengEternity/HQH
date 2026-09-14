@@ -48,7 +48,7 @@ function readJson(filePath) {
 function readReviews(filePath) {
   const payload = readJson(filePath);
   if (!payload || !Array.isArray(payload.reviews)) {
-    throw new Error('审核文件需要形如 { "reviews": [{ "sourceKey": …, "intro": … }] }');
+    throw new Error('审核文件需要形如 { "reviews": [{ "sourceKey": …, "title": …, "intro": … }] }');
   }
   return payload.reviews;
 }
