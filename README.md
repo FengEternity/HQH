@@ -41,15 +41,26 @@
 - 领取的账号存在本机 `hqh_support_account`，同一设备重复领取会拿到同一组。
 - 用户自己打字发送，以及点「没有我要的讲解」「转人工」，会写入集合 `support_messages`。运营入口首页「客服留言」可看。点「领取账号 / 怎么找视频」只走自动回复，不进留言箱。
 
-## 检索单测（不依赖微信）
+## 自动化单测（不依赖微信）
 
 ```bash
-node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js cloudfunctions/shop/lib/*.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/mapCloudCallError.test.js miniprogram/utils/shopEditSave.test.js miniprogram/utils/cloudReady.test.js miniprogram/constants/tabs.test.js
+node --test \
+  cloudfunctions/catalog/lib/*.test.js \
+  cloudfunctions/shop/lib/*.test.js \
+  miniprogram/utils/*.test.js \
+  miniprogram/constants/*.test.js \
+  scripts/video-ingest/*.test.js \
+  scripts/video-ingest/lib/*.test.js
+python3 -m unittest scripts/video-ingest/test_transcribe.py
 ```
+
+`scripts/video-ingest` 的测试分布在目录本身和 `lib/` 两层，必须写成上面这两行 glob。写成 `scripts/video-ingest/**/*.test.js` 在 zsh 之外的 shell 里只会匹配子目录，会静默漏掉 `import` / `preprocess` / `apply-intros` / SDK 冒烟测试。
 
 ## 批量导入讲解视频
 
 本地预处理、转写、介绍审核与草稿导入流程见 `scripts/video-ingest/README.md`。导入命令默认 dry-run；只有 `--execute` 会访问云端，且产物始终是待人工抽检和上架的草稿。
+
+新目录里出现 `scripts/video-ingest/content.zh-CN.json` 没有登记过的标题时，`preprocess` 会在该条目上抛「缺少运营草案」并**整批失败**，不写出 manifest。先按项目约定把标题的 `tags` / `intro` / `modelName` 补进该文件再重跑。同理，`_副本` 这类不入库的片子是写死在 `lib/manifest.js` 里的业务规则，不是自动语义去重；换一批素材要人工确认排除清单。
 
 ## 手测清单
 

@@ -8,7 +8,7 @@
 
 ## 1. 要解决什么
 
-本地目录 `/Users/forsertree/Downloads/视频合集` 有中海达 / 南方 / 司南讲解片。现网 `videos` 已能存标题、简介、标签、封面、视频 fileId，以及 `searchAbstract` / `transcript` / `transcriptSegments` / `entities`。上架不强制转写。
+本地目录 `<INPUT_DIR>`（运营本机的视频合集目录，不写进仓库）有中海达 / 南方 / 司南讲解片。现网 `videos` 已能存标题、简介、标签、封面、视频 fileId，以及 `searchAbstract` / `transcript` / `transcriptSegments` / `entities`。上架不强制转写。
 
 播放页问答要答「点哪个菜单、第几步」，依据是口播文本，不是编码参数。编码信息只服务播放与入库质检。
 
@@ -55,7 +55,9 @@ C 端仍只看到 `status=published`。本批默认 **不自动上架**；运营
 | `durationSec` | 秒，一位小数；字幕窗口上界与质检 |
 | `media.videoCodec` / `media.audioCodec` / `media.hasAudio` | 入库文件实际编码；无音轨则跳过 A2。不把宽高、fps、体积写入集合（留在本地质检日志即可） |
 
-`transcriptSegments` 约束：`startSec >= 0`，`endSec > startSec`，按 `startSec` 升序，`text` 去首尾空白；单段超过 80 字则按 `。！？；` 再切，子段时间按字符数占原段比例线性分配。
+`transcriptSegments` 约束：`startSec >= 0`，`endSec > startSec`，`endSec <= durationSec`（时长已知时），按 `startSec` 升序，`text` 去首尾空白；单段超过 80 字则按 `。！？；` 再切，子段时间按字符数占原段比例线性分配。上界由本地 importPlan 和云端 `upsertVideo` 各拒一次。
+
+历史兼容：只有请求显式提交 `transcriptSegments` 才按上述规则严格校验并派生全文。旧管理端表单不带字幕字段时，原样保留库中已有的分段与 `transcript`，不得因历史数据不满足新规则而阻断保存。
 
 ### 3.2 派生（禁止当第二份手写稿）
 
@@ -87,6 +89,8 @@ C 端仍只看到 `status=published`。本批默认 **不自动上架**；运营
 - **上限 400 字**：再多的细节只留在 `transcriptSegments`，让问答按当前秒去取，不把播放页简介写成说明书
 
 A1 附录占位在 A2 成功后必须被这篇步骤说明覆盖。ASR 失败则保留占位 intro，不强行写长文。
+
+自动闸门按句取证：每个步骤句都要么命中本条字幕，要么命中审核稿显式申报的关键帧界面词；命中字幕的句子至少占 `ceil(2/3)`，关键帧最多兜住剩下三分之一。这道闸门只说明「介绍里的词在本条素材出现过」，**不是**事实核验，运营仍要人工抽检；不得把人工审核描述成自动核验。
 
 实现时改 `upsertVideo`：在 `buildSearchBlob` 之前用分段生成 `transcript`；本批入库脚本不传 `searchAbstract` / `entities`（走现网空默认）。管理端保存若未带这两项，继续保留库中旧值（兼容已有记录），**新草稿**不得被脚本写成摘要/entities 副本。
 

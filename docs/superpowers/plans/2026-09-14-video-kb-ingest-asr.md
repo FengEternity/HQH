@@ -30,7 +30,7 @@
 - Modify: `cloudfunctions/catalog/index.js`
 
 **Interfaces:**
-- Consumes: `normalizeVideoKnowledge({ transcriptSegments, transcript })`
+- Consumes: `normalizeVideoKnowledge({ transcriptSegments, transcript, durationSec })`、`resolveVideoKnowledge({ event, prevData, durationSec })`
 - Produces: `{ transcriptSegments, transcript }`；校验失败抛出 `error.code = 'BAD_INPUT'`
 
 - [ ] **Step 1: Write failing tests**
@@ -63,7 +63,7 @@ it('rejects a conflicting handwritten transcript', () => {
 });
 ```
 
-另测负时间、`endSec <= startSec`、倒序、空文本均拒绝；空分段派生空全文。
+另测负时间、`endSec <= startSec`、倒序、空文本均拒绝；空分段派生空全文。已知时长时 `endSec > durationSec` 也拒绝，`endSec === durationSec` 通过，`durationSec` 为 0 视为未知、不做上界。
 
 - [ ] **Step 2: Run and verify RED**
 
@@ -81,19 +81,20 @@ Expected: FAIL because `./videoKnowledge` does not exist.
 
 - [ ] **Step 4: Integrate into `upsertVideo`**
 
-在读取 `prevData` 后决定分段来源：
+先算 `mediaMeta`（拿到 `durationSec`），再决定分段来源：
 
 ```js
-const hasSegments = Object.prototype.hasOwnProperty.call(event, 'transcriptSegments');
-const knowledge = normalizeVideoKnowledge({
-  transcriptSegments: hasSegments
-    ? event.transcriptSegments
-    : (prevData && prevData.transcriptSegments) || [],
-  transcript: hasSegments ? event.transcript : undefined,
+const mediaMeta = normalizeVideoMedia(mediaInput, prevData);
+const knowledge = resolveVideoKnowledge({
+  event,
+  prevData,
+  durationSec: mediaMeta.durationSec,
 });
 ```
 
-payload 的 `transcriptSegments` / `transcript` 只用 `knowledge`，然后再调用 `buildSearchBlob(payload)`。管理端未提交字幕时保留旧分段并重新派生全文。
+payload 的 `transcriptSegments` / `transcript` 只用 `knowledge`，然后再调用 `buildSearchBlob(payload)`。
+
+历史兼容是硬要求：只有 event 显式带 `transcriptSegments` 才走严格校验与派生；旧管理端表单不带字幕字段时，原样保留 `prevData` 的 `transcriptSegments` 与 `transcript`，不重新校验也不重新派生。否则库里不满足新规则的历史字幕会让无关的保存全部 `BAD_INPUT`。event 只带 `transcript` 不带分段时忽略该全文，仍保留旧值。
 
 - [ ] **Step 5: Run focused and catalog tests**
 
@@ -224,8 +225,8 @@ H.264 + AAC 原片复制到 output，不覆盖 Downloads。封面抽第 1 秒；
 ```bash
 node --test scripts/video-ingest/lib/manifest.test.js
 node scripts/video-ingest/preprocess.js \
-  --input "/Users/forsertree/Downloads/视频合集" \
-  --output "/Users/forsertree/code/HQH/.video-ingest/prepared"
+  --input "<INPUT_DIR>" \
+  --output .video-ingest/prepared
 ```
 
 Expected: manifest 有 23 条；所有 prepared 视频为 H.264 + AAC；点测量重复与主机升级副本各排除一条。
@@ -330,12 +331,16 @@ git commit -m "feat(ingest): 本地转写并生成带时间轴字幕"
 
 - [ ] **Step 1: Write failing validation tests**
 
-`validateReviewedIntro({ intro, transcriptSegments })` 测试：
+`validateReviewedIntro({ intro, transcriptSegments, placeholderIntro, keyframeEvidence })` 测试：
 
 - 非空且不超过 400 字；
 - 拒绝仍等于 A1 占位句；
-- 至少一个实词片段能在字幕中找到（防止完全脱离视频）；
+- 逐句取证：按 `。！？；` 切步骤句，每句要么有三字以上汉字片段（或型号词）命中本条字幕，要么命中审核稿显式申报的关键帧界面词；
+- 命中字幕的句子至少占 `ceil(2/3)`，否则判 `WEAK_TRANSCRIPT_EVIDENCE`——只靠开头一句真、后面全编，必须被拒；
+- `（约第 N 秒）` 标注在取证前剥掉，不算依据；
 - 不按固定最小字数拒绝，50 字的真实两步说明可通过。
+
+审核稿的 `keyframeEvidence` 随条目落盘为 `introKeyframeEvidence`，无新稿复核时按同一份申报判定。该闸门只证明词出现过，不是事实核验。
 
 - [ ] **Step 2: Run and verify RED**
 
@@ -391,7 +396,8 @@ git commit -m "feat(ingest): 校验并应用按步骤生成的视频介绍"
 覆盖：
 
 - 字幕 ready 但 intro 未 reviewed → 拒绝导入；
-- 缺少封面/媒体文件 → 拒绝；
+- 缺少封面/媒体文件 → 拒绝；prepared 里指向目录外的符号链接按真实路径复核后同样拒绝；
+- 任一段 `endSec > durationSec` → 拒绝；`endSec === durationSec` 放行；
 - payload 仅含 spec 允许字段，`searchAbstract=''`、entities 四桶空；
 - 不产生 `publishVideo` action；
 - 已成功条目幂等跳过。
@@ -505,9 +511,12 @@ node --test \
   cloudfunctions/shop/lib/*.test.js \
   miniprogram/utils/*.test.js \
   miniprogram/constants/*.test.js \
+  scripts/video-ingest/*.test.js \
   scripts/video-ingest/lib/*.test.js
 python3 -m unittest scripts/video-ingest/test_transcribe.py
 ```
+
+`scripts/video-ingest` 的两层 glob 缺一不可：只写 `lib/*.test.js` 会漏掉 `import` / `preprocess` / `apply-intros` / SDK 冒烟测试；写成 `scripts/video-ingest/**/*.test.js` 只在开了 `globstar` 的 shell 里才等价，不能用来对外报计数。`cloudfunctions/catalog/lib/*.test.js` 覆盖 `videoKnowledge` 与 `videoMediaMetadata`，不要退回逐个文件枚举。
 
 - [ ] **Step 2: Validate generated manifest**
 
