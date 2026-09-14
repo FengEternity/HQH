@@ -152,11 +152,17 @@ function prepareMedia(sourcePath, destinationPath, transcodeRequired, runCommand
   );
 }
 
-function extractImages(mediaPath, coverPath, keyframesDirectory, runCommand) {
-  fs.mkdirSync(path.dirname(coverPath), { recursive: true });
-  fs.rmSync(keyframesDirectory, { recursive: true, force: true });
-  fs.mkdirSync(keyframesDirectory, { recursive: true });
+function isNonEmptyFile(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() && stat.size > 0;
+  } catch {
+    return false;
+  }
+}
 
+function extractCover(mediaPath, coverPath, seekSec, runCommand) {
+  fs.rmSync(coverPath, { force: true });
   runFfmpeg(
     [
       '-nostdin',
@@ -165,7 +171,7 @@ function extractImages(mediaPath, coverPath, keyframesDirectory, runCommand) {
       'error',
       '-y',
       '-ss',
-      '1',
+      String(seekSec),
       '-i',
       mediaPath,
       '-frames:v',
@@ -174,6 +180,31 @@ function extractImages(mediaPath, coverPath, keyframesDirectory, runCommand) {
     ],
     runCommand,
   );
+}
+
+function extractImages(
+  mediaPath,
+  coverPath,
+  keyframesDirectory,
+  durationSec,
+  runCommand,
+) {
+  fs.mkdirSync(path.dirname(coverPath), { recursive: true });
+  fs.rmSync(keyframesDirectory, { recursive: true, force: true });
+  fs.mkdirSync(keyframesDirectory, { recursive: true });
+
+  extractCover(mediaPath, coverPath, 1, runCommand);
+  if (!isNonEmptyFile(coverPath)) {
+    const fallbackSec =
+      durationSec >= 3
+        ? 3
+        : Number((durationSec / 2).toFixed(3));
+    extractCover(mediaPath, coverPath, fallbackSec, runCommand);
+  }
+  if (!isNonEmptyFile(coverPath)) {
+    throw new Error(`封面提取失败：${path.basename(mediaPath)}`);
+  }
+
   runFfmpeg(
     [
       '-nostdin',
@@ -189,13 +220,42 @@ function extractImages(mediaPath, coverPath, keyframesDirectory, runCommand) {
     ],
     runCommand,
   );
+  const keyframes = fs
+    .readdirSync(keyframesDirectory)
+    .filter(
+      (fileName) =>
+        path.extname(fileName).toLowerCase() === '.jpg' &&
+        isNonEmptyFile(path.join(keyframesDirectory, fileName)),
+    );
+  if (keyframes.length === 0) {
+    throw new Error(`关键帧提取失败：${path.basename(mediaPath)}`);
+  }
+}
+
+function resolveCanonicalPath(targetPath) {
+  let existingAncestor = path.resolve(targetPath);
+  const missingSegments = [];
+  while (!fs.existsSync(existingAncestor)) {
+    const parent = path.dirname(existingAncestor);
+    if (parent === existingAncestor) {
+      break;
+    }
+    missingSegments.unshift(path.basename(existingAncestor));
+    existingAncestor = parent;
+  }
+
+  return path.join(fs.realpathSync(existingAncestor), ...missingSegments);
+}
+
+function containsPath(parent, child) {
+  return child === parent || child.startsWith(`${parent}${path.sep}`);
 }
 
 function validateDirectories(inputDirectory, outputDirectory) {
-  const input = fs.realpathSync(inputDirectory);
-  const output = path.resolve(outputDirectory);
-  if (output === input || output.startsWith(`${input}${path.sep}`)) {
-    throw new Error('输出目录不得等于或位于源目录内');
+  const input = resolveCanonicalPath(inputDirectory);
+  const output = resolveCanonicalPath(outputDirectory);
+  if (containsPath(input, output) || containsPath(output, input)) {
+    throw new Error('输入与输出目录不得相同或互相包含');
   }
   return { input, output };
 }
@@ -227,7 +287,13 @@ function preprocess({
       entry.transcodeRequired,
       runCommand,
     );
-    extractImages(mediaPath, coverPath, keyframesDirectory, runCommand);
+    extractImages(
+      mediaPath,
+      coverPath,
+      keyframesDirectory,
+      probe.durationSec,
+      runCommand,
+    );
     entries.push(entry);
   }
 

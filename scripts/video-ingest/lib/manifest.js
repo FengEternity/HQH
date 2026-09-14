@@ -1,6 +1,9 @@
 const crypto = require('node:crypto');
 const path = require('node:path');
 
+// 该副本与正片字节不同，无法依靠内容哈希去重，但业务规则只保留正片。
+const EXCLUDED_TITLES = new Set(['中海达主机固件升级_副本']);
+
 function normalizeTitle(fileName) {
   return path.basename(fileName, path.extname(fileName)).trim();
 }
@@ -17,7 +20,7 @@ function assignBrand(relativePath, title) {
 }
 
 function isExplicitlyExcluded(file) {
-  return normalizeTitle(file.relativePath) === '中海达主机固件升级_副本';
+  return EXCLUDED_TITLES.has(normalizeTitle(file.relativePath));
 }
 
 function preferOriginal(left, right) {
@@ -55,7 +58,10 @@ function buildManifestEntry(file, probe, content) {
 
   const sourceKey = crypto.createHash('sha256').update(sourceRelativePath).digest('hex');
   const slug = sourceKey.slice(0, 16);
-  const transcodeRequired = probe.videoCodec.toLowerCase() !== 'h264';
+  const videoCodec = probe.videoCodec.toLowerCase();
+  const audioCodec = probe.audioCodec.toLowerCase();
+  const transcodeRequired =
+    videoCodec !== 'h264' || (probe.hasAudio && audioCodec !== 'aac');
 
   return {
     sourceKey,
@@ -69,7 +75,7 @@ function buildManifestEntry(file, probe, content) {
     durationSec: Math.round(probe.durationSec * 10) / 10,
     media: {
       videoCodec: 'h264',
-      audioCodec: 'aac',
+      audioCodec: probe.hasAudio ? 'aac' : '',
       hasAudio: probe.hasAudio,
     },
     sourceMedia: {

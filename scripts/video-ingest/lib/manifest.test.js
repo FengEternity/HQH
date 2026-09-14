@@ -75,6 +75,64 @@ test('HEVC 条目标记为需要转码并只记录相对路径', () => {
   assert.equal('sourcePath' in entry, false);
 });
 
+test('H.264 有音轨但非 AAC 时仍转码为 H.264 加 AAC', () => {
+  const entry = buildManifestEntry(
+    {
+      relativePath: '南方/南方数据导出.mp4',
+      sha256: 'source-content-hash',
+    },
+    {
+      durationSec: 42,
+      videoCodec: 'h264',
+      audioCodec: 'mp3',
+      hasAudio: true,
+    },
+    {
+      南方数据导出: {
+        intro: '演示南方手簿数据导出。',
+        tags: ['导出', '数据'],
+        modelName: '',
+      },
+    },
+  );
+
+  assert.equal(entry.transcodeRequired, true);
+  assert.deepEqual(entry.media, {
+    videoCodec: 'h264',
+    audioCodec: 'aac',
+    hasAudio: true,
+  });
+});
+
+test('无音轨媒体的 prepared audioCodec 保持为空', () => {
+  const entry = buildManifestEntry(
+    {
+      relativePath: '南方/南方数据导出.mp4',
+      sha256: 'source-content-hash',
+    },
+    {
+      durationSec: 42,
+      videoCodec: 'h264',
+      audioCodec: '',
+      hasAudio: false,
+    },
+    {
+      南方数据导出: {
+        intro: '演示南方手簿数据导出。',
+        tags: ['导出', '数据'],
+        modelName: '',
+      },
+    },
+  );
+
+  assert.equal(entry.transcodeRequired, false);
+  assert.deepEqual(entry.media, {
+    videoCodec: 'h264',
+    audioCodec: '',
+    hasAudio: false,
+  });
+});
+
 test('运营草案按规范化标题补齐 intro、tags 与 modelName', () => {
   const contentPath = path.join(__dirname, '..', 'content.zh-CN.json');
   const content = JSON.parse(fs.readFileSync(contentPath, 'utf8'));
