@@ -17,13 +17,31 @@ function isNonEmptyFile(filePath) {
   }
 }
 
+function isInside(root, candidate) {
+  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+}
+
 function resolvePreparedFile(manifestDirectory, relativePath) {
   if (!relativePath || path.isAbsolute(relativePath)) {
     return null;
   }
   const root = path.resolve(manifestDirectory);
   const resolved = path.resolve(root, relativePath);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+  if (!isInside(root, resolved)) {
+    return null;
+  }
+
+  // 词法检查挡不住符号链接：prepared 目录里的链接可能指向仓库外的任意文件，
+  // 上传前必须按真实路径再确认一次仍在同一个 prepared 根下。
+  let realRoot;
+  let realResolved;
+  try {
+    realRoot = fs.realpathSync(root);
+    realResolved = fs.realpathSync(resolved);
+  } catch {
+    return null;
+  }
+  if (!isInside(realRoot, realResolved)) {
     return null;
   }
   return resolved;
@@ -82,7 +100,15 @@ function validateEntry(entry, manifestDirectory) {
   if (!Array.isArray(entry?.transcriptSegments) || entry.transcriptSegments.length === 0) {
     issues.push('TRANSCRIPT_SEGMENTS_REQUIRED');
   } else {
+    // 时长本身非法时无法判定上界，只做结构校验，避免叠加两个互相掩盖的原因码。
+    const upperBound =
+      typeof entry.durationSec === 'number' &&
+      Number.isFinite(entry.durationSec) &&
+      entry.durationSec > 0
+        ? entry.durationSec
+        : Infinity;
     let previousStartSec = -Infinity;
+    let outOfRange = false;
     const invalidSegment = entry.transcriptSegments.some((segment) => {
       if (!segment || typeof segment !== 'object') {
         return true;
@@ -98,10 +124,15 @@ function validateEntry(entry, manifestDirectory) {
         startSec >= previousStartSec &&
         String(segment.text || '').trim();
       previousStartSec = startSec;
+      if (valid && endSec > upperBound) {
+        outOfRange = true;
+      }
       return !valid;
     });
     if (invalidSegment) {
       issues.push('TRANSCRIPT_SEGMENT_INVALID');
+    } else if (outOfRange) {
+      issues.push('TRANSCRIPT_SEGMENT_OUT_OF_RANGE');
     }
   }
   if (entry?.import?.draft?.status === 'inflight' && !entry.import.draft.videoId) {

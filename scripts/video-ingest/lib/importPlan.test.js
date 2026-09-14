@@ -417,3 +417,78 @@ test('modelName 非字符串时 rejected', (t) => {
 
   assert.deepEqual(plan.rejected[0].issues, ['MODEL_NAME_INVALID']);
 });
+
+test('字幕结束秒超过时长时 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        durationSec: 5,
+        transcriptSegments: [
+          { startSec: 0, endSec: 2.5, text: '连接仪器' },
+          { startSec: 2.5, endSec: 5.1, text: '开始测量' },
+        ],
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['TRANSCRIPT_SEGMENT_OUT_OF_RANGE']);
+});
+
+test('字幕结束秒正好等于时长时仍可导入', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        durationSec: 5,
+        transcriptSegments: [{ startSec: 0, endSec: 5, text: '连接仪器' }],
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.equal(plan.rejected.length, 0);
+  assert.equal(plan.ready.length, 1);
+});
+
+test('prepared 文件是指向目录外的符号链接时 rejected', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-import-outside-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const secret = path.join(outside, 'secret.mp4');
+  fs.writeFileSync(secret, 'outside-payload');
+
+  const linked = path.join(manifestDirectory, 'media/abc123.mp4');
+  fs.rmSync(linked);
+  fs.symlinkSync(secret, linked);
+
+  const plan = buildImportPlan({
+    entries: [readyEntry()],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['MEDIA_FILE_MISSING']);
+});
+
+test('prepared 目录本身是符号链接时不误判为逃逸', (t) => {
+  const realRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-import-real-'));
+  t.after(() => fs.rmSync(realRoot, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(realRoot, 'media'));
+  fs.mkdirSync(path.join(realRoot, 'covers'));
+  fs.writeFileSync(path.join(realRoot, 'media/abc123.mp4'), 'video');
+  fs.writeFileSync(path.join(realRoot, 'covers/abc123.jpg'), 'cover');
+
+  const linkParent = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-import-link-'));
+  t.after(() => fs.rmSync(linkParent, { recursive: true, force: true }));
+  const manifestDirectory = path.join(linkParent, 'prepared');
+  fs.symlinkSync(realRoot, manifestDirectory);
+
+  const plan = buildImportPlan({
+    entries: [readyEntry()],
+    manifestDirectory,
+  });
+
+  assert.equal(plan.rejected.length, 0);
+  assert.equal(plan.ready.length, 1);
+});

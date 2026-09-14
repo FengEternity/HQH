@@ -11,7 +11,7 @@ const {
 const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
 const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
 const { listHomeCatalog } = require('./lib/listHome');
-const { normalizeVideoKnowledge } = require('./lib/videoKnowledge');
+const { resolveVideoKnowledge } = require('./lib/videoKnowledge');
 const { normalizeVideoMedia } = require('./lib/videoMediaMetadata');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
@@ -463,13 +463,6 @@ async function upsertVideo(event) {
         .map((tag) => tag.trim())
         .filter(Boolean);
   const prevData = event.id ? (await db.collection('videos').doc(event.id).get()).data : null;
-  const hasSegments = Object.prototype.hasOwnProperty.call(event, 'transcriptSegments');
-  const knowledge = normalizeVideoKnowledge({
-    transcriptSegments: hasSegments
-      ? event.transcriptSegments
-      : (prevData && prevData.transcriptSegments) || [],
-    transcript: hasSegments ? event.transcript : undefined,
-  });
   const mediaInput = {};
   if (Object.prototype.hasOwnProperty.call(event, 'durationSec')) {
     mediaInput.durationSec = event.durationSec;
@@ -477,7 +470,13 @@ async function upsertVideo(event) {
   if (Object.prototype.hasOwnProperty.call(event, 'media')) {
     mediaInput.media = event.media;
   }
+  // 先定时长，字幕上界才有依据可校验。
   const mediaMeta = normalizeVideoMedia(mediaInput, prevData);
+  const knowledge = resolveVideoKnowledge({
+    event,
+    prevData,
+    durationSec: mediaMeta.durationSec,
+  });
   const payload = {
     title,
     intro,
