@@ -49,7 +49,11 @@ function normalizeVideoKnowledge(input) {
 
   const transcript = transcriptSegments.map((segment) => segment.text).join('\n');
 
-  if (input && Object.prototype.hasOwnProperty.call(input, 'transcript')) {
+  if (
+    input &&
+    Object.prototype.hasOwnProperty.call(input, 'transcript') &&
+    input.transcript !== undefined
+  ) {
     const provided = String(input.transcript);
     if (provided !== transcript) {
       throw badInput('transcript conflicts with transcriptSegments');

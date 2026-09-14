@@ -37,6 +37,14 @@ describe('normalizeVideoKnowledge', () => {
     assert.equal(out.transcript, '打开项目');
   });
 
+  it('treats transcript undefined as not provided and derives from segments', () => {
+    const out = normalizeVideoKnowledge({
+      transcriptSegments: [{ startSec: 0, endSec: 1, text: '打开项目' }],
+      transcript: undefined,
+    });
+    assert.equal(out.transcript, '打开项目');
+  });
+
   it('derives empty transcript from empty segments', () => {
     const out = normalizeVideoKnowledge({ transcriptSegments: [] });
     assert.deepEqual(out.transcriptSegments, []);
