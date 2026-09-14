@@ -128,11 +128,6 @@ def _media_path(manifest_path, entry):
 
 
 def transcribe_manifest(manifest_path, model_name, language, force=False):
-    if WhisperModel is None:
-        raise RuntimeError(
-            "faster-whisper is unavailable; install requirements-asr.txt"
-        )
-
     manifest_path = Path(manifest_path)
     with manifest_path.open(encoding="utf-8") as source:
         manifest = json.load(source)
@@ -140,20 +135,35 @@ def transcribe_manifest(manifest_path, model_name, language, force=False):
     pending = [
         entry
         for entry in manifest.get("entries", [])
-        if force or entry.get("transcription", {}).get("status") != "ready"
+        if force
+        or not isinstance(entry.get("transcription"), dict)
+        or entry["transcription"].get("status") not in {"ready", "skipped"}
     ]
     if not pending:
         print("No entries require transcription.")
         return manifest
 
-    model = WhisperModel(model_name, device="cpu", compute_type="int8")
+    model = None
     total = len(pending)
     for index, entry in enumerate(pending, start=1):
         title = entry.get("title") or entry.get("sourceKey", "")[:16] or "untitled"
         print(f"[{index}/{total}] Transcribing {title}...", flush=True)
         try:
-            if entry.get("media", {}).get("hasAudio") is not True:
-                raise RuntimeError("media has no audio track")
+            media = entry.get("media")
+            if not isinstance(media, dict) or media.get("hasAudio") is not True:
+                entry.pop("transcriptSegments", None)
+                entry["transcription"] = {
+                    "status": "skipped",
+                    "reason": "media has no audio track",
+                }
+                print(f"[{index}/{total}] Skipped (no audio)", flush=True)
+                continue
+            if model is None:
+                if WhisperModel is None:
+                    raise RuntimeError(
+                        "faster-whisper is unavailable; install requirements-asr.txt"
+                    )
+                model = WhisperModel(model_name, device="cpu", compute_type="int8")
             media_path = _media_path(manifest_path, entry)
             raw_segments, _ = model.transcribe(
                 str(media_path),
@@ -161,6 +171,8 @@ def transcribe_manifest(manifest_path, model_name, language, force=False):
                 vad_filter=True,
             )
             segments = normalize_segments(raw_segments, entry.get("durationSec"))
+            if not segments:
+                raise RuntimeError("transcription produced no usable segments")
             entry["transcriptSegments"] = segments
             entry["transcription"] = {
                 "status": "ready",
@@ -181,7 +193,8 @@ def transcribe_manifest(manifest_path, model_name, language, force=False):
                 file=sys.stderr,
                 flush=True,
             )
-        _write_checkpoint(manifest_path, manifest)
+        finally:
+            _write_checkpoint(manifest_path, manifest)
 
     return manifest
 

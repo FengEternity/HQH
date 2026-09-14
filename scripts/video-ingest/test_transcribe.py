@@ -1,9 +1,22 @@
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import transcribe
 from transcribe import normalize_segments
+
+
+def write_manifest(root, entries):
+    manifest_path = Path(root) / "manifest.json"
+    manifest_path.write_text(
+        json.dumps({"entries": entries}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return manifest_path
 
 
 class NormalizeSegmentsTest(unittest.TestCase):
@@ -65,6 +78,106 @@ class NormalizeSegmentsTest(unittest.TestCase):
                 for segment in result
             )
         )
+
+
+class TranscribeManifestTest(unittest.TestCase):
+    def test_empty_transcription_is_failed_without_segments(self):
+        with tempfile.TemporaryDirectory() as root:
+            media_path = Path(root) / "media" / "video.mp4"
+            media_path.parent.mkdir()
+            media_path.touch()
+            manifest_path = write_manifest(
+                root,
+                [
+                    {
+                        "durationSec": 10,
+                        "media": {"hasAudio": True},
+                        "prepared": {"media": "media/video.mp4"},
+                    }
+                ],
+            )
+            model = unittest.mock.Mock()
+            model.transcribe.return_value = (iter(()), None)
+
+            with patch.object(transcribe, "WhisperModel", return_value=model):
+                transcribe.transcribe_manifest(manifest_path, "medium", "zh")
+
+            entry = json.loads(manifest_path.read_text(encoding="utf-8"))["entries"][0]
+            self.assertEqual(entry["transcription"]["status"], "failed")
+            self.assertNotIn("transcriptSegments", entry)
+
+    def test_no_audio_is_skipped_and_subsequent_run_does_not_load_model(self):
+        with tempfile.TemporaryDirectory() as root:
+            manifest_path = write_manifest(
+                root,
+                [
+                    {
+                        "durationSec": 10,
+                        "media": {"hasAudio": False},
+                        "transcriptSegments": [
+                            {"startSec": 0, "endSec": 1, "text": "旧字幕"}
+                        ],
+                    }
+                ],
+            )
+
+            with patch.object(
+                transcribe,
+                "WhisperModel",
+                side_effect=AssertionError("skipped entries must not load the model"),
+            ):
+                transcribe.transcribe_manifest(manifest_path, "medium", "zh")
+                transcribe.transcribe_manifest(manifest_path, "medium", "zh")
+
+            entry = json.loads(manifest_path.read_text(encoding="utf-8"))["entries"][0]
+            self.assertEqual(
+                entry["transcription"],
+                {
+                    "status": "skipped",
+                    "reason": "media has no audio track",
+                },
+            )
+            self.assertNotIn("transcriptSegments", entry)
+
+    def test_ready_and_skipped_manifest_does_not_require_whisper(self):
+        with tempfile.TemporaryDirectory() as root:
+            manifest_path = write_manifest(
+                root,
+                [
+                    {"transcription": {"status": "ready"}},
+                    {"transcription": {"status": "skipped"}},
+                ],
+            )
+
+            with patch.object(transcribe, "WhisperModel", None):
+                result = transcribe.transcribe_manifest(manifest_path, "medium", "zh")
+
+            self.assertEqual(len(result["entries"]), 2)
+
+    def test_null_transcription_is_processed_and_checkpointed(self):
+        with tempfile.TemporaryDirectory() as root:
+            manifest_path = write_manifest(
+                root,
+                [
+                    {
+                        "durationSec": 10,
+                        "media": {"hasAudio": True},
+                        "prepared": {"media": "media/missing.mp4"},
+                        "transcription": None,
+                    }
+                ],
+            )
+
+            with patch.object(transcribe, "WhisperModel", return_value=unittest.mock.Mock()):
+                transcribe.transcribe_manifest(manifest_path, "medium", "zh")
+
+            entry = json.loads(manifest_path.read_text(encoding="utf-8"))["entries"][0]
+            self.assertEqual(entry["transcription"]["status"], "failed")
+            self.assertEqual(
+                entry["transcription"]["error"],
+                "prepared media is missing",
+            )
+            self.assertNotIn("transcriptSegments", entry)
 
 
 if __name__ == "__main__":
