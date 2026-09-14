@@ -47,6 +47,10 @@
 node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js cloudfunctions/shop/lib/*.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/mapCloudCallError.test.js miniprogram/utils/shopEditSave.test.js miniprogram/utils/cloudReady.test.js miniprogram/constants/tabs.test.js
 ```
 
+## 批量导入讲解视频
+
+本地预处理、转写、介绍审核与草稿导入流程见 `scripts/video-ingest/README.md`。导入命令默认 dry-run；只有 `--execute` 会访问云端，且产物始终是待人工抽检和上架的草稿。
+
 ## 手测清单
 
 - 底栏四项为「讲解｜商城｜客服｜我的」，默认打开讲解；商城空态「暂无商品」，我的空态「登录后可查看订单」。
