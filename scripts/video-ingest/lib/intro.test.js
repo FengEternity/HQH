@@ -32,9 +32,10 @@ test('空白介绍被拒绝', () => {
 });
 
 test('正好 400 字通过，401 字被拒绝', () => {
-  const grounded = '点击右下角的测量栏进入点测量。';
-  const filler = '气'.repeat(400 - grounded.length);
-  const maximum = `${grounded}${filler}`;
+  // 单句占满上限：句首命中字幕，句内补白只影响字数不影响证据。
+  const head = '点击右下角的测量栏';
+  const buildIntro = (length) => `${head}${'气'.repeat(length - head.length - 1)}。`;
+  const maximum = buildIntro(400);
 
   const accepted = validateReviewedIntro({
     intro: maximum,
@@ -45,7 +46,7 @@ test('正好 400 字通过，401 字被拒绝', () => {
   assert.equal(accepted.length, 400);
 
   const rejected = validateReviewedIntro({
-    intro: `${maximum}气`,
+    intro: buildIntro(401),
     transcriptSegments: SEGMENTS,
     placeholderIntro: PLACEHOLDER,
   });
@@ -119,6 +120,85 @@ test('字幕为空时无法生成审核介绍', () => {
 
   assert.equal(result.valid, false);
   assert.deepEqual(issueCodes(result), ['NO_TRANSCRIPT']);
+});
+
+const STEP_SEGMENTS = [
+  { startSec: 0, endSec: 4, text: '首先把手簿和仪器连接好' },
+  { startSec: 4, endSec: 8, text: '点击右下角的测量栏' },
+  { startSec: 8, endSec: 12, text: '再点击左上角的点测量' },
+  { startSec: 12, endSec: 16, text: '打开天线高设置核对杆高' },
+  { startSec: 16, endSec: 20, text: '等待上方信息栏出现固定解' },
+  { startSec: 20, endSec: 24, text: '按下键盘中间的测量按键保存' },
+];
+
+test('每句都能在字幕里找到依据的多步说明通过，秒数标注不参与取证', () => {
+  const intro =
+    '把手簿和仪器连接好（约第 2 秒）。点击右下角的测量栏（约第 5 秒）。'
+    + '再点击左上角的点测量（约第 9 秒）。打开天线高设置核对杆高（约第 13 秒）。'
+    + '等待上方信息栏出现固定解（约第 17 秒）。按下键盘中间的测量按键保存（约第 21 秒）。';
+
+  const result = validateReviewedIntro({
+    intro,
+    transcriptSegments: STEP_SEGMENTS,
+    placeholderIntro: PLACEHOLDER,
+  });
+
+  assert.equal(result.valid, true);
+});
+
+test('只有开头一句命中、后面全是编造的步骤被拒绝', () => {
+  const intro =
+    '点击右下角的测量栏。'
+    + '接着在系统菜单里选择高级导出向导。'
+    + '勾选云端同步复选框并填写授权编号。'
+    + '返回首页长按仪器图标进入工程管理器。'
+    + '导出报表后用邮件发送给项目负责人。'
+    + '最后在电脑端安装配套驱动完成归档。';
+
+  const result = validateReviewedIntro({
+    intro,
+    transcriptSegments: STEP_SEGMENTS,
+    placeholderIntro: PLACEHOLDER,
+  });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(issueCodes(result), ['UNGROUNDED_STEP', 'WEAK_TRANSCRIPT_EVIDENCE']);
+});
+
+test('少量界面词有本机关键帧佐证时可通过，但仍需多数步骤句命中字幕', () => {
+  const intro =
+    '点击右下角的测量栏。再点击左上角的点测量。打开天线高设置核对杆高。屏幕右上角显示存储路径。';
+
+  const withoutEvidence = validateReviewedIntro({
+    intro,
+    transcriptSegments: STEP_SEGMENTS,
+    placeholderIntro: PLACEHOLDER,
+  });
+  assert.equal(withoutEvidence.valid, false);
+  assert.deepEqual(issueCodes(withoutEvidence), ['UNGROUNDED_STEP']);
+
+  const withEvidence = validateReviewedIntro({
+    intro,
+    transcriptSegments: STEP_SEGMENTS,
+    placeholderIntro: PLACEHOLDER,
+    keyframeEvidence: ['存储路径'],
+  });
+  assert.equal(withEvidence.valid, true);
+});
+
+test('关键帧申报不能顶替多数字幕依据', () => {
+  const intro =
+    '点击右下角的测量栏。屏幕右上角显示存储路径。侧边栏出现坐标系管理入口。底部弹出导出格式选择框。';
+
+  const result = validateReviewedIntro({
+    intro,
+    transcriptSegments: STEP_SEGMENTS,
+    placeholderIntro: PLACEHOLDER,
+    keyframeEvidence: ['存储路径', '坐标系管理', '导出格式'],
+  });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(issueCodes(result), ['WEAK_TRANSCRIPT_EVIDENCE']);
 });
 
 test('规范化只清理首尾空白并合并内部空白', () => {
@@ -482,6 +562,53 @@ test('review 文件重复 sourceKey 直接失败', () => {
         content: CONTENT,
       }),
     /重复/,
+  );
+});
+
+test('审核稿申报的关键帧界面词随条目落盘，未申报的句子下次复核仍被拒', () => {
+  const entry = {
+    sourceKey: 'a'.repeat(64),
+    title: '南方点测量',
+    intro: PLACEHOLDER,
+    transcriptSegments: STEP_SEGMENTS,
+    transcription: { status: 'ready' },
+  };
+  const intro =
+    '点击右下角的测量栏。再点击左上角的点测量。打开天线高设置核对杆高。屏幕右上角显示存储路径。';
+
+  const applied = buildIntroPlan({
+    entries: [entry],
+    reviews: [
+      {
+        sourceKey: 'a'.repeat(64),
+        title: '南方点测量',
+        intro,
+        keyframeEvidence: ['存储路径'],
+      },
+    ],
+    content: CONTENT,
+  });
+
+  assert.equal(applied.appliedCount, 1);
+  assert.deepEqual(applied.entries[0].introKeyframeEvidence, ['存储路径']);
+
+  const recheck = buildIntroPlan({
+    entries: applied.entries,
+    reviews: [],
+    content: CONTENT,
+  });
+  assert.equal(recheck.entries[0].introStatus, 'reviewed');
+  assert.equal(recheck.rejectedCount, 0);
+
+  const withoutEvidence = buildIntroPlan({
+    entries: [{ ...applied.entries[0], introKeyframeEvidence: [] }],
+    reviews: [],
+    content: CONTENT,
+  });
+  assert.equal(withoutEvidence.entries[0].introStatus, 'needs_review');
+  assert.deepEqual(
+    withoutEvidence.results[0].issues.map((item) => item.code),
+    ['UNGROUNDED_STEP'],
   );
 });
 

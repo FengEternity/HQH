@@ -2,6 +2,15 @@ const MAX_INTRO_LENGTH = 400;
 const PHRASE_LENGTH = 3;
 const CJK_PATTERN = /[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff]+/g;
 const ALPHANUMERIC_PATTERN = /[A-Za-z][A-Za-z0-9]+|[0-9]+[A-Za-z][A-Za-z0-9]*/g;
+// 「（约第 12 秒）」是写作时给的对齐提示，不是内容依据，取证前先剥掉。
+const TIMESTAMP_ANNOTATION_PATTERN = /[（(]\s*约?第?\s*[0-9]+(?:\.[0-9]+)?\s*秒\s*[)）]/g;
+const SENTENCE_BOUNDARY_PATTERN = /[。！？；;!?\n]+/;
+// 关键帧申报的界面词至少两字，避免用单字兜住整句。
+const MIN_KEYFRAME_TERM_LENGTH = 2;
+// 多数步骤句必须有字幕锚点，关键帧申报最多兜住三分之一。
+const TRANSCRIPT_ANCHOR_NUMERATOR = 2;
+const TRANSCRIPT_ANCHOR_DENOMINATOR = 3;
+const MAX_REPORTED_STEPS = 3;
 
 function issue(code, message) {
   return { code, message };
@@ -55,7 +64,59 @@ function findTranscriptEvidence(intro, transcript) {
   return '';
 }
 
-function validateReviewedIntro({ intro, transcriptSegments, placeholderIntro }) {
+function splitSteps(intro) {
+  return intro
+    .replace(TIMESTAMP_ANNOTATION_PATTERN, ' ')
+    .split(SENTENCE_BOUNDARY_PATTERN)
+    .map((step) => step.trim())
+    .filter(Boolean);
+}
+
+function normalizeKeyframeEvidence(keyframeEvidence) {
+  if (!Array.isArray(keyframeEvidence)) {
+    return [];
+  }
+  return keyframeEvidence
+    .map((term) => (typeof term === 'string' ? term.trim() : ''))
+    .filter((term) => countCharacters(term) >= MIN_KEYFRAME_TERM_LENGTH);
+}
+
+// 逐句取证：任意一个三字片段命中就整篇放行，挡不住「开头一句真、后面全编」。
+// 规则改为每一步都要有出处，且字幕锚点必须占多数，关键帧只兜少量界面词。
+function auditSteps(intro, transcript, keyframeTerms) {
+  const steps = splitSteps(intro);
+  const anchored = [];
+  const keyframeOnly = [];
+  const ungrounded = [];
+
+  for (const step of steps) {
+    if (findTranscriptEvidence(step, transcript)) {
+      anchored.push(step);
+    } else if (keyframeTerms.some((term) => step.includes(term))) {
+      keyframeOnly.push(step);
+    } else {
+      ungrounded.push(step);
+    }
+  }
+
+  const total = steps.length;
+  const requiredAnchors = Math.ceil(
+    (total * TRANSCRIPT_ANCHOR_NUMERATOR) / TRANSCRIPT_ANCHOR_DENOMINATOR,
+  );
+  return { total, anchored, keyframeOnly, ungrounded, requiredAnchors };
+}
+
+function describeSteps(steps) {
+  const shown = steps.slice(0, MAX_REPORTED_STEPS).join(' / ');
+  return steps.length > MAX_REPORTED_STEPS ? `${shown} 等 ${steps.length} 句` : shown;
+}
+
+function validateReviewedIntro({
+  intro,
+  transcriptSegments,
+  placeholderIntro,
+  keyframeEvidence,
+}) {
   const normalized = normalizeIntro(intro);
   const length = countCharacters(normalized);
   const issues = [];
@@ -77,8 +138,28 @@ function validateReviewedIntro({ intro, transcriptSegments, placeholderIntro }) 
   const transcript = joinTranscript(transcriptSegments);
   if (transcript.trim() === '') {
     issues.push(issue('NO_TRANSCRIPT', '缺少字幕，无法核对介绍'));
-  } else if (!findTranscriptEvidence(normalized, transcript)) {
-    issues.push(issue('NOT_GROUNDED', '介绍没有任何实词能在字幕中找到'));
+  } else {
+    const audit = auditSteps(normalized, transcript, normalizeKeyframeEvidence(keyframeEvidence));
+    if (audit.anchored.length === 0) {
+      issues.push(issue('NOT_GROUNDED', '介绍没有任何实词能在字幕中找到'));
+    } else {
+      if (audit.ungrounded.length > 0) {
+        issues.push(
+          issue(
+            'UNGROUNDED_STEP',
+            `以下步骤句既无字幕依据也未申报关键帧界面词：${describeSteps(audit.ungrounded)}`,
+          ),
+        );
+      }
+      if (audit.anchored.length < audit.requiredAnchors) {
+        issues.push(
+          issue(
+            'WEAK_TRANSCRIPT_EVIDENCE',
+            `仅 ${audit.anchored.length}/${audit.total} 句命中字幕，至少需要 ${audit.requiredAnchors} 句`,
+          ),
+        );
+      }
+    }
   }
 
   return { valid: issues.length === 0, issues, intro: normalized, length };
@@ -120,7 +201,7 @@ function statusAfterFailure(entry) {
   return HUMAN_INTRO_STATUSES.has(entry.introStatus) ? 'needs_review' : 'placeholder';
 }
 
-function checkAgainstTranscript(entry, intro, placeholderIntro) {
+function checkAgainstTranscript(entry, intro, placeholderIntro, keyframeEvidence) {
   const status = (entry.transcription && entry.transcription.status) || '';
   if (status !== 'ready') {
     return {
@@ -135,6 +216,7 @@ function checkAgainstTranscript(entry, intro, placeholderIntro) {
     intro,
     transcriptSegments: entry.transcriptSegments,
     placeholderIntro,
+    keyframeEvidence,
   });
 }
 
@@ -175,7 +257,12 @@ function buildIntroPlan({ entries, reviews, content }) {
       }
 
       // 带人工介绍的条目按当前字幕复核，字幕回退或旧介绍失效都要降级。
-      const recheck = checkAgainstTranscript(entry, entry.intro, placeholderIntro);
+      const recheck = checkAgainstTranscript(
+        entry,
+        entry.intro,
+        placeholderIntro,
+        entry.introKeyframeEvidence,
+      );
       if (!recheck.valid) {
         return reject(recheck.issues, recheck.length);
       }
@@ -198,13 +285,25 @@ function buildIntroPlan({ entries, reviews, content }) {
       return reject([issue('TITLE_MISMATCH', `审核稿标题为 ${review.title}`)]);
     }
 
-    const validation = checkAgainstTranscript(entry, review.intro, placeholderIntro);
+    const keyframeEvidence = normalizeKeyframeEvidence(review.keyframeEvidence);
+    const validation = checkAgainstTranscript(
+      entry,
+      review.intro,
+      placeholderIntro,
+      keyframeEvidence,
+    );
     if (!validation.valid) {
       return reject(validation.issues, validation.length);
     }
 
     results.push({ ...base, action: 'applied', issues: [], length: validation.length });
-    return { ...entry, intro: validation.intro, introStatus: 'reviewed' };
+    // 申报随条目落盘，之后无新稿复核时才不会把当初有据的界面词判成编造。
+    return {
+      ...entry,
+      intro: validation.intro,
+      introStatus: 'reviewed',
+      introKeyframeEvidence: keyframeEvidence,
+    };
   });
 
   const countOf = (action) => results.filter((result) => result.action === action).length;
