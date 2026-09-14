@@ -1,5 +1,7 @@
 node_modules/
 cloudfunctions/**/node_modules/
+__pycache__/
+*.py[cod]
 .DS_Store
 miniprogram_npm/
 project.private.config.json
