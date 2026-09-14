@@ -27,10 +27,17 @@ function normalizeMediaObject(raw) {
       throw badInput(`unexpected media field: ${key}`);
     }
   }
+  let hasAudio = false;
+  if (Object.prototype.hasOwnProperty.call(raw, 'hasAudio')) {
+    if (typeof raw.hasAudio !== 'boolean') {
+      throw badInput('hasAudio must be a boolean');
+    }
+    hasAudio = raw.hasAudio;
+  }
   return {
     videoCodec: String(raw.videoCodec || '').toLowerCase(),
     audioCodec: String(raw.audioCodec || '').toLowerCase(),
-    hasAudio: Boolean(raw.hasAudio),
+    hasAudio,
   };
 }
 

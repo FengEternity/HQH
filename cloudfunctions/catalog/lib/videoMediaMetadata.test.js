@@ -12,16 +12,42 @@ describe('normalizeVideoMedia', () => {
     assert.equal(out2.durationSec, 65.5);
   });
 
-  it('lowercases codec strings and coerces hasAudio to boolean', () => {
-    const out = normalizeVideoMedia({
+  it('lowercases codec strings and accepts boolean hasAudio', () => {
+    const withAudio = normalizeVideoMedia({
       durationSec: 10,
-      media: { videoCodec: 'H264', audioCodec: 'AAC', hasAudio: 1 },
+      media: { videoCodec: 'H264', audioCodec: 'AAC', hasAudio: true },
     });
-    assert.deepEqual(out.media, {
+    assert.deepEqual(withAudio.media, {
       videoCodec: 'h264',
       audioCodec: 'aac',
       hasAudio: true,
     });
+    const withoutAudio = normalizeVideoMedia({
+      durationSec: 10,
+      media: { videoCodec: 'H264', audioCodec: 'AAC', hasAudio: false },
+    });
+    assert.deepEqual(withoutAudio.media, {
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      hasAudio: false,
+    });
+  });
+
+  it('rejects non-boolean hasAudio when explicitly provided', () => {
+    assert.throws(
+      () => normalizeVideoMedia({
+        durationSec: 10,
+        media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: 1 },
+      }),
+      (error) => error.code === 'BAD_INPUT',
+    );
+    assert.throws(
+      () => normalizeVideoMedia({
+        durationSec: 10,
+        media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: 'false' },
+      }),
+      (error) => error.code === 'BAD_INPUT',
+    );
   });
 
   it('rejects negative durationSec', () => {
