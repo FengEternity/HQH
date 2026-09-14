@@ -112,9 +112,12 @@ function indexReviews(reviews) {
   return bySourceKey;
 }
 
-// 校验不过的条目必须离开 reviewed，否则导入闸门会放过陈旧 intro。
+// 带人工介绍的两种状态：reviewed 是有效稿，needs_review 是已失效但正文还留着。
+const HUMAN_INTRO_STATUSES = new Set(['reviewed', 'needs_review']);
+
+// 校验不过的条目必须离开 reviewed，且降级信号要粘滞，否则导入闸门会放过陈旧 intro。
 function statusAfterFailure(entry) {
-  return entry.introStatus === 'reviewed' ? 'needs_review' : 'placeholder';
+  return HUMAN_INTRO_STATUSES.has(entry.introStatus) ? 'needs_review' : 'placeholder';
 }
 
 function checkAgainstTranscript(entry, intro, placeholderIntro) {
@@ -166,15 +169,22 @@ function buildIntroPlan({ entries, reviews, content }) {
     };
 
     if (!review) {
-      if (entry.introStatus !== 'reviewed') {
+      if (!HUMAN_INTRO_STATUSES.has(entry.introStatus)) {
         skip(0);
         return { ...entry, introStatus: 'placeholder' };
       }
 
-      // 已 reviewed 的条目按当前字幕复核，字幕回退或旧介绍失效都要降级。
+      // 带人工介绍的条目按当前字幕复核，字幕回退或旧介绍失效都要降级。
       const recheck = checkAgainstTranscript(entry, entry.intro, placeholderIntro);
       if (!recheck.valid) {
         return reject(recheck.issues, recheck.length);
+      }
+      if (entry.introStatus === 'needs_review') {
+        // 已判失效的条目只能靠新的合格审核稿恢复，不因复核偶然通过就自愈。
+        return reject(
+          [issue('NEEDS_NEW_REVIEW', '此前已判需重审，等待新的审核稿')],
+          recheck.length,
+        );
       }
       skip(recheck.length);
       return { ...entry, introStatus: 'reviewed' };

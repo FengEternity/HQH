@@ -280,6 +280,93 @@ test('未提交审核稿且旧 intro 已脱离新字幕时降级为 needs_review
   );
 });
 
+test('降级后连续第二次运行仍保持 needs_review 且继续计入 rejected', () => {
+  const first = buildIntroPlan({
+    entries: [
+      reviewedEntry({ transcription: { status: 'skipped' }, transcriptSegments: [] }),
+    ],
+    reviews: [
+      {
+        sourceKey: 'a'.repeat(64),
+        title: '南方点测量',
+        intro: '点击右下角的测量栏，再点击点测量。',
+      },
+    ],
+    content: CONTENT,
+  });
+  assert.equal(first.entries[0].introStatus, 'needs_review');
+
+  const second = buildIntroPlan({
+    entries: first.entries,
+    reviews: [],
+    content: CONTENT,
+  });
+
+  assert.equal(second.entries[0].introStatus, 'needs_review');
+  assert.equal(second.rejectedCount, 1);
+  assert.equal(second.skippedCount, 0);
+  assert.equal(second.entries[0].intro, '点击右下角的测量栏，再点击点测量。');
+
+  const third = buildIntroPlan({ entries: second.entries, reviews: [], content: CONTENT });
+  assert.equal(third.entries[0].introStatus, 'needs_review');
+  assert.equal(third.rejectedCount, 1);
+});
+
+test('needs_review 且仍不匹配当前字幕时不会退回 placeholder', () => {
+  const plan = buildIntroPlan({
+    entries: [
+      reviewedEntry({
+        introStatus: 'needs_review',
+        intro: '打开电脑浏览器登录官网下载驱动安装包并解压。',
+      }),
+    ],
+    reviews: [],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.entries[0].introStatus, 'needs_review');
+  assert.equal(plan.rejectedCount, 1);
+  assert.deepEqual(
+    plan.results[0].issues.map((item) => item.code),
+    ['NOT_GROUNDED'],
+  );
+});
+
+test('needs_review 没有新审核稿时不因旧 intro 能过校验就自动恢复 reviewed', () => {
+  const plan = buildIntroPlan({
+    entries: [reviewedEntry({ introStatus: 'needs_review' })],
+    reviews: [],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.appliedCount, 0);
+  assert.equal(plan.rejectedCount, 1);
+  assert.equal(plan.entries[0].introStatus, 'needs_review');
+  assert.deepEqual(
+    plan.results[0].issues.map((item) => item.code),
+    ['NEEDS_NEW_REVIEW'],
+  );
+});
+
+test('needs_review 收到合格新审核稿后恢复 reviewed', () => {
+  const plan = buildIntroPlan({
+    entries: [reviewedEntry({ introStatus: 'needs_review', intro: PLACEHOLDER })],
+    reviews: [
+      {
+        sourceKey: 'a'.repeat(64),
+        title: '南方点测量',
+        intro: '点击右下角的测量栏，再点击点测量完成采集。',
+      },
+    ],
+    content: CONTENT,
+  });
+
+  assert.equal(plan.appliedCount, 1);
+  assert.equal(plan.rejectedCount, 0);
+  assert.equal(plan.entries[0].introStatus, 'reviewed');
+  assert.equal(plan.entries[0].intro, '点击右下角的测量栏，再点击点测量完成采集。');
+});
+
 test('未提交审核稿但旧 intro 仍能通过校验时保持 reviewed', () => {
   const plan = buildIntroPlan({
     entries: [reviewedEntry()],
