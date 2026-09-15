@@ -22,7 +22,7 @@
       <view class="field-label">简介 <text class="field-req">必填</text></view>
       <textarea
         class="field-input field-textarea"
-        placeholder="这段讲解讲什么、适用机型"
+        placeholder="{{introSource === 'placeholder' ? '处理完成后将自动填写，也可先手写' : '这段讲解讲什么、适用机型'}}"
         value="{{intro}}"
         bindinput="onIntro"
         maxlength="500"
@@ -77,6 +77,13 @@
       </view>
       <text class="chip {{videoFileId ? 'chip-ok' : ''}}">{{videoFileId ? '已传' : '未传'}}</text>
     </view>
+    <view wx:if="{{ingestHint}}" class="muted" style="padding: 0 0 16rpx">{{ingestHint}}</view>
+    <view
+      wx:if="{{showRetryIngest}}"
+      class="btn btn-ghost"
+      style="margin-bottom: 24rpx; opacity: {{canRetryIngest ? 1 : 0.45}}; pointer-events: {{canRetryIngest ? 'auto' : 'none'}}"
+      bindtap="retryIngest"
+    >重新处理</view>
   </view>
 
   <view class="form-footer">

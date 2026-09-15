@@ -13,6 +13,24 @@ function statusLabel(status) {
   return '草稿';
 }
 
+function ingestLabel(ingest) {
+  const phase = (ingest && ingest.phase) || 'idle';
+  const asr = (ingest && ingest.asr) || 'pending';
+  if (phase === 'queued' || phase === 'running') {
+    return '处理中';
+  }
+  if (phase === 'failed') {
+    return '失败';
+  }
+  if (phase === 'ready') {
+    if (asr === 'skipped') {
+      return '无音轨';
+    }
+    return '待核对';
+  }
+  return '';
+}
+
 Page({
   data: {
     brandId: '',
@@ -42,6 +60,7 @@ Page({
         const videos = withPosterUrls(res.videos || []).map((item) =>
           Object.assign({}, item, {
             statusLabel: statusLabel(item.status),
+            ingestLabel: ingestLabel(item.ingest),
             canPublish: item.status !== 'published' && isReadyToPublish(item),
             canUnpublish: item.status === 'published',
             initial: String(item.title || '片').slice(0, 1),

@@ -1,9 +1,53 @@
 const { admin } = require('../../../utils/api');
 const { withPosterUrl, planVideoCoverUpload } = require('../../../utils/videoMedia');
 
+const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
+
 function fileExt(filePath, fallback) {
   const match = String(filePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
   return (match && match[1]) || fallback;
+}
+
+function formatLocalTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+function deriveIngestUi(ingest) {
+  const src = ingest && typeof ingest === 'object' ? ingest : {};
+  const phase = src.phase || 'idle';
+  const asr = src.asr || 'pending';
+  const introSource = src.introSource || 'placeholder';
+  const errorMessage = typeof src.errorMessage === 'string' ? src.errorMessage : '';
+  const ingestBusy = phase === 'queued' || phase === 'running';
+  let ingestHint = '';
+
+  if (phase === 'queued' || phase === 'running') {
+    ingestHint = '正在生成字幕和简介';
+  } else if (phase === 'failed') {
+    ingestHint = errorMessage.trim() || '处理失败';
+  } else if (phase === 'ready') {
+    if (asr === 'skipped') {
+      ingestHint = '无音轨，已跳过转写';
+    } else if (asr === 'ready' && introSource === 'placeholder') {
+      ingestHint = '字幕已出，简介需手写';
+    } else {
+      ingestHint = '待核对后上架';
+    }
+  }
+
+  const showRetryIngest = phase === 'failed' || phase === 'ready';
+  const canRetryIngest = showRetryIngest && !ingestBusy;
+
+  return {
+    ingestPhase: phase,
+    ingestHint,
+    introSource,
+    ingestBusy,
+    showRetryIngest,
+    canRetryIngest,
+  };
 }
 
 Page({
@@ -19,6 +63,12 @@ Page({
     videoFileId: '',
     posterUrl: '',
     coverHint: '',
+    ingestPhase: 'idle',
+    ingestHint: '',
+    introSource: 'placeholder',
+    ingestBusy: false,
+    showRetryIngest: false,
+    canRetryIngest: false,
   },
   onLoad(query) {
     const brandId = query.brandId || '';
@@ -43,16 +93,31 @@ Page({
   },
   applyVideo(found, brandId) {
     const video = withPosterUrl(found);
-    this.setData({
-      title: video.title,
-      intro: video.intro,
-      modelName: video.modelName,
-      tags: (video.tags || []).join(','),
-      coverFileId: video.coverFileId,
-      videoFileId: video.videoFileId,
-      posterUrl: video.posterUrl || '',
-      brandId: video.brandId || brandId,
-      id: video._id || this.data.id,
+    this.setData(
+      Object.assign(
+        {
+          title: video.title,
+          intro: video.intro,
+          modelName: video.modelName,
+          tags: (video.tags || []).join(','),
+          coverFileId: video.coverFileId,
+          videoFileId: video.videoFileId,
+          posterUrl: video.posterUrl || '',
+          brandId: video.brandId || brandId,
+          id: video._id || this.data.id,
+        },
+        deriveIngestUi(video.ingest),
+      ),
+    );
+  },
+  reloadVideo() {
+    if (!this.data.id) {
+      return Promise.resolve();
+    }
+    return admin({ action: 'adminGetVideo', id: this.data.id }).then((payload) => {
+      if (payload && payload.video) {
+        this.applyVideo(payload.video, this.data.brandId);
+      }
     });
   },
   onTitle(e) {
@@ -67,11 +132,31 @@ Page({
   onTags(e) {
     this.setData({ tags: e.detail.value });
   },
-  ensureSaved() {
-    if (this.data.id) {
-      return Promise.resolve(this.data.id);
+  applyUploadShell() {
+    const patch = {};
+    if (!String(this.data.title || '').trim()) {
+      patch.title = `讲解${formatLocalTimestamp()}`;
     }
-    return this.persist(true);
+    if (!String(this.data.intro || '').trim()) {
+      patch.intro = PLACEHOLDER_INTRO;
+    }
+    if (!Object.keys(patch).length) {
+      return Promise.resolve(false);
+    }
+    return new Promise((resolve) => {
+      this.setData(patch, () => resolve(true));
+    });
+  },
+  ensureSaved() {
+    return this.applyUploadShell().then((patched) => {
+      if (!this.data.id) {
+        return this.persist(true);
+      }
+      if (patched) {
+        return this.persist(true).then(() => this.data.id);
+      }
+      return this.data.id;
+    });
   },
   pickCoverPhoto() {
     wx.chooseMedia({
@@ -131,6 +216,7 @@ Page({
               return this.persist(true).then(() => 'cover');
             });
           })
+          .then((kind) => this.reloadVideo().then(() => kind))
           .then((kind) => {
             if (kind === 'missing_thumb') {
               wx.showToast({ title: '未获取到视频缩略图，请手动选封面', icon: 'none' });
@@ -145,6 +231,17 @@ Page({
           .catch((err) => wx.showToast({ title: err.message || '上传失败', icon: 'none' }));
       },
     });
+  },
+  retryIngest() {
+    if (!this.data.canRetryIngest || !this.data.id) {
+      return;
+    }
+    admin({ action: 'enqueueVideoIngest', id: this.data.id })
+      .then(() => {
+        wx.showToast({ title: '已重新排队' });
+        return this.reloadVideo();
+      })
+      .catch((err) => wx.showToast({ title: err.message || '重试失败', icon: 'none' }));
   },
   save() {
     this.persist(false).catch((err) => {
