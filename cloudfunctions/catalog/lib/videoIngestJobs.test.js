@@ -159,4 +159,36 @@ describe('finishJobRecord', () => {
       updatedAt: 5000,
     });
   });
+
+  it('rejects queued as finish phase', () => {
+    const running = {
+      videoId: 'v1',
+      mediaRevision: 1,
+      phase: 'running',
+      claimedAt: 1000,
+      claimedBy: 'worker-a',
+      createdAt: 100,
+      updatedAt: 1000,
+    };
+    assert.throws(
+      () => finishJobRecord({ job: running, now: 5000, phase: 'queued' }),
+      (err) => err.code === 'BAD_INPUT' && /done|dead/.test(err.message),
+    );
+  });
+
+  it('rejects running as finish phase', () => {
+    const running = {
+      videoId: 'v1',
+      mediaRevision: 1,
+      phase: 'running',
+      claimedAt: 1000,
+      claimedBy: 'worker-a',
+      createdAt: 100,
+      updatedAt: 1000,
+    };
+    assert.throws(
+      () => finishJobRecord({ job: running, now: 5000, phase: 'running' }),
+      (err) => err.code === 'BAD_INPUT' && /done|dead/.test(err.message),
+    );
+  });
 });

@@ -38,7 +38,16 @@ function claimJobRecord({ job, workerId, now, timeoutMs }) {
   return null;
 }
 
+function badFinishPhase(phase) {
+  const err = new Error(`finishJobRecord phase must be done or dead, got: ${phase}`);
+  err.code = 'BAD_INPUT';
+  return err;
+}
+
 function finishJobRecord({ job, now, phase }) {
+  if (phase !== 'done' && phase !== 'dead') {
+    throw badFinishPhase(phase);
+  }
   return {
     ...job,
     phase,
