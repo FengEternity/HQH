@@ -47,6 +47,19 @@ python3 -m venv .video-ingest/venv
   --language zh
 ```
 
+## 自动处理 worker
+
+worker 在云函数外运行，轮询 `catalog` 领取任务，并在本机完成下载、`ffprobe`、必要的 H.264+AAC 转码及 faster-whisper 转写。它不会调用 `publishVideo`，也不会把视频、音频或帧发送给第三方服务。
+
+启动前需在进程环境中配置 `TCB_ENV_ID`、`TCB_SECRET_ID`、`TCB_SECRET_KEY`、`ADMIN_PIN`，值不要写入仓库或命令行。默认使用 `.video-ingest/venv/bin/python` 和 `medium` 模型；如需覆盖，可只设置环境变量名 `VIDEO_INGEST_PYTHON`、`VIDEO_INGEST_ASR_MODEL`，不要把本机模型文件路径提交到 git。
+
+```bash
+# 需本机已配置 TCB_* 与 ADMIN_PIN
+node scripts/video-ingest/worker.js
+```
+
+worker 无任务时每 5 秒重试。每个任务使用独立临时目录，并在成功或异常后清理下载、转码及临时 manifest；转码产物上传后仍在原任务、原 `mediaRevision` 内完成。
+
 人工或 agent 根据字幕与仅限本地查看的关键帧完成 `intros.review.json` 后，应用审核稿：
 
 ```bash
