@@ -63,13 +63,16 @@ function planAdminSave({ prevData, nextVideoFileId, nextIntro, now }) {
   }
 
   if (nextVideoFileId !== prevVideoFileId) {
+    const isReplacement = Boolean(prevVideoFileId);
     const ingest = {
       ...prevIngest,
       phase: 'queued',
       mediaRevision: prevIngest.mediaRevision + 1,
       videoFileId: nextVideoFileId,
       asr: 'pending',
-      introSource: 'placeholder',
+      introSource: isReplacement
+        ? 'placeholder'
+        : resolveIntroSource(prevData, nextIntro, prevIngest),
       errorCode: '',
       errorMessage: '',
       queuedAt: now,
@@ -77,7 +80,7 @@ function planAdminSave({ prevData, nextVideoFileId, nextIntro, now }) {
       finishedAt: 0,
       attempt: prevIngest.attempt + 1,
     };
-    return { ingest, enqueue: true, clearTranscript: true };
+    return { ingest, enqueue: true, clearTranscript: isReplacement };
   }
 
   const ingest = {

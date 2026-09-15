@@ -20,7 +20,7 @@ describe('normalizeIngest', () => {
 });
 
 describe('planAdminSave', () => {
-  it('enqueues and clears transcript when videoFileId first appears', () => {
+  it('enqueues without clearing transcript when videoFileId first appears', () => {
     const out = planAdminSave({
       prevData: null,
       nextVideoFileId: 'cloud://v1',
@@ -28,7 +28,7 @@ describe('planAdminSave', () => {
       now: 1000,
     });
     assert.equal(out.enqueue, true);
-    assert.equal(out.clearTranscript, true);
+    assert.equal(out.clearTranscript, false);
     assert.equal(out.ingest.phase, 'queued');
     assert.equal(out.ingest.mediaRevision, 1);
     assert.equal(out.ingest.videoFileId, 'cloud://v1');
