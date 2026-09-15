@@ -14,6 +14,20 @@ const { listHomeCatalog } = require('./lib/listHome');
 const { resolveVideoKnowledge } = require('./lib/videoKnowledge');
 const { normalizeVideoMedia } = require('./lib/videoMediaMetadata');
 const { publicVideo } = require('./lib/publicVideo');
+const {
+  CLAIM_TIMEOUT_MS,
+  normalizeIngest,
+} = require('./lib/videoIngest');
+const {
+  canEnqueue,
+  claimJobRecord,
+  createJobRecord,
+  finishJobRecord,
+} = require('./lib/videoIngestJobs');
+const {
+  applyCompleteToVideo,
+  buildUpsertIngestPatch,
+} = require('./lib/videoIngestActions');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -92,6 +106,12 @@ async function dispatch(event) {
       return await upsertSynonym(event);
     case 'upsertVideo':
       return await upsertVideo(event);
+    case 'enqueueVideoIngest':
+      return await enqueueVideoIngest(event);
+    case 'claimVideoIngest':
+      return await claimVideoIngest(event);
+    case 'completeVideoIngest':
+      return await completeVideoIngest(event);
     case 'publishVideo':
       return await publishVideo(event);
     case 'unpublishVideo':
@@ -417,6 +437,7 @@ async function upsertSynonym(event) {
 
 async function upsertVideo(event) {
   await requireAdmin(event.ticket);
+  const now = Date.now();
   const title = String(event.title || '').trim();
   const brandId = String(event.brandId || '').trim();
   const intro = String(event.intro || '').trim();
@@ -450,10 +471,20 @@ async function upsertVideo(event) {
   if (Object.prototype.hasOwnProperty.call(event, 'media')) {
     mediaInput.media = event.media;
   }
+  const nextVideoFileId = event.videoFileId || (prevData && prevData.videoFileId) || '';
+  const planned = buildUpsertIngestPatch({
+    prevData,
+    nextVideoFileId,
+    nextIntro: intro,
+    now,
+  });
   // 先定时长，字幕上界才有依据可校验。
   const mediaMeta = normalizeVideoMedia(mediaInput, prevData);
+  const knowledgeEvent = planned.clearTranscript
+    ? Object.assign({}, event, { transcriptSegments: [] })
+    : event;
   const knowledge = resolveVideoKnowledge({
-    event,
+    event: knowledgeEvent,
     prevData,
     durationSec: mediaMeta.durationSec,
   });
@@ -466,11 +497,12 @@ async function upsertVideo(event) {
     modelName,
     tags,
     coverFileId: event.coverFileId || (prevData && prevData.coverFileId) || '',
-    videoFileId: event.videoFileId || (prevData && prevData.videoFileId) || '',
+    videoFileId: nextVideoFileId,
     transcript: knowledge.transcript,
     transcriptSegments: knowledge.transcriptSegments,
     durationSec: mediaMeta.durationSec,
     media: mediaMeta.media,
+    ingest: planned.ingest,
     searchAbstract: event.searchAbstract || (prevData && prevData.searchAbstract) || '',
     entities: event.entities || (prevData && prevData.entities) || {
       models: [],
@@ -480,18 +512,238 @@ async function upsertVideo(event) {
     },
     status: 'draft',
     searchBlob: '',
-    updatedAt: Date.now(),
+    updatedAt: now,
   };
   payload.searchBlob = buildSearchBlob(payload);
   if (event.id) {
     payload.status = nextStatusAfterSave(prevData && prevData.status);
-    await db.collection('videos').doc(event.id).update({ data: payload });
+    await db.runTransaction(async (transaction) => {
+      await transaction.collection('videos').doc(event.id).update({ data: payload });
+      if (planned.enqueue) {
+        await transaction.collection('video_ingest_jobs').add({
+          data: createJobRecord({
+            videoId: event.id,
+            mediaRevision: planned.ingest.mediaRevision,
+            now,
+          }),
+        });
+      }
+    });
     return { ok: true, id: event.id };
   }
-  payload.createdAt = Date.now();
+  payload.createdAt = now;
   payload.publishedAt = 0;
-  const added = await db.collection('videos').add({ data: payload });
+  const added = await db.runTransaction(async (transaction) => {
+    const video = await transaction.collection('videos').add({ data: payload });
+    if (planned.enqueue) {
+      await transaction.collection('video_ingest_jobs').add({
+        data: createJobRecord({
+          videoId: video._id,
+          mediaRevision: planned.ingest.mediaRevision,
+          now,
+        }),
+      });
+    }
+    return video;
+  });
   return { ok: true, id: added._id };
+}
+
+function badInput(message) {
+  const error = new Error(message);
+  error.code = 'BAD_INPUT';
+  return error;
+}
+
+function withoutId(record) {
+  const data = { ...record };
+  delete data._id;
+  return data;
+}
+
+async function enqueueVideoIngest(event) {
+  await requireAdmin(event.ticket);
+  const id = String(event.id || '').trim();
+  if (!id) {
+    throw badInput('视频 id 必填');
+  }
+  const now = Date.now();
+  await db.runTransaction(async (transaction) => {
+    const snap = await transaction.collection('videos').doc(id).get();
+    const video = snap.data;
+    if (!video) {
+      const error = new Error('NOT_FOUND');
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+    const ingest = normalizeIngest(video.ingest);
+    if (!canEnqueue(ingest.phase)) {
+      throw badInput('正在处理');
+    }
+    const videoFileId = video.videoFileId || ingest.videoFileId;
+    if (!videoFileId) {
+      throw badInput('请先上传视频');
+    }
+    const nextIngest = {
+      ...ingest,
+      phase: 'queued',
+      videoFileId,
+      asr: 'pending',
+      errorCode: '',
+      errorMessage: '',
+      queuedAt: now,
+      startedAt: 0,
+      finishedAt: 0,
+      attempt: ingest.attempt + 1,
+    };
+    await transaction.collection('videos').doc(id).update({
+      data: { ingest: nextIngest, updatedAt: now },
+    });
+    await transaction.collection('video_ingest_jobs').add({
+      data: createJobRecord({
+        videoId: id,
+        mediaRevision: nextIngest.mediaRevision,
+        now,
+      }),
+    });
+  });
+  return { ok: true, id };
+}
+
+async function findClaimCandidate(now) {
+  const queued = await db
+    .collection('video_ingest_jobs')
+    .where({ phase: 'queued' })
+    .orderBy('createdAt', 'asc')
+    .limit(1)
+    .get();
+  if (queued.data.length) {
+    return queued.data[0];
+  }
+  const expired = await db
+    .collection('video_ingest_jobs')
+    .where({
+      phase: 'running',
+      claimedAt: db.command.lte(now - CLAIM_TIMEOUT_MS),
+    })
+    .orderBy('claimedAt', 'asc')
+    .limit(1)
+    .get();
+  return expired.data[0] || null;
+}
+
+async function claimVideoIngest(event) {
+  await requireAdmin(event.ticket);
+  const workerId = String(event.workerId || '').trim();
+  if (!workerId) {
+    throw badInput('workerId 必填');
+  }
+  const now = Date.now();
+  const candidate = await findClaimCandidate(now);
+  if (!candidate) {
+    return { ok: true, job: null };
+  }
+  return await db.runTransaction(async (transaction) => {
+    const jobSnap = await transaction
+      .collection('video_ingest_jobs')
+      .doc(candidate._id)
+      .get();
+    const currentJob = jobSnap.data;
+    const claimed = currentJob
+      ? claimJobRecord({
+          job: currentJob,
+          workerId,
+          now,
+          timeoutMs: CLAIM_TIMEOUT_MS,
+        })
+      : null;
+    if (!claimed) {
+      return { ok: true, job: null };
+    }
+    const videoSnap = await transaction.collection('videos').doc(claimed.videoId).get();
+    const video = videoSnap.data;
+    const ingest = normalizeIngest(video && video.ingest);
+    if (!video || ingest.mediaRevision !== claimed.mediaRevision) {
+      const dead = finishJobRecord({ job: claimed, now, phase: 'dead' });
+      await transaction.collection('video_ingest_jobs').doc(candidate._id).update({
+        data: withoutId(dead),
+      });
+      return { ok: true, job: null };
+    }
+    await transaction.collection('video_ingest_jobs').doc(candidate._id).update({
+      data: withoutId(claimed),
+    });
+    await transaction.collection('videos').doc(claimed.videoId).update({
+      data: {
+        ingest: { ...ingest, phase: 'running', startedAt: now },
+        updatedAt: now,
+      },
+    });
+    return {
+      ok: true,
+      job: { ...claimed, _id: candidate._id },
+      videoId: claimed.videoId,
+      mediaRevision: claimed.mediaRevision,
+      videoFileId: video.videoFileId || ingest.videoFileId,
+    };
+  });
+}
+
+async function completeVideoIngest(event) {
+  await requireAdmin(event.ticket);
+  const videoId = String(event.videoId || '').trim();
+  if (!videoId) {
+    throw badInput('videoId 必填');
+  }
+  const running = await db
+    .collection('video_ingest_jobs')
+    .where({
+      videoId,
+      mediaRevision: event.mediaRevision,
+      phase: 'running',
+    })
+    .limit(1)
+    .get();
+  const candidate = running.data[0];
+  if (!candidate) {
+    throw badInput('运行中的任务不存在');
+  }
+  const now = Date.now();
+  await db.runTransaction(async (transaction) => {
+    const videoSnap = await transaction.collection('videos').doc(videoId).get();
+    const video = videoSnap.data;
+    if (!video) {
+      const error = new Error('NOT_FOUND');
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+    const patch = applyCompleteToVideo({
+      prevData: video,
+      complete: event,
+      now,
+    });
+    const jobSnap = await transaction
+      .collection('video_ingest_jobs')
+      .doc(candidate._id)
+      .get();
+    const job = jobSnap.data;
+    if (!job || job.phase !== 'running') {
+      throw badInput('任务已被处理');
+    }
+    const finished = finishJobRecord({ job, now, phase: 'done' });
+    const nextVideo = { ...video, ...patch };
+    await transaction.collection('videos').doc(videoId).update({
+      data: {
+        ...patch,
+        searchBlob: buildSearchBlob(nextVideo),
+        updatedAt: now,
+      },
+    });
+    await transaction.collection('video_ingest_jobs').doc(candidate._id).update({
+      data: withoutId(finished),
+    });
+  });
+  return { ok: true, videoId };
 }
 
 async function publishVideo(event) {
