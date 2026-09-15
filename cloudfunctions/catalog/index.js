@@ -13,33 +13,12 @@ const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
 const { listHomeCatalog } = require('./lib/listHome');
 const { resolveVideoKnowledge } = require('./lib/videoKnowledge');
 const { normalizeVideoMedia } = require('./lib/videoMediaMetadata');
+const { publicVideo } = require('./lib/publicVideo');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
 const TICKET_TTL_MS = 12 * 60 * 60 * 1000;
-
-function publicVideo(doc) {
-  if (!doc) {
-    return null;
-  }
-  return {
-    _id: doc._id,
-    title: doc.title,
-    intro: doc.intro,
-    brandId: doc.brandId,
-    brandName: doc.brandName,
-    productId: doc.productId || '',
-    modelName: doc.modelName || '',
-    tags: doc.tags || [],
-    coverFileId: doc.coverFileId || '',
-    videoFileId: doc.videoFileId || '',
-    searchAbstract: doc.searchAbstract || '',
-    entities: doc.entities || { models: [], actions: [], menus: [], aliases: [] },
-    status: doc.status,
-    publishedAt: doc.publishedAt || 0,
-  };
-}
 
 async function requireAdmin(ticket) {
   const pin = process.env.ADMIN_PIN;
@@ -316,6 +295,7 @@ async function adminListVideos(event) {
       status: true,
       publishedAt: true,
       updatedAt: true,
+      ingest: true,
     })
     .limit(100)
     .get();
