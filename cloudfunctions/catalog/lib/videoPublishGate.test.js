@@ -43,6 +43,21 @@ describe('videoPublishGate', () => {
     );
   });
 
+  it('rejects publish while ingest is queued or running', () => {
+    const base = {
+      title: '主机架设',
+      intro: '对中讲解',
+      brandId: 'b1',
+      coverFileId: 'cloud://c',
+      videoFileId: 'cloud://v',
+    };
+    assert.equal(isReadyToPublish({ ...base, ingest: { phase: 'queued' } }), false);
+    assert.equal(isReadyToPublish({ ...base, ingest: { phase: 'running' } }), false);
+    assert.equal(isReadyToPublish({ ...base, ingest: { phase: 'ready' } }), true);
+    assert.equal(isReadyToPublish({ ...base, ingest: { phase: 'failed' } }), true);
+    assert.equal(isReadyToPublish(base), true);
+  });
+
   it('keeps unpublished out of searchPublished', () => {
     const video = {
       _id: 'u1',

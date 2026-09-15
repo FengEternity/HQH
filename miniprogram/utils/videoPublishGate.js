@@ -22,6 +22,10 @@ function assertReadyToPublish(doc) {
   if (!coverFileId || !videoFileId) {
     fail('上架前请先上传封面和视频');
   }
+  const phase = doc && doc.ingest && doc.ingest.phase;
+  if (phase === 'queued' || phase === 'running') {
+    fail('处理完成前不能上架');
+  }
 }
 
 function isReadyToPublish(doc) {

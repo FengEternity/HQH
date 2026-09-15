@@ -1,5 +1,7 @@
 'use strict';
 
+const { isIngestBusy } = require('./videoIngest');
+
 function fail(message) {
   const err = new Error(message);
   err.code = 'BAD_INPUT';
@@ -21,6 +23,9 @@ function assertReadyToPublish(doc) {
   const videoFileId = String((doc && doc.videoFileId) || '').trim();
   if (!coverFileId || !videoFileId) {
     fail('上架前请先上传封面和视频');
+  }
+  if (isIngestBusy(doc && doc.ingest)) {
+    fail('处理完成前不能上架');
   }
 }
 
