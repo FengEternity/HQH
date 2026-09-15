@@ -8,6 +8,7 @@ const CATALOG_COLLECTIONS = [
   'support_messages',
   'shop_products',
   'video_shop_links',
+  'video_ingest_jobs',
 ];
 
 function errorText(error) {

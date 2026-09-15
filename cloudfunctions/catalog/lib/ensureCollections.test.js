@@ -11,7 +11,7 @@ const {
 } = require('./ensureCollections');
 
 describe('ensureCollections', () => {
-  it('lists the five catalog collections plus shop_products and video_shop_links', () => {
+  it('lists catalog collections including video_ingest_jobs', () => {
     assert.deepEqual(CATALOG_COLLECTIONS, [
       'brands',
       'products',
@@ -20,6 +20,7 @@ describe('ensureCollections', () => {
       'support_messages',
       'shop_products',
       'video_shop_links',
+      'video_ingest_jobs',
     ]);
   });
 
