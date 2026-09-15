@@ -211,6 +211,90 @@ describe('planAdminSave', () => {
     assert.equal(out.ingest.introSource, 'placeholder');
   });
 
+  it('does not mark human when nextIntro is omitted', () => {
+    const prev = {
+      videoFileId: 'cloud://v1',
+      intro: PLACEHOLDER_INTRO,
+      ingest: {
+        phase: 'running',
+        mediaRevision: 1,
+        videoFileId: 'cloud://v1',
+        asr: 'pending',
+        introSource: 'placeholder',
+        errorCode: '',
+        errorMessage: '',
+        queuedAt: 1,
+        startedAt: 2,
+        finishedAt: 0,
+        attempt: 1,
+      },
+    };
+    const out = planAdminSave({
+      prevData: prev,
+      nextVideoFileId: 'cloud://v1',
+      now: 6000,
+    });
+    assert.equal(out.ingest.introSource, 'placeholder');
+  });
+
+  it('does not mark human when nextIntro is undefined or null', () => {
+    const prev = {
+      videoFileId: 'cloud://v1',
+      intro: '点击测量。',
+      ingest: {
+        phase: 'ready',
+        mediaRevision: 1,
+        videoFileId: 'cloud://v1',
+        asr: 'ready',
+        introSource: 'auto',
+        errorCode: '',
+        errorMessage: '',
+        queuedAt: 1,
+        startedAt: 2,
+        finishedAt: 3,
+        attempt: 1,
+      },
+    };
+    for (const nextIntro of [undefined, null]) {
+      const out = planAdminSave({
+        prevData: prev,
+        nextVideoFileId: 'cloud://v1',
+        nextIntro,
+        now: 6000,
+      });
+      assert.equal(out.ingest.introSource, 'auto');
+    }
+  });
+
+  it('does not mark human when nextIntro is not a string', () => {
+    const prev = {
+      videoFileId: 'cloud://v1',
+      intro: PLACEHOLDER_INTRO,
+      ingest: {
+        phase: 'queued',
+        mediaRevision: 1,
+        videoFileId: 'cloud://v1',
+        asr: 'pending',
+        introSource: 'placeholder',
+        errorCode: '',
+        errorMessage: '',
+        queuedAt: 1,
+        startedAt: 0,
+        finishedAt: 0,
+        attempt: 1,
+      },
+    };
+    for (const nextIntro of [123, {}, []]) {
+      const out = planAdminSave({
+        prevData: prev,
+        nextVideoFileId: 'cloud://v1',
+        nextIntro,
+        now: 6000,
+      });
+      assert.equal(out.ingest.introSource, 'placeholder');
+    }
+  });
+
   it('does not enqueue when videoFileId is empty', () => {
     const out = planAdminSave({
       prevData: null,

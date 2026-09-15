@@ -39,6 +39,9 @@ function isIngestBusy(ingest) {
 }
 
 function resolveIntroSource(prevData, nextIntro, ingest) {
+  if (typeof nextIntro !== 'string') {
+    return ingest.introSource;
+  }
   const prevIntro = prevData && typeof prevData.intro === 'string' ? prevData.intro : '';
   if (nextIntro === PLACEHOLDER_INTRO) {
     return ingest.introSource;
