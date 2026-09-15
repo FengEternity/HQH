@@ -11,8 +11,8 @@ const PLACEHOLDER = '讲解处理中，完成后请核对简介。';
 
 test('builds a grounded step intro from transcript sentences', () => {
   const segments = [
-    { startSec: 0, endSec: 2, 文本: '点击测量' },
-    { startSec: 2, endSec: 4, 文本: '保存项目' },
+    { startSec: 0, endSec: 2, text: '点击测量' },
+    { startSec: 2, endSec: 4, text: '保存项目' },
   ];
   const out = resolveAutoIntro({
     transcriptSegments: segments,
@@ -20,6 +20,15 @@ test('builds a grounded step intro from transcript sentences', () => {
   });
   assert.equal(out.grounded, true);
   assert.match(out.intro, /测量/);
+});
+
+test('ignores non-canonical 文本 field without text and returns placeholder', () => {
+  const out = resolveAutoIntro({
+    transcriptSegments: [{ startSec: 0, endSec: 2, 文本: '点击测量' }],
+    placeholderIntro: PLACEHOLDER,
+  });
+  assert.equal(out.grounded, false);
+  assert.equal(out.intro, PLACEHOLDER);
 });
 
 test('returns placeholder when there is no transcript', () => {

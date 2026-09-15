@@ -12,23 +12,10 @@ function getSegmentText(segment) {
   if (!segment || typeof segment !== 'object') {
     return '';
   }
-  if (typeof segment.text === 'string') {
-    return segment.text.trim();
+  if (typeof segment.text !== 'string') {
+    return '';
   }
-  if (typeof segment['文本'] === 'string') {
-    return segment['文本'].trim();
-  }
-  return '';
-}
-
-function normalizeSegmentsForValidation(transcriptSegments) {
-  if (!Array.isArray(transcriptSegments)) {
-    return [];
-  }
-  return transcriptSegments.map((segment) => ({
-    ...segment,
-    text: getSegmentText(segment),
-  }));
+  return segment.text.trim();
 }
 
 function collectSentences(transcriptSegments) {
@@ -78,7 +65,7 @@ function resolveAutoIntro({ transcriptSegments, placeholderIntro }) {
 
   const validation = validateReviewedIntro({
     intro: draft,
-    transcriptSegments: normalizeSegmentsForValidation(transcriptSegments),
+    transcriptSegments,
     placeholderIntro,
     keyframeEvidence: [],
   });
