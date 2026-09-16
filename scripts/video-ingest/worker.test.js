@@ -1,10 +1,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { once } = require('node:events');
+const { EventEmitter, once } = require('node:events');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { PassThrough } = require('node:stream');
 const { describe, it } = require('node:test');
 
 const {
@@ -131,41 +132,82 @@ describe('worker 生产胶水', () => {
     assert.equal(fs.existsSync(temporaryDirectory), false);
   });
 
-  it('下载不依赖 tempFilePath 提前 resolve 并完整写入 Buffer', async () => {
+  it('临时 URL 提前返回后仍等待二进制流完整落盘', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-download-test-'));
-    let delayedWrite;
-    const app = {
-      downloadFile: async (options) => {
-        if (options.tempFilePath) {
-          fs.writeFileSync(options.tempFilePath, '');
-          delayedWrite = new Promise((resolve) => {
-            setTimeout(() => {
-              fs.writeFileSync(options.tempFilePath, 'late-video');
-              resolve();
-            }, 20);
-          });
-          return {};
-        }
-        return { fileContent: Buffer.from('complete-video') };
-      },
-    };
     try {
-      const earlyPath = path.join(root, 'sdk-early.mp4');
-      await app.downloadFile({
-        fileID: 'cloud://video',
-        tempFilePath: earlyPath,
-      });
-      assert.equal(fs.statSync(earlyPath).size, 0);
-
-      const localPath = await downloadVideoFile({
-        app,
+      const response = new PassThrough();
+      response.statusCode = 200;
+      response.headers = { 'content-length': '14' };
+      const request = new EventEmitter();
+      let resolved = false;
+      const downloading = downloadVideoFile({
+        app: {
+          getTempFileURL: async ({ fileList }) => {
+            assert.deepEqual(fileList, ['cloud://video']);
+            return {
+              fileList: [{
+                code: 'SUCCESS',
+                fileID: 'cloud://video',
+                tempFileURL: 'https://storage.invalid/private-token',
+              }],
+            };
+          },
+        },
         fileId: 'cloud://video',
         workspace: root,
+        requestUrl: (url, onResponse) => {
+          assert.equal(url, 'https://storage.invalid/private-token');
+          onResponse(response);
+          setTimeout(() => {
+            response.end(Buffer.from('complete-video'));
+          }, 20);
+          return request;
+        },
+      });
+      downloading.then(() => {
+        resolved = true;
       });
 
-      assert.equal(fs.readFileSync(localPath, 'utf8'), 'complete-video');
-      await delayedWrite;
-      assert.equal(fs.readFileSync(earlyPath, 'utf8'), 'late-video');
+      await new Promise((resolve) => {
+        setTimeout(resolve, 5);
+      });
+      assert.equal(resolved, false);
+
+      const localPath = await downloading;
+      assert.deepEqual(fs.readFileSync(localPath), Buffer.from('complete-video'));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('空下载流不会作为成功文件返回', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-download-empty-'));
+    try {
+      const response = new PassThrough();
+      response.statusCode = 200;
+      response.headers = { 'content-length': '0' };
+      await assert.rejects(
+        () =>
+          downloadVideoFile({
+            app: {
+              getTempFileURL: async () => ({
+                fileList: [{
+                  code: 'SUCCESS',
+                  fileID: 'cloud://video',
+                  tempFileURL: 'https://storage.invalid/empty',
+                }],
+              }),
+            },
+            fileId: 'cloud://video',
+            workspace: root,
+            requestUrl: (url, onResponse) => {
+              onResponse(response);
+              response.end();
+              return new EventEmitter();
+            },
+          }),
+        /下载文件为空/,
+      );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

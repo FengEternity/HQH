@@ -81,7 +81,9 @@ describe('runOnce', () => {
   it('下载失败时回写稳定失败码和固定错误文案', async () => {
     const { deps, completes } = createDeps({
       downloadVideo: async () => {
-        throw new Error('secret download detail');
+        throw new Error(
+          'https://storage.invalid/private-token /tmp/private/input.mp4 secret-value',
+        );
       },
     });
 

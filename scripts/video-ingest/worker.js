@@ -3,9 +3,12 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const http = require('node:http');
+const https = require('node:https');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { pipeline } = require('node:stream/promises');
 
 const cloudbase = require('@cloudbase/node-sdk');
 
@@ -208,18 +211,64 @@ function createCatalog(app, initialTicket, adminPin) {
   };
 }
 
-async function downloadVideoFile({ app, fileId, workspace }) {
-  const localPath = path.join(workspace, 'input.mp4');
-  const downloaded = await app.downloadFile({ fileID: fileId });
-  if (
-    !Buffer.isBuffer(downloaded?.fileContent) &&
-    typeof downloaded?.fileContent !== 'string'
-  ) {
-    throw new Error('下载未返回文件内容');
+function defaultRequestUrl(url, onResponse) {
+  const protocol = new URL(url).protocol;
+  if (protocol === 'https:') {
+    return https.get(url, onResponse);
   }
-  fs.writeFileSync(localPath, downloaded.fileContent, { mode: 0o600 });
+  if (protocol === 'http:') {
+    return http.get(url, onResponse);
+  }
+  throw new Error('下载地址协议不受支持');
+}
+
+function requestResponse(url, requestUrl) {
+  return new Promise((resolve, reject) => {
+    const request = requestUrl(url, resolve);
+    request.once('error', reject);
+  });
+}
+
+async function downloadVideoFile({
+  app,
+  fileId,
+  workspace,
+  requestUrl = defaultRequestUrl,
+}) {
+  const localPath = path.join(workspace, 'input.mp4');
+  const resolved = await app.getTempFileURL({ fileList: [fileId] });
+  const file = resolved?.fileList?.[0];
+  if (
+    !file ||
+    (file.code && file.code !== 'SUCCESS') ||
+    typeof file.tempFileURL !== 'string' ||
+    !file.tempFileURL
+  ) {
+    throw new Error('获取下载地址失败');
+  }
+
+  try {
+    const response = await requestResponse(file.tempFileURL, requestUrl);
+    if (
+      !Number.isInteger(response.statusCode) ||
+      response.statusCode < 200 ||
+      response.statusCode >= 300
+    ) {
+      response.resume();
+      throw new Error('下载响应失败');
+    }
+    await pipeline(
+      response,
+      fs.createWriteStream(localPath, { flags: 'wx', mode: 0o600 }),
+    );
+  } catch {
+    fs.rmSync(localPath, { force: true });
+    throw new Error('下载文件失败');
+  }
+
   const stat = fs.statSync(localPath);
   if (!stat.isFile() || stat.size === 0) {
+    fs.rmSync(localPath, { force: true });
     throw new Error('下载文件为空');
   }
   return localPath;
