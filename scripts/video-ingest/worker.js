@@ -16,6 +16,7 @@ const { PLACEHOLDER_INTRO, resolveAutoIntro } = require('./lib/autoIntro');
 const { runOnce } = require('./lib/workerLoop');
 
 const IDLE_SLEEP_MS = 5000;
+const DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000;
 const FFPROBE_TIMEOUT_MS = 30 * 1000;
 const FFMPEG_TIMEOUT_MS = 30 * 60 * 1000;
 const TRANSCRIBE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -222,11 +223,13 @@ function defaultRequestUrl(url, onResponse) {
   throw new Error('下载地址协议不受支持');
 }
 
-function requestResponse(url, requestUrl) {
-  return new Promise((resolve, reject) => {
-    const request = requestUrl(url, resolve);
+function startRequest(url, requestUrl) {
+  let request;
+  const response = new Promise((resolve, reject) => {
+    request = requestUrl(url, resolve);
     request.once('error', reject);
   });
+  return { request, response };
 }
 
 async function downloadVideoFile({
@@ -234,6 +237,7 @@ async function downloadVideoFile({
   fileId,
   workspace,
   requestUrl = defaultRequestUrl,
+  downloadTimeoutMs = DOWNLOAD_TIMEOUT_MS,
 }) {
   const localPath = path.join(workspace, 'input.mp4');
   const resolved = await app.getTempFileURL({ fileList: [fileId] });
@@ -247,23 +251,46 @@ async function downloadVideoFile({
     throw new Error('获取下载地址失败');
   }
 
+  let request;
+  let response;
+  let totalTimeout;
+  const timeoutError = new Error('下载超时');
+  const destroyTransfer = () => {
+    request?.destroy(timeoutError);
+    response?.destroy(timeoutError);
+  };
   try {
-    const response = await requestResponse(file.tempFileURL, requestUrl);
-    if (
-      !Number.isInteger(response.statusCode) ||
-      response.statusCode < 200 ||
-      response.statusCode >= 300
-    ) {
-      response.resume();
-      throw new Error('下载响应失败');
-    }
-    await pipeline(
-      response,
-      fs.createWriteStream(localPath, { flags: 'wx', mode: 0o600 }),
-    );
+    const started = startRequest(file.tempFileURL, requestUrl);
+    request = started.request;
+    request.setTimeout(downloadTimeoutMs, destroyTransfer);
+    const transfer = (async () => {
+      response = await started.response;
+      response.setTimeout(downloadTimeoutMs, destroyTransfer);
+      if (
+        !Number.isInteger(response.statusCode) ||
+        response.statusCode < 200 ||
+        response.statusCode >= 300
+      ) {
+        response.resume();
+        throw new Error('下载响应失败');
+      }
+      await pipeline(
+        response,
+        fs.createWriteStream(localPath, { flags: 'wx', mode: 0o600 }),
+      );
+    })();
+    const timeout = new Promise((resolve, reject) => {
+      totalTimeout = setTimeout(() => {
+        destroyTransfer();
+        reject(timeoutError);
+      }, downloadTimeoutMs);
+    });
+    await Promise.race([transfer, timeout]);
   } catch {
     fs.rmSync(localPath, { force: true });
     throw new Error('下载文件失败');
+  } finally {
+    clearTimeout(totalTimeout);
   }
 
   const stat = fs.statSync(localPath);

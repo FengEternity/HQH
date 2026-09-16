@@ -139,6 +139,8 @@ describe('worker 生产胶水', () => {
       response.statusCode = 200;
       response.headers = { 'content-length': '14' };
       const request = new EventEmitter();
+      request.setTimeout = () => request;
+      response.setTimeout = () => response;
       let resolved = false;
       const downloading = downloadVideoFile({
         app: {
@@ -186,6 +188,9 @@ describe('worker 生产胶水', () => {
       const response = new PassThrough();
       response.statusCode = 200;
       response.headers = { 'content-length': '0' };
+      const request = new EventEmitter();
+      request.setTimeout = () => request;
+      response.setTimeout = () => response;
       await assert.rejects(
         () =>
           downloadVideoFile({
@@ -203,12 +208,83 @@ describe('worker 生产胶水', () => {
             requestUrl: (url, onResponse) => {
               onResponse(response);
               response.end();
-              return new EventEmitter();
+              return request;
             },
           }),
         /下载文件为空/,
       );
     } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('HTTP 已建立但不发 body 时超时销毁请求和响应', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-download-timeout-'));
+    const response = new PassThrough();
+    response.statusCode = 200;
+    response.headers = {};
+    const request = new EventEmitter();
+    let requestTimeout = 0;
+    let responseTimeout = 0;
+    let requestDestroyed = false;
+    let responseDestroyed = false;
+    let guardTimer;
+    request.setTimeout = (milliseconds) => {
+      requestTimeout = milliseconds;
+      return request;
+    };
+    request.destroy = (error) => {
+      requestDestroyed = true;
+      request.emit('error', error);
+    };
+    response.setTimeout = (milliseconds) => {
+      responseTimeout = milliseconds;
+      return response;
+    };
+    const destroyResponse = response.destroy.bind(response);
+    response.destroy = (error) => {
+      responseDestroyed = true;
+      return destroyResponse(error);
+    };
+
+    try {
+      const downloading = downloadVideoFile({
+        app: {
+          getTempFileURL: async () => ({
+            fileList: [{
+              code: 'SUCCESS',
+              fileID: 'cloud://video',
+              tempFileURL: 'https://storage.invalid/stalled',
+            }],
+          }),
+        },
+        fileId: 'cloud://video',
+        workspace: root,
+        downloadTimeoutMs: 20,
+        requestUrl: (url, onResponse) => {
+          onResponse(response);
+          return request;
+        },
+      });
+      const guard = new Promise((resolve, reject) => {
+        guardTimer = setTimeout(
+          () => reject(new Error('下载超时测试守卫触发')),
+          200,
+        );
+      });
+
+      await assert.rejects(
+        Promise.race([downloading, guard]),
+        /下载文件失败/,
+      );
+      assert.equal(requestTimeout, 20);
+      assert.equal(responseTimeout, 20);
+      assert.equal(requestDestroyed, true);
+      assert.equal(responseDestroyed, true);
+    } finally {
+      clearTimeout(guardTimer);
+      request.removeAllListeners();
+      response.destroy();
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
