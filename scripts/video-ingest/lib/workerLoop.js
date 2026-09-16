@@ -35,11 +35,12 @@ async function completeFailure(catalog, claimed, errorCode) {
   return 'failed';
 }
 
-async function completeReady(catalog, payload) {
+// ready 回写失败会把 videos.ingest 永远卡在 running，补一次失败回写让它能落到 failed。
+async function completeReady(catalog, claimed, payload) {
   try {
     await catalog.complete(payload);
   } catch {
-    return 'failed';
+    return completeFailure(catalog, claimed, 'INTERNAL');
   }
   return 'processed';
 }
@@ -93,7 +94,7 @@ async function runOnce({
       ? { transcodedVideoFileId: prepared.uploadedFileId }
       : {};
   if (!probe.hasAudio) {
-    return completeReady(catalog, {
+    return completeReady(catalog, claimed, {
       ...jobIdentity(claimed),
       outcome: 'ready',
       asr: 'skipped',
@@ -113,7 +114,7 @@ async function runOnce({
   }
 
   if (transcription.skipped) {
-    return completeReady(catalog, {
+    return completeReady(catalog, claimed, {
       ...jobIdentity(claimed),
       outcome: 'ready',
       asr: 'skipped',
@@ -132,7 +133,7 @@ async function runOnce({
     return completeFailure(catalog, claimed, 'INTERNAL');
   }
 
-  return completeReady(catalog, {
+  return completeReady(catalog, claimed, {
     ...jobIdentity(claimed),
     outcome: 'ready',
     asr: 'ready',

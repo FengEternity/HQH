@@ -60,6 +60,17 @@ node scripts/video-ingest/worker.js
 
 worker 无任务时每 5 秒重试。每个任务使用独立临时目录，并在成功或异常后清理下载、转码及临时 manifest；转码产物上传后仍在原任务、原 `mediaRevision` 内完成。
 
+### 第一期只允许单实例
+
+**同一环境同时只跑一个 worker 进程。** 抢锁靠 `claim` 写入 `claimedAt`，租约固定 30 分钟（`CLAIM_TIMEOUT_MS`），超过即视为失联并允许别的 worker 重抢。但单个任务的下载、转码和 faster-whisper 转写各自的超时上限合计远超 30 分钟，长片很容易在仍在正常处理时租约就已过期。
+
+因此多开会出现：第二个 worker 重抢同一条并重复转码、重复转写；先跑完的那个回写 `complete` 成功，后跑完的那个因任务已 `done` 被拒；`videos.ingest` 的 `startedAt` 与实际处理进程也对不上。第一期不做续租（heartbeat），只能靠人为约束：
+
+- 只在一台机器上启动 `worker.js`，启动前确认没有遗留进程。
+- 需要停机维护时先停 worker，等在途任务回写完成再操作。
+- 单条超过 30 分钟属预期情况，不要因为「看起来卡住」再开一个 worker 去追，重复处理只会让回写互相打架。
+- 任务确实失联时，等租约到期由同一个 worker 重抢即可；也可在管理端对该条点重试重新排队。
+
 人工或 agent 根据字幕与仅限本地查看的关键帧完成 `intros.review.json` 后，应用审核稿：
 
 ```bash

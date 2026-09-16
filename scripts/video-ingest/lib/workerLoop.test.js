@@ -292,6 +292,33 @@ describe('runOnce', () => {
     assert.equal(Object.hasOwn(completes[0], 'intro'), false);
   });
 
+  it('ready 回写失败后补一次 INTERNAL 失败回写，让云端能落到 failed', async () => {
+    const completes = [];
+    const { deps } = createDeps({
+      catalog: {
+        claim: async () => claimedJob(),
+        complete: async (payload) => {
+          completes.push(payload);
+          if (completes.length === 1) {
+            throw new Error('云端写库失败');
+          }
+        },
+      },
+    });
+
+    assert.equal(await runOnce(deps), 'failed');
+    assert.equal(completes.length, 2);
+    assert.equal(completes[0].outcome, 'ready');
+    assert.deepEqual(completes[1], {
+      videoId: 'vid',
+      mediaRevision: 1,
+      outcome: 'failed',
+      asr: 'failed',
+      errorCode: 'INTERNAL',
+      errorMessage: '处理失败',
+    });
+  });
+
   it('ffprobe 超时时回写 INTERNAL', async () => {
     const timeout = Object.assign(new Error('ffprobe timeout'), {
       code: 'ETIMEDOUT',
