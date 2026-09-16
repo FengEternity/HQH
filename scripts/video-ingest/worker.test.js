@@ -289,6 +289,67 @@ describe('worker 生产胶水', () => {
     }
   });
 
+  it('下载超时后 pipeline 延迟拒绝不会成为未处理拒绝', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-download-reject-'));
+    const response = new PassThrough();
+    response.statusCode = 200;
+    response.headers = {};
+    const request = new EventEmitter();
+    const unhandledRejections = [];
+    const onUnhandledRejection = (error) => {
+      unhandledRejections.push(error);
+    };
+    request.setTimeout = () => request;
+    request.destroy = (error) => {
+      request.emit('error', error);
+    };
+    response.setTimeout = () => response;
+    const destroyResponse = response.destroy.bind(response);
+    response.destroy = (error) => {
+      setTimeout(() => {
+        destroyResponse(error);
+      }, 20);
+      return response;
+    };
+    process.on('unhandledRejection', onUnhandledRejection);
+
+    try {
+      await assert.rejects(
+        () =>
+          downloadVideoFile({
+            app: {
+              getTempFileURL: async () => ({
+                fileList: [{
+                  code: 'SUCCESS',
+                  fileID: 'cloud://video',
+                  tempFileURL: 'https://storage.invalid/delayed-rejection',
+                }],
+              }),
+            },
+            fileId: 'cloud://video',
+            workspace: root,
+            downloadTimeoutMs: 10,
+            requestUrl: (url, onResponse) => {
+              onResponse(response);
+              return request;
+            },
+          }),
+        /下载文件失败/,
+      );
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
+
+      assert.equal(unhandledRejections.length, 0);
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandledRejection);
+      request.removeAllListeners();
+      response.destroy = destroyResponse;
+      response.destroy();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('ffmpeg 设置超时和强制终止信号', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-transcode-test-'));
     try {

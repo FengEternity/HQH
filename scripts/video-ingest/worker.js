@@ -279,6 +279,7 @@ async function downloadVideoFile({
         fs.createWriteStream(localPath, { flags: 'wx', mode: 0o600 }),
       );
     })();
+    transfer.catch(() => {});
     const timeout = new Promise((resolve, reject) => {
       totalTimeout = setTimeout(() => {
         destroyTransfer();
