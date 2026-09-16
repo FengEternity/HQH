@@ -79,6 +79,37 @@ describe('worker 生产胶水', () => {
     });
   });
 
+  it('时长四舍五入到一位小数，避免字幕越过云端归一化后的上界', () => {
+    const probe = probeLocalMedia('/private/input.mp4', () => ({
+      status: 0,
+      stdout: Buffer.from(JSON.stringify({
+        format: { duration: '12.345678' },
+        streams: [
+          { codec_type: 'video', codec_name: 'h264' },
+          { codec_type: 'audio', codec_name: 'aac' },
+        ],
+      })),
+      stderr: Buffer.alloc(0),
+    }));
+
+    assert.equal(probe.durationSec, 12.3);
+  });
+
+  it('时长舍入后为零时按媒体信息不完整拒绝', () => {
+    assert.throws(
+      () =>
+        probeLocalMedia('/private/input.mp4', () => ({
+          status: 0,
+          stdout: Buffer.from(JSON.stringify({
+            format: { duration: '0.04' },
+            streams: [{ codec_type: 'video', codec_name: 'h264' }],
+          })),
+          stderr: Buffer.alloc(0),
+        })),
+      /媒体信息不完整/,
+    );
+  });
+
   it('单文件转写通过临时 manifest 调用既有 CLI 并读取结果', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-worker-test-'));
     try {

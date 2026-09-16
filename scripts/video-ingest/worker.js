@@ -55,7 +55,9 @@ function probeLocalMedia(mediaPath, runCommand = defaultCommandRunner) {
   const payload = JSON.parse(Buffer.from(result.stdout || '').toString('utf8'));
   const video = payload.streams?.find((stream) => stream.codec_type === 'video');
   const audio = payload.streams?.find((stream) => stream.codec_type === 'audio');
-  const durationSec = Number(payload.format?.duration);
+  // 与 lib/manifest.js 及云端 normalizeVideoMedia 保持同一精度：先按一位小数定稿，
+  // 转写才不会产出超过云端时长上界的 endSec，complete 也就不会被判 BAD_INPUT。
+  const durationSec = Math.round(Number(payload.format?.duration) * 10) / 10;
   if (!video?.codec_name || !Number.isFinite(durationSec) || durationSec <= 0) {
     throw new Error('媒体信息不完整');
   }
