@@ -2,9 +2,11 @@
 
 const {
   CLAIM_TIMEOUT_MS,
+  isOperatorIntroEdit,
   normalizeIngest,
   planAdminSave,
   planWorkerComplete,
+  resolveNextVideoFileId,
 } = require('./videoIngest');
 const {
   canEnqueue,
@@ -49,13 +51,28 @@ async function getOptionalDocument(documentRef) {
   }
 }
 
-function buildUpsertIngestPatch({ prevData, nextVideoFileId, nextIntro, now }) {
+function buildUpsertIngestPatch({
+  prevData,
+  nextVideoFileId,
+  nextIntro,
+  controlledTranscript,
+  now,
+}) {
   return planAdminSave({
     prevData,
     nextVideoFileId,
     nextIntro,
+    controlledTranscript,
     now,
   });
+}
+
+function hasControlledTranscript(event) {
+  return (
+    Object.prototype.hasOwnProperty.call(event, 'transcriptSegments') &&
+    Array.isArray(event.transcriptSegments) &&
+    event.transcriptSegments.length > 0
+  );
 }
 
 function applyCompleteToVideo({ prevData, complete, now }) {
@@ -130,20 +147,26 @@ function createVideoIngestActions({
       }
       const submittedIntro = String(event.intro || '').trim();
       if (operatorChangedIntro === undefined) {
-        operatorChangedIntro =
-          !prevData || submittedIntro !== String(prevData.intro || '');
+        operatorChangedIntro = isOperatorIntroEdit({
+          prevIntro: prevData ? String(prevData.intro || '') : '',
+          submittedIntro,
+        });
       }
       const intro =
         prevData && !operatorChangedIntro
           ? String(prevData.intro || '')
           : submittedIntro;
-      const nextVideoFileId =
-        event.videoFileId || (prevData && prevData.videoFileId) || '';
+      const nextVideoFileId = resolveNextVideoFileId({
+        prevVideoFileId: (prevData && prevData.videoFileId) || '',
+        submittedVideoFileId: String(event.videoFileId || ''),
+        replaceVideo: event.replaceVideo === true,
+      });
       const timestamp = now();
       const planned = buildUpsertIngestPatch({
         prevData,
         nextVideoFileId,
         nextIntro: intro,
+        controlledTranscript: hasControlledTranscript(event),
         now: timestamp,
       });
       const mediaInput = {};

@@ -38,6 +38,30 @@ function isIngestBusy(ingest) {
   return phase === 'queued' || phase === 'running';
 }
 
+// 运营表单里的 videoFileId 可能是 worker 换过转码文件之前的旧值，把它当成换片会白白
+// 清掉字幕并重排一次。只有调用方显式声明本次新上传，或库里本来就没有文件，才允许改。
+function resolveNextVideoFileId({ prevVideoFileId, submittedVideoFileId, replaceVideo }) {
+  const previous = typeof prevVideoFileId === 'string' ? prevVideoFileId : '';
+  const submitted = typeof submittedVideoFileId === 'string' ? submittedVideoFileId : '';
+  if (!submitted) {
+    return previous;
+  }
+  if (replaceVideo === true || !previous) {
+    return submitted;
+  }
+  return previous;
+}
+
+// 管理端表单会把占位句原样回传，此时库里可能已经有 worker 写好的简介，不能被盖掉。
+function isOperatorIntroEdit({ prevIntro, submittedIntro }) {
+  const previous = typeof prevIntro === 'string' ? prevIntro : '';
+  const submitted = typeof submittedIntro === 'string' ? submittedIntro : '';
+  if (submitted === PLACEHOLDER_INTRO && previous && previous !== PLACEHOLDER_INTRO) {
+    return false;
+  }
+  return submitted !== previous;
+}
+
 function resolveIntroSource(prevData, nextIntro, ingest) {
   if (typeof nextIntro !== 'string') {
     return ingest.introSource;
@@ -52,7 +76,13 @@ function resolveIntroSource(prevData, nextIntro, ingest) {
   return ingest.introSource;
 }
 
-function planAdminSave({ prevData, nextVideoFileId, nextIntro, now }) {
+function planAdminSave({
+  prevData,
+  nextVideoFileId,
+  nextIntro,
+  controlledTranscript = false,
+  now,
+}) {
   const prevVideoFileId =
     prevData && typeof prevData.videoFileId === 'string' ? prevData.videoFileId : '';
   const prevIngest = normalizeIngest(prevData && prevData.ingest);
@@ -64,6 +94,24 @@ function planAdminSave({ prevData, nextVideoFileId, nextIntro, now }) {
 
   if (nextVideoFileId !== prevVideoFileId) {
     const isReplacement = Boolean(prevVideoFileId);
+    // 导入脚本已经带来审核过的字幕，再排一次队只会让 worker 覆盖受控内容。
+    // 提升 mediaRevision 让任何遗留任务在 claim 时作废。
+    if (controlledTranscript && !isReplacement) {
+      const ingest = {
+        ...prevIngest,
+        phase: 'ready',
+        mediaRevision: prevIngest.mediaRevision + 1,
+        videoFileId: nextVideoFileId,
+        asr: 'ready',
+        introSource: resolveIntroSource(prevData, nextIntro, prevIngest),
+        errorCode: '',
+        errorMessage: '',
+        queuedAt: 0,
+        startedAt: 0,
+        finishedAt: now,
+      };
+      return { ingest, enqueue: false, clearTranscript: false };
+    }
     const ingest = {
       ...prevIngest,
       phase: 'queued',
@@ -144,6 +192,8 @@ module.exports = {
   CLAIM_TIMEOUT_MS,
   normalizeIngest,
   isIngestBusy,
+  isOperatorIntroEdit,
   planAdminSave,
   planWorkerComplete,
+  resolveNextVideoFileId,
 };

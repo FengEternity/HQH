@@ -6,8 +6,10 @@ const {
   PLACEHOLDER_INTRO,
   normalizeIngest,
   isIngestBusy,
+  isOperatorIntroEdit,
   planAdminSave,
   planWorkerComplete,
+  resolveNextVideoFileId,
 } = require('./videoIngest');
 
 describe('normalizeIngest', () => {
@@ -305,6 +307,141 @@ describe('planAdminSave', () => {
     assert.equal(out.enqueue, false);
     assert.equal(out.clearTranscript, false);
     assert.equal(out.ingest.phase, 'idle');
+  });
+
+  it('keeps the stored intro source when the form submits the placeholder back', () => {
+    const prev = {
+      videoFileId: 'cloud://v1',
+      intro: '打开项目后点击测量。',
+      ingest: {
+        phase: 'ready',
+        mediaRevision: 1,
+        videoFileId: 'cloud://v1',
+        asr: 'ready',
+        introSource: 'auto',
+        errorCode: '',
+        errorMessage: '',
+        queuedAt: 1,
+        startedAt: 2,
+        finishedAt: 3,
+        attempt: 1,
+      },
+    };
+    const out = planAdminSave({
+      prevData: prev,
+      nextVideoFileId: 'cloud://v1',
+      nextIntro: PLACEHOLDER_INTRO,
+      now: 7000,
+    });
+    assert.equal(out.ingest.introSource, 'auto');
+  });
+
+  it('marks a controlled transcript import ready instead of enqueueing it', () => {
+    const out = planAdminSave({
+      prevData: null,
+      nextVideoFileId: 'cloud://first',
+      nextIntro: '人工审核简介',
+      controlledTranscript: true,
+      now: 8000,
+    });
+    assert.equal(out.enqueue, false);
+    assert.equal(out.clearTranscript, false);
+    assert.equal(out.ingest.phase, 'ready');
+    assert.equal(out.ingest.asr, 'ready');
+    assert.equal(out.ingest.mediaRevision, 1);
+    assert.equal(out.ingest.videoFileId, 'cloud://first');
+    assert.equal(out.ingest.introSource, 'human');
+    assert.equal(out.ingest.finishedAt, 8000);
+  });
+
+  it('still enqueues an ops upload that carries no transcript', () => {
+    const out = planAdminSave({
+      prevData: null,
+      nextVideoFileId: 'cloud://first',
+      nextIntro: PLACEHOLDER_INTRO,
+      controlledTranscript: false,
+      now: 8000,
+    });
+    assert.equal(out.enqueue, true);
+    assert.equal(out.ingest.phase, 'queued');
+  });
+});
+
+describe('resolveNextVideoFileId', () => {
+  it('accepts the first upload without an explicit replacement flag', () => {
+    assert.equal(
+      resolveNextVideoFileId({
+        prevVideoFileId: '',
+        submittedVideoFileId: 'cloud://first',
+        replaceVideo: false,
+      }),
+      'cloud://first',
+    );
+  });
+
+  it('ignores a stale form fileId when no replacement is declared', () => {
+    assert.equal(
+      resolveNextVideoFileId({
+        prevVideoFileId: 'cloud://transcoded',
+        submittedVideoFileId: 'cloud://original',
+        replaceVideo: false,
+      }),
+      'cloud://transcoded',
+    );
+  });
+
+  it('replaces the file only when the caller declares a fresh upload', () => {
+    assert.equal(
+      resolveNextVideoFileId({
+        prevVideoFileId: 'cloud://transcoded',
+        submittedVideoFileId: 'cloud://new',
+        replaceVideo: true,
+      }),
+      'cloud://new',
+    );
+  });
+
+  it('keeps the stored file when the request omits one', () => {
+    assert.equal(
+      resolveNextVideoFileId({
+        prevVideoFileId: 'cloud://transcoded',
+        submittedVideoFileId: '',
+        replaceVideo: true,
+      }),
+      'cloud://transcoded',
+    );
+  });
+});
+
+describe('isOperatorIntroEdit', () => {
+  it('treats the placeholder as no edit when the stored intro is real', () => {
+    assert.equal(
+      isOperatorIntroEdit({
+        prevIntro: '打开项目后点击测量。',
+        submittedIntro: PLACEHOLDER_INTRO,
+      }),
+      false,
+    );
+  });
+
+  it('still accepts a real rewrite', () => {
+    assert.equal(
+      isOperatorIntroEdit({
+        prevIntro: '打开项目后点击测量。',
+        submittedIntro: '运营改写的简介。',
+      }),
+      true,
+    );
+  });
+
+  it('accepts the placeholder while the stored intro is still the placeholder', () => {
+    assert.equal(
+      isOperatorIntroEdit({
+        prevIntro: PLACEHOLDER_INTRO,
+        submittedIntro: PLACEHOLDER_INTRO,
+      }),
+      false,
+    );
   });
 });
 

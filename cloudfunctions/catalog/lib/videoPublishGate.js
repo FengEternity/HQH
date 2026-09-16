@@ -1,6 +1,6 @@
 'use strict';
 
-const { isIngestBusy } = require('./videoIngest');
+const { PLACEHOLDER_INTRO, isIngestBusy } = require('./videoIngest');
 
 function fail(message) {
   const err = new Error(message);
@@ -26,6 +26,9 @@ function assertReadyToPublish(doc) {
   }
   if (isIngestBusy(doc && doc.ingest)) {
     fail('处理完成前不能上架');
+  }
+  if (String((doc && doc.intro) || '').trim() === PLACEHOLDER_INTRO) {
+    fail('上架前请先补写简介');
   }
 }
 

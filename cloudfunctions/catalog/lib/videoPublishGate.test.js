@@ -58,6 +58,31 @@ describe('videoPublishGate', () => {
     assert.equal(isReadyToPublish(base), true);
   });
 
+  it('rejects publish while the intro is still the processing placeholder', () => {
+    const base = {
+      title: '主机架设',
+      brandId: 'b1',
+      coverFileId: 'cloud://c',
+      videoFileId: 'cloud://v',
+      ingest: { phase: 'ready' },
+    };
+    assert.equal(
+      isReadyToPublish({ ...base, intro: '讲解处理中，完成后请核对简介。' }),
+      false,
+    );
+    assert.equal(isReadyToPublish({ ...base, intro: '对中讲解' }), true);
+  });
+
+  it('keeps the placeholder saveable as a draft', () => {
+    assert.doesNotThrow(() =>
+      assertVideoDraftFields({
+        title: '主机架设',
+        brandId: 'b1',
+        intro: '讲解处理中，完成后请核对简介。',
+      }),
+    );
+  });
+
   it('keeps unpublished out of searchPublished', () => {
     const video = {
       _id: 'u1',

@@ -1,5 +1,7 @@
 'use strict';
 
+const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
+
 function fail(message) {
   const err = new Error(message);
   err.code = 'BAD_INPUT';
@@ -25,6 +27,9 @@ function assertReadyToPublish(doc) {
   const phase = doc && doc.ingest && doc.ingest.phase;
   if (phase === 'queued' || phase === 'running') {
     fail('处理完成前不能上架');
+  }
+  if (String((doc && doc.intro) || '').trim() === PLACEHOLDER_INTRO) {
+    fail('上架前请先补写简介');
   }
 }
 

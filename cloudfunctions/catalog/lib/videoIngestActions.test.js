@@ -289,7 +289,25 @@ describe('createVideoIngestActions', () => {
       { startSec: 0, endSec: 1, text: '受控字幕' },
     ]);
     assert.equal(saved.ingest.introSource, 'human');
-    assert.equal(saved.ingest.phase, 'queued');
+    assert.equal(saved.ingest.phase, 'ready');
+    assert.equal(saved.ingest.asr, 'ready');
+    assert.deepEqual(repository.snapshot().jobs, {});
+  });
+
+  it('still enqueues an ops upload that carries no transcript', async () => {
+    const repository = createMemoryRepository();
+    const service = createActions(repository);
+    const result = await service.saveVideo(
+      saveInput({
+        id: undefined,
+        intro: PLACEHOLDER_INTRO,
+        videoFileId: 'cloud://ops-upload',
+      }),
+    );
+    const state = repository.snapshot();
+
+    assert.equal(state.videos[result.id].ingest.phase, 'queued');
+    assert.equal(Object.values(state.jobs).length, 1);
   });
 
   it('forces transcript empty when replacing an existing file', async () => {
@@ -300,12 +318,70 @@ describe('createVideoIngestActions', () => {
     await service.saveVideo(
       saveInput({
         videoFileId: 'cloud://replacement',
+        replaceVideo: true,
         transcriptSegments: [{ startSec: 0, endSec: 1, text: '不应保留' }],
       }),
     );
 
     assert.deepEqual(repository.snapshot().videos.v1.transcriptSegments, []);
     assert.equal(repository.snapshot().videos.v1.transcript, '');
+    assert.equal(repository.snapshot().videos.v1.videoFileId, 'cloud://replacement');
+  });
+
+  it('ignores a stale form fileId that was never re-uploaded', async () => {
+    const repository = createMemoryRepository({
+      videos: {
+        v1: editableVideo({
+          videoFileId: 'cloud://transcoded',
+          intro: '自动生成的步骤简介。',
+          transcript: '自动字幕',
+          transcriptSegments: [{ startSec: 0, endSec: 1, text: '自动字幕' }],
+          ingest: {
+            ...editableVideo().ingest,
+            phase: 'ready',
+            asr: 'ready',
+            introSource: 'auto',
+            videoFileId: 'cloud://transcoded',
+          },
+        }),
+      },
+    });
+    const service = createActions(repository);
+    await service.saveVideo(
+      saveInput({ videoFileId: 'cloud://original', intro: '自动生成的步骤简介。' }),
+    );
+    const state = repository.snapshot();
+
+    assert.equal(state.videos.v1.videoFileId, 'cloud://transcoded');
+    assert.equal(state.videos.v1.ingest.videoFileId, 'cloud://transcoded');
+    assert.equal(state.videos.v1.ingest.phase, 'ready');
+    assert.equal(state.videos.v1.ingest.mediaRevision, 1);
+    assert.deepEqual(state.videos.v1.transcriptSegments, [
+      { startSec: 0, endSec: 1, text: '自动字幕' },
+    ]);
+    assert.deepEqual(state.jobs, {});
+  });
+
+  it('keeps the stored intro when the form submits the placeholder back', async () => {
+    const repository = createMemoryRepository({
+      videos: {
+        v1: editableVideo({
+          intro: '自动生成的步骤简介。',
+          ingest: {
+            ...editableVideo().ingest,
+            phase: 'ready',
+            asr: 'ready',
+            introSource: 'auto',
+          },
+        }),
+      },
+    });
+    const service = createActions(repository);
+    await service.saveVideo(saveInput({ intro: PLACEHOLDER_INTRO }));
+    const saved = repository.snapshot().videos.v1;
+
+    assert.equal(saved.intro, '自动生成的步骤简介。');
+    assert.equal(saved.ingest.introSource, 'auto');
   });
 
   it('recomputes after a completion conflict without reverting worker output', async () => {

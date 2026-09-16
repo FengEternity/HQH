@@ -202,10 +202,10 @@ Page({
           .then((fileID) => {
             this.setData({ videoFileId: fileID });
             if (plan.action === 'keep') {
-              return this.persist(true).then(() => 'video');
+              return this.persistUploadedVideo().then(() => 'video');
             }
             if (plan.action === 'missing_thumb') {
-              return this.persist(true).then(() => 'missing_thumb');
+              return this.persistUploadedVideo().then(() => 'missing_thumb');
             }
             return this.uploadCloudFile('cover', plan.path, fileExt(plan.path, 'jpg')).then((coverId) => {
               this.setData({
@@ -213,7 +213,7 @@ Page({
                 posterUrl: plan.path,
                 coverHint: '未选手动封面，已用视频首帧缩略图',
               });
-              return this.persist(true).then(() => 'cover');
+              return this.persistUploadedVideo().then(() => 'cover');
             });
           })
           .then((kind) => this.reloadVideo().then(() => kind))
@@ -248,7 +248,12 @@ Page({
       wx.showToast({ title: err.message || '保存失败', icon: 'none' });
     });
   },
-  persist(silent) {
+  // 只有刚上传完视频的这一步可以声明换片；其它保存里表单上的 videoFileId 可能已经
+  // 被 worker 的转码文件取代，回传旧值会白白清掉字幕并重排一次。
+  persistUploadedVideo() {
+    return this.persist(true, { replaceVideo: true });
+  },
+  persist(silent, options) {
     if (!this.data.brandId) {
       wx.showToast({ title: '缺少品牌', icon: 'none' });
       return Promise.reject(new Error('缺少品牌'));
@@ -263,6 +268,7 @@ Page({
       tags: this.data.tags,
       coverFileId: this.data.coverFileId,
       videoFileId: this.data.videoFileId,
+      replaceVideo: Boolean(options && options.replaceVideo),
     }).then((res) => {
       this.setData({ id: res.id });
       if (!silent) {
