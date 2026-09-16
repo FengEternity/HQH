@@ -98,7 +98,7 @@ describe('runOnce', () => {
     ]);
   });
 
-  it('探测到无音轨时直接 ready/skipped 且不生成简介', async () => {
+  it('可播编码无音轨时不转码并直接 ready/skipped', async () => {
     const { deps, completes } = createDeps({
       probeMedia: async () => ({
         hasAudio: false,
@@ -107,6 +107,9 @@ describe('runOnce', () => {
         durationSec: 3,
         needsTranscode: false,
       }),
+      transcodeIfNeeded: async () => {
+        throw new Error('可播编码不应转码');
+      },
       transcribe: async () => {
         throw new Error('无音轨不应转写');
       },
@@ -132,7 +135,58 @@ describe('runOnce', () => {
     ]);
   });
 
-  it('转码失败时回写 TRANSCODE_FAILED', async () => {
+  it('HEVC 无音轨先转码再 skipped 且不运行 ASR', async () => {
+    const probes = [];
+    const { deps, completes } = createDeps({
+      probeMedia: async (mediaPath) => {
+        probes.push(mediaPath);
+        if (mediaPath === '/tmp/a.mp4') {
+          return {
+            hasAudio: false,
+            videoCodec: 'hevc',
+            audioCodec: '',
+            durationSec: 3,
+            needsTranscode: true,
+          };
+        }
+        return {
+          hasAudio: false,
+          videoCodec: 'h264',
+          audioCodec: '',
+          durationSec: 3,
+          needsTranscode: false,
+        };
+      },
+      transcodeIfNeeded: async () => ({
+        path: '/tmp/a-transcoded.mp4',
+        uploadedFileId: 'cloud://transcoded-no-audio',
+      }),
+      transcribe: async () => {
+        throw new Error('无音轨不应转写');
+      },
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.deepEqual(probes, ['/tmp/a.mp4', '/tmp/a-transcoded.mp4']);
+    assert.deepEqual(completes[0], {
+      videoId: 'vid',
+      mediaRevision: 1,
+      outcome: 'ready',
+      asr: 'skipped',
+      durationSec: 3,
+      media: {
+        hasAudio: false,
+        videoCodec: 'h264',
+        audioCodec: '',
+      },
+      transcodedVideoFileId: 'cloud://transcoded-no-audio',
+    });
+  });
+
+  it('ffmpeg 超时时回写 TRANSCODE_FAILED', async () => {
+    const timeout = Object.assign(new Error('ffmpeg timeout'), {
+      code: 'ETIMEDOUT',
+    });
     const { deps, completes } = createDeps({
       probeMedia: async () => ({
         hasAudio: true,
@@ -142,7 +196,7 @@ describe('runOnce', () => {
         needsTranscode: true,
       }),
       transcodeIfNeeded: async () => {
-        throw new Error('ffmpeg details');
+        throw timeout;
       },
     });
 
@@ -161,13 +215,22 @@ describe('runOnce', () => {
         },
         complete: async (payload) => completes.push(payload),
       },
-      probeMedia: async () => ({
-        hasAudio: true,
-        videoCodec: 'hevc',
-        audioCodec: 'opus',
-        durationSec: 3,
-        needsTranscode: true,
-      }),
+      probeMedia: async (mediaPath) =>
+        mediaPath === '/tmp/a.mp4'
+          ? {
+              hasAudio: true,
+              videoCodec: 'hevc',
+              audioCodec: 'opus',
+              durationSec: 3,
+              needsTranscode: true,
+            }
+          : {
+              hasAudio: true,
+              videoCodec: 'h264',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: false,
+            },
       transcodeIfNeeded: async () => ({
         path: '/tmp/a-transcoded.mp4',
         uploadedFileId: 'cloud://transcoded',
@@ -178,11 +241,21 @@ describe('runOnce', () => {
     assert.equal(claimCount, 1);
     assert.equal(completes[0].mediaRevision, 1);
     assert.equal(completes[0].transcodedVideoFileId, 'cloud://transcoded');
+    assert.deepEqual(completes[0].media, {
+      hasAudio: true,
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+    });
   });
 
-  it('ASR 失败时回写 ASR_FAILED 且不生成简介', async () => {
+  it('Python 转写超时时回写 ASR_FAILED 且不生成简介', async () => {
+    const timeout = Object.assign(new Error('python timeout'), {
+      code: 'ETIMEDOUT',
+    });
     const { deps, completes } = createDeps({
-      transcribe: async () => ({ ok: false, segments: [], skipped: false }),
+      transcribe: async () => {
+        throw timeout;
+      },
       resolveAutoIntro: () => {
         throw new Error('失败转写不应生成简介');
       },
@@ -217,10 +290,13 @@ describe('runOnce', () => {
     assert.equal(Object.hasOwn(completes[0], 'intro'), false);
   });
 
-  it('未分类异常回写 INTERNAL', async () => {
+  it('ffprobe 超时时回写 INTERNAL', async () => {
+    const timeout = Object.assign(new Error('ffprobe timeout'), {
+      code: 'ETIMEDOUT',
+    });
     const { deps, completes } = createDeps({
       probeMedia: async () => {
-        throw new Error('unexpected probe output');
+        throw timeout;
       },
     });
 

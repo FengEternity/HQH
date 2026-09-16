@@ -78,22 +78,28 @@ async function runOnce({
     return completeFailure(catalog, claimed, 'INTERNAL');
   }
 
+  let prepared = { path: localPath };
+  if (probe.needsTranscode) {
+    try {
+      prepared = await transcodeIfNeeded(localPath, probe);
+      probe = await probeMedia(prepared.path);
+    } catch {
+      return completeFailure(catalog, claimed, 'TRANSCODE_FAILED');
+    }
+  }
+
+  const transcoded =
+    typeof prepared.uploadedFileId === 'string' && prepared.uploadedFileId
+      ? { transcodedVideoFileId: prepared.uploadedFileId }
+      : {};
   if (!probe.hasAudio) {
     return completeReady(catalog, {
       ...jobIdentity(claimed),
       outcome: 'ready',
       asr: 'skipped',
       ...mediaPayload(probe),
+      ...transcoded,
     });
-  }
-
-  let prepared = { path: localPath };
-  if (probe.needsTranscode) {
-    try {
-      prepared = await transcodeIfNeeded(localPath, probe);
-    } catch {
-      return completeFailure(catalog, claimed, 'TRANSCODE_FAILED');
-    }
   }
 
   let transcription;
@@ -106,10 +112,6 @@ async function runOnce({
     return completeFailure(catalog, claimed, 'ASR_FAILED');
   }
 
-  const transcoded =
-    typeof prepared.uploadedFileId === 'string' && prepared.uploadedFileId
-      ? { transcodedVideoFileId: prepared.uploadedFileId }
-      : {};
   if (transcription.skipped) {
     return completeReady(catalog, {
       ...jobIdentity(claimed),

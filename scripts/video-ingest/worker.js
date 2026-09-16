@@ -13,6 +13,9 @@ const { PLACEHOLDER_INTRO, resolveAutoIntro } = require('./lib/autoIntro');
 const { runOnce } = require('./lib/workerLoop');
 
 const IDLE_SLEEP_MS = 5000;
+const FFPROBE_TIMEOUT_MS = 30 * 1000;
+const FFMPEG_TIMEOUT_MS = 30 * 60 * 1000;
+const TRANSCRIBE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const TRANSCRIBE_SCRIPT = path.join(__dirname, 'transcribe.py');
 
 function defaultCommandRunner(command, args, options = {}) {
@@ -31,15 +34,19 @@ function assertCommandSuccess(result, command) {
 }
 
 function probeLocalMedia(mediaPath, runCommand = defaultCommandRunner) {
-  const result = runCommand('ffprobe', [
-    '-v',
-    'error',
-    '-show_entries',
-    'format=duration:stream=codec_type,codec_name',
-    '-of',
-    'json',
-    mediaPath,
-  ]);
+  const result = runCommand(
+    'ffprobe',
+    [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration:stream=codec_type,codec_name',
+      '-of',
+      'json',
+      mediaPath,
+    ],
+    { timeout: FFPROBE_TIMEOUT_MS, killSignal: 'SIGKILL' },
+  );
   assertCommandSuccess(result, 'ffprobe');
   const payload = JSON.parse(Buffer.from(result.stdout || '').toString('utf8'));
   const video = payload.streams?.find((stream) => stream.codec_type === 'video');
@@ -67,30 +74,34 @@ function transcodeLocalMedia({
   runCommand = defaultCommandRunner,
 }) {
   const outputPath = path.join(workspace, 'transcoded.mp4');
-  const result = runCommand('ffmpeg', [
-    '-nostdin',
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-y',
-    '-i',
-    mediaPath,
-    '-vf',
-    "scale='min(1280,iw)':-2",
-    '-c:v',
-    'libx264',
-    '-preset',
-    'medium',
-    '-crf',
-    '23',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '128k',
-    '-movflags',
-    '+faststart',
-    outputPath,
-  ]);
+  const result = runCommand(
+    'ffmpeg',
+    [
+      '-nostdin',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-i',
+      mediaPath,
+      '-vf',
+      "scale='min(1280,iw)':-2",
+      '-c:v',
+      'libx264',
+      '-preset',
+      'medium',
+      '-crf',
+      '23',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-movflags',
+      '+faststart',
+      outputPath,
+    ],
+    { timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' },
+  );
   assertCommandSuccess(result, 'ffmpeg');
   return app
     .uploadFile({
@@ -127,15 +138,19 @@ function transcribeLocalFile({
     encoding: 'utf8',
     mode: 0o600,
   });
-  const result = runCommand(pythonCommand, [
-    TRANSCRIBE_SCRIPT,
-    '--manifest',
-    manifestPath,
-    '--model',
-    modelName,
-    '--language',
-    'zh',
-  ]);
+  const result = runCommand(
+    pythonCommand,
+    [
+      TRANSCRIBE_SCRIPT,
+      '--manifest',
+      manifestPath,
+      '--model',
+      modelName,
+      '--language',
+      'zh',
+    ],
+    { timeout: TRANSCRIBE_TIMEOUT_MS, killSignal: 'SIGKILL' },
+  );
   assertCommandSuccess(result, 'transcribe.py');
   const completed = JSON.parse(fs.readFileSync(manifestPath, 'utf8')).entries[0];
   const status = completed?.transcription?.status;
@@ -152,18 +167,62 @@ async function callCatalog(app, data) {
   const response = await app.callFunction({ name: 'catalog', data });
   const result = response?.result ?? response;
   if (!result || result.ok !== true) {
-    throw new Error('catalog 调用失败');
+    const error = new Error('catalog 调用失败');
+    error.code =
+      typeof result?.code === 'string' && result.code
+        ? result.code
+        : 'CATALOG_CALL_FAILED';
+    throw error;
   }
   return result;
 }
 
-function createCatalog(app, ticket) {
+function createCatalog(app, initialTicket, adminPin) {
+  let ticket = initialTicket;
+
+  async function refreshTicket() {
+    const login = await callCatalog(app, {
+      action: 'adminLogin',
+      pin: adminPin,
+    });
+    ticket = String(login.ticket || '');
+  }
+
+  async function authenticatedCall(data) {
+    try {
+      return await callCatalog(app, { ...data, ticket });
+    } catch (error) {
+      if (error?.code !== 'UNAUTHORIZED') {
+        throw error;
+      }
+      await refreshTicket();
+      return callCatalog(app, { ...data, ticket });
+    }
+  }
+
   return {
     claim: ({ workerId }) =>
-      callCatalog(app, { action: 'claimVideoIngest', ticket, workerId }),
+      authenticatedCall({ action: 'claimVideoIngest', workerId }),
     complete: (payload) =>
-      callCatalog(app, { action: 'completeVideoIngest', ticket, ...payload }),
+      authenticatedCall({ action: 'completeVideoIngest', ...payload }),
   };
+}
+
+async function downloadVideoFile({ app, fileId, workspace }) {
+  const localPath = path.join(workspace, 'input.mp4');
+  const downloaded = await app.downloadFile({ fileID: fileId });
+  if (
+    !Buffer.isBuffer(downloaded?.fileContent) &&
+    typeof downloaded?.fileContent !== 'string'
+  ) {
+    throw new Error('下载未返回文件内容');
+  }
+  fs.writeFileSync(localPath, downloaded.fileContent, { mode: 0o600 });
+  const stat = fs.statSync(localPath);
+  if (!stat.isFile() || stat.size === 0) {
+    throw new Error('下载文件为空');
+  }
+  return localPath;
 }
 
 function createJobDependencies({
@@ -178,21 +237,8 @@ function createJobDependencies({
   return {
     catalog,
     workerId,
-    downloadVideo: async (fileId) => {
-      const localPath = path.join(workspace, 'input.mp4');
-      const downloaded = await app.downloadFile({
-        fileID: fileId,
-        tempFilePath: localPath,
-      });
-      if (!fs.existsSync(localPath) && downloaded?.fileContent !== undefined) {
-        fs.writeFileSync(localPath, downloaded.fileContent, { mode: 0o600 });
-      }
-      const stat = fs.statSync(localPath);
-      if (!stat.isFile() || stat.size === 0) {
-        throw new Error('下载文件为空');
-      }
-      return localPath;
-    },
+    downloadVideo: (fileId) =>
+      downloadVideoFile({ app, fileId, workspace }),
     probeMedia: async (mediaPath) => {
       latestProbe = probeLocalMedia(mediaPath, runCommand);
       return latestProbe;
@@ -266,7 +312,11 @@ async function runCli({
       action: 'adminLogin',
       pin: credentials.adminPin,
     });
-    const catalog = createCatalog(app, String(login.ticket || ''));
+    const catalog = createCatalog(
+      app,
+      String(login.ticket || ''),
+      credentials.adminPin,
+    );
     const workerId = `${os.hostname()}-${process.pid}`;
 
     for (let iteration = 0; iteration < maxIterations; iteration += 1) {
@@ -281,7 +331,7 @@ async function runCli({
           }),
         ),
       );
-      if (result === 'idle') {
+      if (result === 'idle' || result === 'failed') {
         await wait(IDLE_SLEEP_MS);
       }
     }
@@ -299,8 +349,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  downloadVideoFile,
   probeLocalMedia,
   runCli,
   runInTemporaryWorkspace,
+  transcodeLocalMedia,
   transcribeLocalFile,
 };
