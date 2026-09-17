@@ -34,6 +34,18 @@ function shop(data) {
     });
 }
 
+function search(data) {
+  return wx.cloud
+    .callFunction({
+      name: 'search',
+      data,
+    })
+    .then(unwrapCloudResult)
+    .catch((err) => {
+      throw mapCloudCallError(err, 'search');
+    });
+}
+
 function getTicket() {
   return wx.getStorageSync('hqh_admin_ticket') || '';
 }
@@ -53,6 +65,7 @@ function shopAdmin(data) {
 module.exports = {
   catalog,
   shop,
+  search,
   admin,
   shopAdmin,
   getTicket,

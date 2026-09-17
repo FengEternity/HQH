@@ -33,6 +33,66 @@ function describeFailRow(row) {
   return errMsg ? `status=${status} ${errMsg}` : `status=${status}`;
 }
 
+const TEMP_URL_BATCH = 50;
+
+function uniqueCloudIds(ids) {
+  const seen = Object.create(null);
+  const out = [];
+  for (const raw of ids || []) {
+    const id = String(raw || '').trim();
+    if (id.indexOf('cloud://') !== 0 || seen[id]) {
+      continue;
+    }
+    seen[id] = true;
+    out.push(id);
+  }
+  return out;
+}
+
+async function fetchCoverTempUrlMap(coverFileIds, getTempFileURL) {
+  const ids = uniqueCloudIds(coverFileIds);
+  const map = Object.create(null);
+  if (!ids.length || typeof getTempFileURL !== 'function') {
+    return map;
+  }
+  for (let i = 0; i < ids.length; i += TEMP_URL_BATCH) {
+    const chunk = ids.slice(i, i + TEMP_URL_BATCH);
+    try {
+      const res = await getTempFileURL({
+        fileList: chunk.map((fileID) => ({ fileID, maxAge: 86400 })),
+      });
+      for (const row of (res && res.fileList) || []) {
+        const url = rowTempUrl(row);
+        if (row && row.fileID && url) {
+          map[row.fileID] = url;
+        }
+      }
+    } catch (error) {
+      // 单批失败不影响其它封面；也不让 listHome 整单失败
+    }
+  }
+  return map;
+}
+
+async function attachPosterUrls(videos, getTempFileURL) {
+  let map = Object.create(null);
+  try {
+    map = await fetchCoverTempUrlMap(
+      (videos || []).map((video) => video && video.coverFileId),
+      getTempFileURL,
+    );
+  } catch (error) {
+    map = Object.create(null);
+  }
+  return (videos || []).map((video) => {
+    if (!video) {
+      return video;
+    }
+    const cover = String(video.coverFileId || '').trim();
+    return Object.assign({}, video, { posterUrl: map[cover] || '' });
+  });
+}
+
 async function resolveMediaUrls(ids, getTempFileURL) {
   const videoFileId = String((ids && ids.videoFileId) || '').trim();
   const coverFileId = String((ids && ids.coverFileId) || '').trim();
@@ -59,5 +119,6 @@ async function resolveMediaUrls(ids, getTempFileURL) {
 
 module.exports = {
   tempUrlFromFileList,
+  attachPosterUrls,
   resolveMediaUrls,
 };

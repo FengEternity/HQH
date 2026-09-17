@@ -4,7 +4,7 @@
     <video
       wx:if="{{src}}"
       id="player"
-      class="player-video {{shopProducts.length ? 'player-video-compact' : ''}}"
+      class="player-video"
       src="{{src}}"
       poster="{{video.posterUrl}}"
       autoplay
@@ -12,6 +12,7 @@
       show-center-play-btn
       show-fullscreen-btn
       object-fit="contain"
+      enable-progress-gesture
       binderror="onVideoError"
     ></video>
     <view wx:else class="player-empty">暂无视频文件</view>

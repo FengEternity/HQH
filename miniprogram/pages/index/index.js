@@ -1,4 +1,4 @@
-const { catalog } = require('../../utils/api');
+const { catalog, search } = require('../../utils/api');
 const { withPosterUrls } = require('../../utils/videoMedia');
 const { whenCloudReady } = require('../../utils/cloudReady');
 
@@ -42,6 +42,13 @@ Page({
         this.paintShelves();
       })
       .catch((err) => {
+        const hasContent =
+          (this.data.shelves && this.data.shelves.length) || this.data.brands.length;
+        if (hasContent) {
+          this.setData({ loading: false, error: '' });
+          wx.showToast({ title: err.message || '刷新失败', icon: 'none' });
+          return;
+        }
         this.setData({ loading: false, error: err.message || '加载失败' });
       });
   },
@@ -69,12 +76,16 @@ Page({
       return;
     }
     this.setData({ loading: true, searched: true });
-    catalog({ action: 'search', query })
+    search({ scene: 'video', query })
       .then((res) => {
-        let results = withPosterUrls(res.videos || []).map((item) =>
-          Object.assign({}, item, {
-            initial: String(item.brandName || '优').slice(0, 1),
-          }),
+        let results = withPosterUrls(
+          (res.items || []).map((item) =>
+            Object.assign({}, item, {
+              _id: item.id,
+              intro: item.summary || item.intro || '',
+              initial: String(item.brandName || '优').slice(0, 1),
+            }),
+          ),
         );
         if (this.data.brandId) {
           results = results.filter((item) => item.brandId === this.data.brandId);

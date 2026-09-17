@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { tempUrlFromFileList, resolveMediaUrls } = require('./resolveMediaUrls');
+const { attachPosterUrls, tempUrlFromFileList, resolveMediaUrls } = require('./resolveMediaUrls');
 
 describe('tempUrlFromFileList', () => {
   it('returns empty when fileId is missing', () => {
@@ -21,6 +21,38 @@ describe('tempUrlFromFileList', () => {
   it('falls back to row at preferredIndex when fileID does not match', () => {
     const list = [{ fileID: 'cloud://other', status: 0, tempFileURL: 'https://cdn.example/v.mp4' }];
     assert.equal(tempUrlFromFileList(list, 'cloud://v', 0), 'https://cdn.example/v.mp4');
+  });
+});
+
+describe('attachPosterUrls', () => {
+  it('maps cloud cover ids to https posterUrl in batches', async () => {
+    const getTempFileURL = async (payload) => ({
+      fileList: (payload.fileList || []).map((row) => ({
+        fileID: row.fileID,
+        status: 0,
+        tempFileURL: `https://cdn.example/${row.fileID.slice(-2)}.jpg`,
+      })),
+    });
+    const out = await attachPosterUrls(
+      [
+        { _id: 'a', coverFileId: 'cloud://c1' },
+        { _id: 'b', coverFileId: 'cloud://c1' },
+      ],
+      getTempFileURL,
+    );
+    assert.equal(out[0].posterUrl, 'https://cdn.example/c1.jpg');
+    assert.equal(out[1].posterUrl, 'https://cdn.example/c1.jpg');
+  });
+
+  it('returns videos without posters when getTempFileURL throws', async () => {
+    const out = await attachPosterUrls(
+      [{ _id: 'a', coverFileId: 'cloud://c1', title: 't' }],
+      async () => {
+        throw new Error('timeout');
+      },
+    );
+    assert.equal(out[0].title, 't');
+    assert.equal(out[0].posterUrl, '');
   });
 });
 

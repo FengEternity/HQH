@@ -1,6 +1,10 @@
 const { catalog, shop } = require('../../utils/api');
-const { withPosterUrl } = require('../../utils/videoMedia');
 const { formatPriceYuan } = require('../../utils/shopPrice');
+
+function httpsUrl(value) {
+  const url = String(value || '').trim();
+  return /^https:\/\//i.test(url) ? url : '';
+}
 
 Page({
   data: {
@@ -13,23 +17,23 @@ Page({
     const id = query.id;
     catalog({ action: 'getVideo', id })
       .then((res) => {
-        const video = withPosterUrl(res.video);
+        const video = res.video;
         if (video && video.title) {
           wx.setNavigationBarTitle({ title: video.title });
         }
         const src = String((res && res.videoUrl) || '').trim();
+        const posterUrl = httpsUrl(video && video.posterUrl);
         if (!src) {
           this.setData({
-            video,
+            video: posterUrl ? Object.assign({}, video, { posterUrl }) : video,
             error:
               video && video.videoFileId
                 ? '视频地址未返回。请重新上传部署 catalog 云函数后再试'
                 : '暂无视频文件',
           });
         } else {
-          const posterUrl = String((video && video.posterUrl) || '').trim();
           this.setData({
-            video: posterUrl ? Object.assign({}, video, { posterUrl }) : video,
+            video: posterUrl ? Object.assign({}, video, { posterUrl }) : Object.assign({}, video, { posterUrl: '' }),
             src,
           });
         }
