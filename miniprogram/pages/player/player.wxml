@@ -1,34 +1,84 @@
 <view class="player-page">
   <view wx:if="{{error}}" class="player-empty">{{error}}</view>
   <block wx:elif="{{video}}">
-    <video
-      wx:if="{{src}}"
-      id="player"
-      class="player-video"
-      src="{{src}}"
-      poster="{{video.posterUrl}}"
-      autoplay
-      controls
-      show-center-play-btn
-      show-fullscreen-btn
-      object-fit="contain"
-      enable-progress-gesture
-      binderror="onVideoError"
-    ></video>
-    <view wx:else class="player-empty">暂无视频文件</view>
-    <view wx:if="{{shopProducts.length}}" class="player-shop">
-      <view class="player-shop-title">相关商品</view>
-      <view
-        class="player-shop-row"
-        wx:for="{{shopProducts}}"
-        wx:key="_id"
-        data-id="{{item._id}}"
-        bindtap="openShopProduct"
-      >
-        <image wx:if="{{item.coverUrl}}" class="player-shop-cover" src="{{item.coverUrl}}" mode="aspectFill" />
-        <view class="player-shop-main">
-          <view class="tile-title">{{item.name}}</view>
-          <view class="muted">¥{{item.priceYuan}}</view>
+    <view class="player-stage">
+      <video
+        wx:if="{{src}}"
+        id="player"
+        class="player-video"
+        src="{{src}}"
+        poster="{{video.posterUrl}}"
+        autoplay
+        controls
+        show-center-play-btn
+        show-fullscreen-btn
+        object-fit="contain"
+        enable-progress-gesture
+        binderror="onVideoError"
+        bindtimeupdate="onTimeUpdate"
+      ></video>
+      <view wx:else class="player-video player-video-missing">暂无视频文件</view>
+    </view>
+
+    <view class="player-panel">
+      <view class="player-tabs">
+        <view
+          class="player-tab {{tab === 'intro' ? 'player-tab-on' : ''}}"
+          data-tab="intro"
+          bindtap="onTabTap"
+        >简介</view>
+        <view
+          class="player-tab {{tab === 'ask' ? 'player-tab-on' : ''}}"
+          data-tab="ask"
+          bindtap="onTabTap"
+        >问答</view>
+      </view>
+
+      <scroll-view wx:if="{{tab === 'intro'}}" class="player-body" scroll-y>
+        <view class="player-title">{{video.title}}</view>
+        <view class="player-meta muted">
+          <text wx:if="{{video.brandName}}">{{video.brandName}}</text>
+          <text wx:if="{{video.brandName && video.modelName}}"> · </text>
+          <text wx:if="{{video.modelName}}">{{video.modelName}}</text>
+        </view>
+        <view class="player-tags" wx:if="{{video.tags.length}}">
+          <text class="chip" wx:for="{{video.tags}}" wx:key="*this">{{item}}</text>
+        </view>
+        <view class="player-intro">{{video.intro || '暂无简介'}}</view>
+
+        <view wx:if="{{shopProducts.length}}" class="player-shop">
+          <view class="player-shop-title">相关商品</view>
+          <view
+            class="player-shop-row"
+            wx:for="{{shopProducts}}"
+            wx:key="_id"
+            data-id="{{item._id}}"
+            bindtap="openShopProduct"
+          >
+            <image wx:if="{{item.coverUrl}}" class="player-shop-cover" src="{{item.coverUrl}}" mode="aspectFill" />
+            <view class="player-shop-main">
+              <view class="tile-title">{{item.name}}</view>
+              <view class="muted">¥{{item.priceYuan}}</view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view wx:else class="player-ask">
+        <scroll-view class="player-ask-thread" scroll-y>
+          <view class="player-ask-empty muted">
+            本片问答即将开放。以后可针对当前讲解提问，不跳转客服。
+          </view>
+        </scroll-view>
+        <view class="player-ask-dock">
+          <input
+            class="player-ask-input"
+            placeholder="问答即将开放"
+            value="{{inputDraft}}"
+            disabled
+            bindinput="onAskInput"
+          />
+          <view class="btn player-ask-send" bindtap="onAskSend">发送</view>
         </view>
       </view>
     </view>
