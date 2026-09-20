@@ -11,6 +11,12 @@ const {
 } = require('./ensureCollections');
 
 describe('ensureCollections', () => {
+  it('includes cs ticket collections', () => {
+    assert.ok(CATALOG_COLLECTIONS.includes('cs_threads'));
+    assert.ok(CATALOG_COLLECTIONS.includes('cs_messages'));
+    assert.ok(CATALOG_COLLECTIONS.includes('admin_notify_subscribers'));
+  });
+
   it('creates all catalog collections when none exist', async () => {
     const calls = [];
     const db = {

@@ -6,6 +6,9 @@ const CATALOG_COLLECTIONS = [
   'videos',
   'synonyms',
   'support_messages',
+  'cs_threads',
+  'cs_messages',
+  'admin_notify_subscribers',
 ];
 
 function errorText(error) {
