@@ -41,10 +41,15 @@ function admin(data) {
   return catalog(Object.assign({ ticket: getTicket() }, data));
 }
 
+function csAdmin(data) {
+  return cs(Object.assign({ ticket: getTicket() }, data));
+}
+
 module.exports = {
   catalog,
   cs,
   admin,
+  csAdmin,
   getTicket,
   setTicket,
 };

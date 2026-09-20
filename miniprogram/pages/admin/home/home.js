@@ -1,10 +1,10 @@
-const { admin } = require('../../../utils/api');
+const { csAdmin } = require('../../../utils/api');
 const release = require('../../../data/appRelease');
 const { normalizeDoc, envLabel } = require('../../../utils/appRelease');
 
 Page({
   data: {
-    unreadLabel: '暂无未读',
+    pendingLabel: '暂无待处理',
     aboutHint: '',
   },
   onShow() {
@@ -17,11 +17,11 @@ Page({
     this.load();
   },
   load() {
-    admin({ action: 'adminListSupport' })
+    return csAdmin({ action: 'csAdminList' })
       .then((inboxRes) => {
-        const unread = inboxRes.unreadCount || 0;
+        const pending = (inboxRes.threads || []).length;
         this.setData({
-          unreadLabel: unread ? unread + ' 条未读' : '暂无未读',
+          pendingLabel: pending ? pending + ' 条待处理' : '暂无待处理',
         });
       })
       .catch((err) => {

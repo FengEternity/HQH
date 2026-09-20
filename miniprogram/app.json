@@ -11,6 +11,7 @@
     "pages/admin/home/home",
     "pages/admin/catalog/catalog",
     "pages/admin/inbox/inbox",
+    "pages/admin/ticket/ticket",
     "pages/admin/brand/brand",
     "pages/admin/videos/videos",
     "pages/admin/edit/edit",

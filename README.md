@@ -1,6 +1,6 @@
 # 测绘仪器讲解小程序
 
-当前线上/体验版能力对应 **0.1.0**：微信云开发目录（品牌/视频）、关键词搜索、运营入库、播放、首页客服留言。
+当前线上/体验版能力对应 **0.1.0**：微信云开发目录（品牌/视频）、关键词搜索、运营入库、播放、客服工单。
 
 下一期（商城、统一搜索、播放页文档问答、AI 客服）需求在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`，实现计划索引在 `docs/superpowers/plans/2026-09-09-00-ai-native-mall-index.md`。未合入 `main` 前，下文「打开与上云 / 运营 / 手测」仍以 **0.1.0** 为准。
 
@@ -22,16 +22,16 @@
 
 1. 安装[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)，用真实 AppID 导入本仓库根目录（含 `project.config.json`）。游客模式不能开通云开发、不能上传视频。
 2. 开通云开发并创建环境，设为当前环境。
-3. 对云函数 `catalog` 安装依赖并上传部署；环境变量设置 `ADMIN_PIN`（运营口令）。需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。
-4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`。也可在云函数测试里传入 `{ "action": "initDb" }`。
-5. 集合出现后，在云开发控制台把这 5 个集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。云存储可保持 **仅创建者可读写**（免费环境改「全员可读」常要升级）；播放由云函数 `getVideo` 服务端换临时 HTTPS，客户端不再调 `getTempFileURL`。
+3. 对云函数 `catalog` 和 `cs` 安装依赖并上传部署。环境变量设置 `ADMIN_PIN`（运营口令）、`CS_NEW_TICKET_TPL`（新工单通知模板 ID）、`CS_REPLIED_TPL`（客服回复通知模板 ID）。需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。
+4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`、`cs_threads`、`cs_messages`、`admin_notify_subscribers`。也可在云函数测试里传入 `{ "action": "initDb" }`。
+5. 集合出现后，在云开发控制台把这 8 个集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。云存储可保持 **仅创建者可读写**（免费环境改「全员可读」常要升级）；播放由云函数 `getVideo` 服务端换临时 HTTPS，客户端不再调 `getTempFileURL`。
 
 企业主体在 [微信公众平台](https://mp.weixin.qq.com) 注册小程序：主体名称填「优度（杭州）智能装备有限公司」。通过后在「开发 → 开发管理 → 开发设置」复制 AppID，填进 `project.config.json`。
 
 ## 运营入口
 
 - 路径：`pages/admin/login/login`，或在首页品牌行连点 8 次。
-- 口令是云函数环境变量 `ADMIN_PIN`。登录后进入工作台，再选「内容运营」或「客服留言」。
+- 口令是云函数环境变量 `ADMIN_PIN`。登录后进入工作台，再选「内容运营」或「客服工单」；工单角标显示待处理数量，可按待处理、处理中、已关闭筛选并回复或关闭。
 - 内容运营：品牌列表（点行进视频、点编辑改品牌）→ 某品牌下的视频 → 编辑（标题、简介必填，型号与标签可选，上传封面和视频）。上架必须封面和视频都已传。未选手动封面时，上传视频会用系统缩略图（一般为首帧）。可下架；删除会二次确认。
 - 品牌改名会同步刷新该品牌下视频里的 `brandName` 和搜索索引；品牌下还有视频时不允许删除，先把视频删干净。
 
@@ -40,12 +40,14 @@
 底栏「客服」进入 `pages/contact/contact`（`switchTab`）。开场话术和快捷问题在 `miniprogram/config.js` 的 `contact`。
 
 - 领取的账号存在本机 `hqh_support_account`，同一设备重复领取会拿到同一组。
-- 用户自己打字发送，以及点「没有我要的讲解」「转人工」，会写入集合 `support_messages`。运营入口首页「客服留言」可看。点「领取账号 / 怎么找视频」只走自动回复，不进留言箱。
+- 用户自己打字或点「转人工」会升级为待处理工单；运营回复后，用户再次进入客服页即可在时间线查看。关闭后，用户再次发消息会创建新线程。
+- C 端客服不再写 `support_messages`；该集合仅保留兼容旧留言数据。
+- 在微信公众平台申请新工单、客服回复两个订阅消息模板后，把模板 ID 分别配置到云函数环境变量 `CS_NEW_TICKET_TPL`、`CS_REPLIED_TPL`，并配置到 `miniprogram/config.js` 的 `contact.newTicketTplId`、`contact.replyTplId`。模板 ID 留空时，工单回复与转人工仍可使用。
 
 ## 检索单测（不依赖微信）
 
 ```bash
-node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/coverCrop.test.js miniprogram/utils/cloudReady.test.js miniprogram/constants/tabs.test.js
+node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js cloudfunctions/cs/lib/csThreadState.test.js cloudfunctions/cs/lib/csFaq.test.js cloudfunctions/cs/lib/csSendFlow.test.js cloudfunctions/cs/lib/notify.test.js cloudfunctions/cs/lib/csStore.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/coverCrop.test.js miniprogram/utils/cloudReady.test.js miniprogram/constants/tabs.test.js
 ```
 
 ## 手测清单

@@ -54,3 +54,33 @@ describe('cs', () => {
     );
   });
 });
+
+describe('csAdmin', () => {
+  it('adds the stored admin ticket without mutating the request', async () => {
+    const calls = [];
+    global.wx = {
+      cloud: {
+        callFunction(input) {
+          calls.push(input);
+          return Promise.resolve({ result: { ok: true, threads: [] } });
+        },
+      },
+      getStorageSync(key) {
+        return key === 'hqh_admin_ticket' ? 'ticket-1' : '';
+      },
+      setStorageSync() {},
+    };
+    const { csAdmin } = require('./api');
+    const data = { action: 'csAdminList' };
+
+    await csAdmin(data);
+
+    assert.deepEqual(data, { action: 'csAdminList' });
+    assert.deepEqual(calls, [
+      {
+        name: 'cs',
+        data: { ticket: 'ticket-1', action: 'csAdminList' },
+      },
+    ]);
+  });
+});

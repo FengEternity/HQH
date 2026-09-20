@@ -9,10 +9,10 @@
   </view>
   <view class="hub-item" bindtap="openInbox">
     <view>
-      <view class="tile-title">客服留言</view>
-      <view class="muted">用户在问答页发来的内容</view>
+      <view class="tile-title">客服工单</view>
+      <view class="muted">回复用户问题并关闭已处理工单</view>
     </view>
-    <text class="chip">{{unreadLabel}}</text>
+    <text class="chip">{{pendingLabel}}</text>
   </view>
   <view class="hub-item" bindtap="openAbout">
     <view>
