@@ -3,8 +3,8 @@
   <block wx:elif="{{thread}}">
     <view class="card">
       <view class="row">
-        <view class="tile-title">用户 {{thread.openid}}</view>
-        <text class="chip">{{thread.status}}</text>
+        <view class="tile-title">{{thread.userLabel}}</view>
+        <text class="chip">{{thread.statusLabel}}</text>
       </view>
     </view>
 
@@ -26,7 +26,7 @@
       <textarea
         class="field-input field-textarea ticket-reply"
         auto-height
-        maxlength="1000"
+        maxlength="500"
         placeholder="输入回复"
         value="{{draft}}"
         bindinput="onDraft"

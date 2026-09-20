@@ -4,15 +4,17 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   csAdminList,
+  csAdminGet,
   csAdminReply,
   csAdminClose,
   csHistory,
   csSend,
 } = require('./csStore');
 
-function makeMemoryDb() {
+function makeMemoryDb({ failFirstConditionalUpdate = false } = {}) {
   const tables = new Map();
   let nextId = 1;
+  let conditionalUpdateFailed = false;
 
   function rows(name) {
     if (!tables.has(name)) {
@@ -53,6 +55,14 @@ function makeMemoryDb() {
         return { data: data.map((item) => Object.assign({}, item)) };
       },
       async update({ data }) {
+        if (failFirstConditionalUpdate && !conditionalUpdateFailed && where.status) {
+          conditionalUpdateFailed = true;
+          const conflicted = rows(name).find((item) => matches(item, where));
+          if (conflicted) {
+            conflicted.status = 'waiting_human';
+          }
+          return { stats: { updated: 0 } };
+        }
         let updated = 0;
         for (const item of rows(name)) {
           if (matches(item, where)) {
@@ -198,12 +208,106 @@ test('关闭线程后用户再次发送会创建新线程', async () => {
 
   const second = await csSend(db, {
     openid: 'user-1',
+    threadId: first.thread._id,
     text: '新的问题',
     now: 400,
     notifyAdminsFn: async () => {},
   });
 
   assert.notEqual(second.thread._id, first.thread._id);
+  assert.equal(second.thread.status, 'waiting_human');
+  assert.deepEqual(
+    second.messages.map((message) => message.text),
+    [
+      '如您需求的问题没有解决，请联系我完善问题库，并领取账号。',
+      '请人工处理',
+      '已转交运营。请稍候，回复会出现在本页。',
+      '如您需求的问题没有解决，请联系我完善问题库，并领取账号。',
+      '新的问题',
+      '已转交运营。请稍候，回复会出现在本页。',
+    ],
+  );
+});
+
+test('关闭线程后 csHistory 返回旧会话并创建新欢迎消息', async () => {
+  const db = makeMemoryDb();
+  const first = await csSend(db, {
+    openid: 'user-1',
+    text: '旧问题',
+    now: 200,
+    notifyAdminsFn: async () => {},
+  });
+  await csAdminClose(db, { threadId: first.thread._id, now: 300 });
+
+  const history = await csHistory(db, { openid: 'user-1', now: 400 });
+
+  assert.notEqual(history.thread._id, first.thread._id);
+  assert.equal(history.thread.status, 'open');
+  assert.deepEqual(
+    history.messages.map((message) => message.text),
+    [
+      '如您需求的问题没有解决，请联系我完善问题库，并领取账号。',
+      '旧问题',
+      '已转交运营。请稍候，回复会出现在本页。',
+      '如您需求的问题没有解决，请联系我完善问题库，并领取账号。',
+    ],
+  );
+});
+
+test('缓存的 threadId 已不存在时发送会创建新线程', async () => {
+  const db = makeMemoryDb();
+
+  const result = await csSend(db, {
+    openid: 'user-1',
+    threadId: 'missing-thread',
+    text: '新的问题',
+    now: 200,
+    notifyAdminsFn: async () => {},
+  });
+
+  assert.equal(result.thread.status, 'waiting_human');
+  assert.notEqual(result.thread._id, 'missing-thread');
+});
+
+test('状态条件更新首次冲突时重读并重试', async () => {
+  const db = makeMemoryDb({ failFirstConditionalUpdate: true });
+
+  const result = await csSend(db, {
+    openid: 'user-1',
+    text: '需要人工',
+    now: 200,
+    notifyAdminsFn: async () => {},
+  });
+
+  assert.equal(result.thread.status, 'waiting_human');
+  assert.equal(
+    result.messages.some((message) => message.meta && message.meta.event === 'escalated'),
+    false,
+  );
+});
+
+test('工单消息只返回最近 500 条并保持时间升序', async () => {
+  const db = makeMemoryDb();
+  const added = await db.collection('cs_threads').add({
+    data: { openid: 'user-1', status: 'human', createdAt: 1, updatedAt: 1 },
+  });
+  for (let index = 1; index <= 510; index += 1) {
+    await db.collection('cs_messages').add({
+      data: {
+        threadId: added._id,
+        openid: 'user-1',
+        role: 'user',
+        text: String(index),
+        createdAt: index,
+      },
+    });
+  }
+
+  const result = await csAdminGet(db, { threadId: added._id });
+
+  assert.equal(result.messages.length, 500);
+  assert.equal(result.messages[0].text, '11');
+  assert.equal(result.messages.at(-1).text, '510');
 });
 
 test('用户不能向其他 openid 的线程发送消息', async () => {
@@ -218,7 +322,7 @@ test('用户不能向其他 openid 的线程发送消息', async () => {
       now: 200,
       notifyAdminsFn: async () => {},
     }),
-    { code: 'FORBIDDEN' },
+    { code: 'FORBIDDEN', message: '无权访问该会话' },
   );
 });
 

@@ -32,6 +32,7 @@ function planSend(input) {
     };
     if (kind === 'claim') {
       assistant.meta.account = String(input.account || '');
+      assistant.meta.actions = [{ id: 'copyAccount', label: '复制账号' }];
       assistant.text =
         '这是你的资料馆账号，点复制带走。回来搜型号、补充问题时把账号一并告诉我。';
     }

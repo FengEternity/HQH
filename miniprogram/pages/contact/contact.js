@@ -109,11 +109,16 @@ Page({
     if (faq.id === 'claim') {
       return this.claimAccount();
     }
-    return this.submit({
-      action: 'csSend',
-      text: faq.title,
-      faqId: faq.id,
-    });
+    const sendFaq = () =>
+      this.submit({
+        action: 'csSend',
+        text: faq.title,
+        faqId: faq.id,
+      });
+    if (faq.id === 'missing' || faq.id === 'human') {
+      return this.requestReplySubscription().then(sendFaq);
+    }
+    return sendFaq();
   },
   onAction(e) {
     const id = e.currentTarget.dataset.id;

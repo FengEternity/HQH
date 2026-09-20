@@ -32,6 +32,27 @@ function roleLabel(role) {
   return '客服';
 }
 
+function statusLabel(status) {
+  const labels = {
+    open: '自动应答',
+    waiting_human: '待处理',
+    human: '处理中',
+    closed: '已关闭',
+  };
+  return labels[status] || '未知状态';
+}
+
+function userLabel(openid) {
+  return openid ? '用户 ' + openid.slice(-8) : '未知用户';
+}
+
+function mapThread(thread) {
+  return Object.assign({}, thread, {
+    statusLabel: statusLabel(thread.status),
+    userLabel: userLabel(thread.openid),
+  });
+}
+
 Page({
   data: {
     threadId: '',
@@ -67,7 +88,7 @@ Page({
       }),
     );
     this.setData({
-      thread: result.thread,
+      thread: mapThread(result.thread),
       messages,
       loading: false,
       submitting: false,
@@ -119,7 +140,7 @@ Page({
         })
           .then((response) => {
             this.setData({
-              thread: response.thread,
+              thread: mapThread(response.thread),
               submitting: false,
             });
           })

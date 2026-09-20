@@ -47,7 +47,7 @@
 ## 检索单测（不依赖微信）
 
 ```bash
-node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js cloudfunctions/cs/lib/csThreadState.test.js cloudfunctions/cs/lib/csFaq.test.js cloudfunctions/cs/lib/csSendFlow.test.js cloudfunctions/cs/lib/notify.test.js cloudfunctions/cs/lib/csStore.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/coverCrop.test.js miniprogram/utils/cloudReady.test.js miniprogram/constants/tabs.test.js
+node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js cloudfunctions/cs/lib/csThreadState.test.js cloudfunctions/cs/lib/csFaq.test.js cloudfunctions/cs/lib/csSendFlow.test.js cloudfunctions/cs/lib/notify.test.js cloudfunctions/cs/lib/csStore.test.js cloudfunctions/shop/lib/shopListAndLinks.test.js cloudfunctions/shop/lib/shopPublishGate.test.js cloudfunctions/shop/lib/videoShopLink.test.js miniprogram/utils/api.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/coverCrop.test.js miniprogram/utils/cloudReady.test.js miniprogram/utils/decodeQueryName.test.js miniprogram/utils/appRelease.test.js miniprogram/constants/tabs.test.js miniprogram/pages/contact/contact.test.js miniprogram/pages/admin/login/login.test.js
 ```
 
 ## 手测清单

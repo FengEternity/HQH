@@ -17,8 +17,17 @@ const { verifyTicket } = require('./lib/ticket');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
-function codedError(code, message = code) {
-  const error = new Error(message);
+const ERROR_MESSAGES = {
+  INVALID_STATE: '当前状态不支持此操作，请刷新后重试',
+  FORBIDDEN: '无权访问该会话',
+  NOT_FOUND: '会话不存在',
+  BAD_INPUT: '输入内容不正确',
+  UNAUTHORIZED: '登录已失效，请重新登录',
+  UNKNOWN_ACTION: '不支持的操作',
+};
+
+function codedError(code, message) {
+  const error = new Error(message || ERROR_MESSAGES[code] || '请求失败');
   error.code = code;
   return error;
 }
@@ -49,7 +58,7 @@ async function checkText(content) {
     throw codedError('CONTENT_REJECTED', '内容安全校验失败');
   }
   if (suggest && suggest !== 'pass') {
-    throw codedError('CONTENT_REJECTED', '文案未通过内容安全检测，请修改后上架');
+    throw codedError('CONTENT_REJECTED', '文案未通过内容安全检测，请修改后重发');
   }
 }
 

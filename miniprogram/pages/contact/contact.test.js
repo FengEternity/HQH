@@ -20,6 +20,7 @@ function loadPage({ cs, storage = {}, replyTplId = '' }) {
   config.contact.replyTplId = replyTplId;
 
   let definition;
+  const subscriptionRequests = [];
   global.Page = (value) => {
     definition = value;
   };
@@ -30,7 +31,8 @@ function loadPage({ cs, storage = {}, replyTplId = '' }) {
     setStorageSync(key, value) {
       storage[key] = value;
     },
-    requestSubscribeMessage() {
+    requestSubscribeMessage(options) {
+      subscriptionRequests.push(options);
       return Promise.resolve({});
     },
     setClipboardData() {},
@@ -46,7 +48,7 @@ function loadPage({ cs, storage = {}, replyTplId = '' }) {
       this.data = Object.assign({}, this.data, next);
     },
   });
-  return { page, storage };
+  return { page, storage, subscriptionRequests };
 }
 
 afterEach(() => {
@@ -177,5 +179,55 @@ describe('contact page', () => {
         threadId: 'thread-1',
       },
     ]);
+  });
+
+  it('missing and human FAQ request reply subscription before sending', async () => {
+    const calls = [];
+    const { page, subscriptionRequests } = loadPage({
+      replyTplId: 'reply-template',
+      cs: async (data) => {
+        calls.push(data);
+        return {
+          ok: true,
+          thread: { _id: 'thread-1', status: 'waiting_human' },
+          messages: [],
+        };
+      },
+    });
+    page.data.thread = { _id: 'thread-1', status: 'open' };
+
+    await page.askFaq({ currentTarget: { dataset: { id: 'missing' } } });
+    await page.askFaq({ currentTarget: { dataset: { id: 'human' } } });
+
+    assert.equal(subscriptionRequests.length, 2);
+    assert.deepEqual(calls, [
+      {
+        action: 'csSend',
+        text: '没有我要的讲解',
+        faqId: 'missing',
+        threadId: 'thread-1',
+      },
+      {
+        action: 'csSend',
+        text: '转人工',
+        faqId: 'human',
+        threadId: 'thread-1',
+      },
+    ]);
+  });
+
+  it('empty replyTplId does not request subscription', async () => {
+    const { page, subscriptionRequests } = loadPage({
+      cs: async () => ({
+        ok: true,
+        thread: { _id: 'thread-1', status: 'waiting_human' },
+        messages: [],
+      }),
+    });
+    page.data.thread = { _id: 'thread-1', status: 'open' };
+
+    await page.askFaq({ currentTarget: { dataset: { id: 'missing' } } });
+
+    assert.equal(subscriptionRequests.length, 0);
   });
 });
