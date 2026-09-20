@@ -61,7 +61,9 @@ Page({
       .then((res) => {
         setTicket(res.ticket);
         return requestNewTicketSubscription()
-          .then(() => csAdmin({ action: 'csRegisterNotify' }))
+          .then(() =>
+            csAdmin({ action: 'csRegisterNotify' }).catch(() => {}),
+          )
           .then(() => {
             wx.redirectTo({ url: '/pages/admin/home/home' });
           });

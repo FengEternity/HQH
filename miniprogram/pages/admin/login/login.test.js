@@ -80,3 +80,30 @@ it('registers admin notifications after denied subscription, then redirects', as
     ['redirect', '/pages/admin/home/home'],
   ]);
 });
+
+it('redirects after notification registration fails without showing login failure', async () => {
+  const events = [];
+  global.wx = {
+    redirectTo({ url }) {
+      events.push(['redirect', url]);
+    },
+    showToast({ title }) {
+      events.push(['toast', title]);
+    },
+  };
+  const { page, tickets } = loadPage({
+    templateId: '',
+    catalog: async () => ({ ok: true, ticket: 'ticket-2' }),
+    csAdmin: async () => {
+      throw new Error('register failed');
+    },
+  });
+  page.data.pin = '5678';
+
+  await page.onLogin();
+
+  assert.deepEqual(tickets, ['ticket-2']);
+  assert.deepEqual(events, [
+    ['redirect', '/pages/admin/home/home'],
+  ]);
+});
