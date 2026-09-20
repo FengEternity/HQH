@@ -4,6 +4,7 @@ module.exports = {
     phone: '',
     qrImage: '',
     hours: '工作日 9:00–18:00',
+    replyTplId: '',
     welcome:
       '如您需求的问题没有解决，请联系我完善问题库，并领取账号。',
     faqs: [

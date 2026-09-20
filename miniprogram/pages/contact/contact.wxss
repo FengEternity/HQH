@@ -57,6 +57,14 @@ page {
   border: 1rpx solid #e4e4e7;
 }
 
+.msg.assistant .bubble,
+.msg.operator .bubble,
+.msg.system .bubble {
+  background: #ffffff;
+  color: #18181b;
+  border-color: #e4e4e7;
+}
+
 /* 回复里有换行（如转人工的微信、电话各占一行），要按原样断行 */
 .bubble-text {
   white-space: pre-line;
@@ -147,5 +155,13 @@ page {
 .send {
   flex-shrink: 0;
   padding: 16rpx 28rpx;
+  font-size: 26rpx;
+}
+
+.human {
+  flex-shrink: 0;
+  padding: 16rpx 20rpx;
+  border: 1rpx solid #4b6fdb;
+  color: #4b6fdb;
   font-size: 26rpx;
 }
