@@ -1,4 +1,4 @@
-const { admin } = require('../../../utils/api');
+const { ticketingAdmin } = require('../../../utils/api');
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -24,8 +24,13 @@ function formatTime(ms) {
 
 Page({
   data: {
-    messages: [],
-    unreadCount: 0,
+    status: 'waiting_human',
+    statuses: [
+      { value: 'waiting_human', label: '待处理' },
+      { value: 'human', label: '处理中' },
+      { value: 'closed', label: '已关闭' },
+    ],
+    threads: [],
     loading: true,
   },
   onShow() {
@@ -33,17 +38,18 @@ Page({
   },
   load() {
     this.setData({ loading: true });
-    admin({ action: 'adminListSupport' })
+    return ticketingAdmin({ action: 'csAdminList', status: this.data.status })
       .then((res) => {
-        const messages = (res.messages || []).map((item) =>
+        const threads = (res.threads || []).map((item) =>
           Object.assign({}, item, {
-            statusLabel: item.status === 'unread' ? '未读' : '已读',
-            timeLabel: formatTime(item.createdAt),
+            timeLabel: formatTime(item.updatedAt),
+            userLabel: item.openid
+              ? '用户 ' + item.openid.slice(-8)
+              : '未知用户',
           }),
         );
         this.setData({
-          messages,
-          unreadCount: res.unreadCount || 0,
+          threads,
           loading: false,
         });
       })
@@ -56,14 +62,20 @@ Page({
         wx.showToast({ title: err.message || '加载失败', icon: 'none' });
       });
   },
-  markRead(e) {
-    const id = e.currentTarget.dataset.id;
-    const found = this.data.messages.find((item) => item._id === id);
-    if (!found || found.status === 'read') {
+  selectStatus(e) {
+    const status = e.currentTarget.dataset.status;
+    if (!status || status === this.data.status) {
       return;
     }
-    admin({ action: 'adminReadSupport', id })
-      .then(() => this.load())
-      .catch((err) => wx.showToast({ title: err.message || '标记失败', icon: 'none' }));
+    this.setData({ status, threads: [] });
+    return this.load();
+  },
+  openTicket(e) {
+    const id = e.currentTarget.dataset.id;
+    if (id) {
+      wx.navigateTo({
+        url: '/pages/admin/ticket/ticket?id=' + encodeURIComponent(id),
+      });
+    }
   },
 });

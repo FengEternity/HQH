@@ -7,12 +7,12 @@
   >
     <view class="status muted">客服在线 · {{hours}}</view>
 
-    <view wx:for="{{messages}}" wx:key="id" id="m{{item.id}}" class="msg {{item.role}}">
+    <view wx:for="{{messages}}" wx:key="_id" id="m{{item._id}}" class="msg {{item.role}}">
       <view class="msg-main">
-        <view class="avatar" wx:if="{{item.role === 'staff'}}">优</view>
+        <view class="avatar" wx:if="{{item.role !== 'user'}}">优</view>
         <view class="bubble">
           <view class="bubble-text">{{item.text}}</view>
-          <view class="account" wx:if="{{item.account}}">{{item.account}}</view>
+          <view class="account" wx:if="{{item.meta.account}}">{{item.meta.account}}</view>
         </view>
       </view>
       <view class="actions" wx:if="{{item.actions}}">
@@ -48,6 +48,7 @@
         bindinput="onDraft"
         bindconfirm="send"
       />
+      <view class="btn human" bindtap="escalate">转人工</view>
       <view class="btn send" bindtap="send">发送</view>
     </view>
   </view>

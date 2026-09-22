@@ -1,0 +1,44 @@
+<view class="page ticket-page">
+  <view wx:if="{{loading}}" class="empty">加载中</view>
+  <block wx:elif="{{thread}}">
+    <view class="card">
+      <view class="row">
+        <view class="tile-title">{{thread.userLabel}}</view>
+        <text class="chip">{{thread.statusLabel}}</text>
+      </view>
+    </view>
+
+    <view class="timeline">
+      <view
+        wx:for="{{messages}}"
+        wx:key="_id"
+        class="ticket-message ticket-message-{{item.role}}"
+      >
+        <view class="row">
+          <text class="tile-title">{{item.roleLabel}}</text>
+          <text class="muted">{{item.timeLabel}}</text>
+        </view>
+        <view class="ticket-text">{{item.text}}</view>
+      </view>
+    </view>
+
+    <block wx:if="{{thread.status !== 'closed'}}">
+      <textarea
+        class="field-input field-textarea ticket-reply"
+        auto-height
+        maxlength="500"
+        placeholder="输入回复"
+        value="{{draft}}"
+        bindinput="onDraft"
+      />
+      <view class="ticket-actions">
+        <view class="btn ticket-action" bindtap="reply">
+          {{submitting ? '处理中' : '回复'}}
+        </view>
+        <view class="btn btn-ghost btn-danger ticket-action" bindtap="close">关闭工单</view>
+      </view>
+    </block>
+    <view wx:else class="muted ticket-closed">工单已关闭</view>
+  </block>
+  <view wx:else class="empty">工单不存在。</view>
+</view>

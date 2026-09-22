@@ -1,0 +1,46 @@
+.ticket-page {
+  padding-bottom: 48rpx;
+}
+
+.timeline {
+  margin-bottom: 24rpx;
+}
+
+.ticket-message {
+  background: #fff;
+  border: 1rpx solid #e4e4e7;
+  border-radius: 14rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.ticket-message-user {
+  border-left: 6rpx solid #a1a1aa;
+}
+
+.ticket-message-operator {
+  border-left: 6rpx solid #4b6fdb;
+}
+
+.ticket-text {
+  margin-top: 12rpx;
+  white-space: pre-wrap;
+}
+
+.ticket-reply {
+  margin-bottom: 16rpx;
+}
+
+.ticket-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.ticket-action {
+  flex: 1;
+}
+
+.ticket-closed {
+  text-align: center;
+  padding: 24rpx;
+}
