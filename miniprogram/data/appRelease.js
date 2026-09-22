@@ -1,8 +1,22 @@
 // 小程序 require 不支持 .json，数据以 js 模块随包发布。
 // 升版本规则见 docs/versioning.md：只有明确要求发版时才改本文件；正式上线前只用 0.x.y。
 module.exports = {
-  version: '0.1.0',
+  version: '0.2.0',
   releases: [
+    {
+      version: '0.2.0',
+      date: '2026-09-22',
+      user: [
+        '客服改为云端会话：历史会保留，可转人工，运营回复会出现在本页',
+        '底栏改为讲解、客服和「我的」；第一期暂不开放商城',
+      ],
+      internal: [
+        '新云函数 ticketing；集合 cs_threads、cs_messages、admin_notify_subscribers',
+        '运营工作台改为工单列表（待处理/处理中/已关闭），可回复和关闭',
+        '可选订阅：新工单、客服回复；发送失败不回滚已写入的工单',
+        '底栏去掉商城 tab，pages/shop/shop 仍保留，不要对用户承诺可下单',
+      ],
+    },
     {
       version: '0.1.0',
       date: '2026-09-10',
