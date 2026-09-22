@@ -10,11 +10,11 @@ const pagePath = require.resolve('./contact');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
-function loadPage({ cs, storage = {}, replyTplId = '' }) {
+function loadPage({ ticketing, storage = {}, replyTplId = '' }) {
   delete require.cache[pagePath];
   const api = require(apiPath);
-  const originalCs = api.cs;
-  api.cs = cs;
+  const originalTicketing = api.ticketing;
+  api.ticketing = ticketing;
 
   const config = require(configPath);
   config.contact.replyTplId = replyTplId;
@@ -40,7 +40,7 @@ function loadPage({ cs, storage = {}, replyTplId = '' }) {
   };
 
   require(pagePath);
-  api.cs = originalCs;
+  api.ticketing = originalTicketing;
 
   const page = Object.assign({}, definition, {
     data: JSON.parse(JSON.stringify(definition.data)),
@@ -61,7 +61,7 @@ describe('contact page', () => {
   it('onShow loads the server timeline and maps message metadata', async () => {
     const calls = [];
     const { page } = loadPage({
-      cs: async (data) => {
+      ticketing: async (data) => {
         calls.push(data);
         return {
           ok: true,
@@ -94,11 +94,24 @@ describe('contact page', () => {
     assert.equal(page.data.hours, '工作日 9:00–18:00');
   });
 
+  it('quick chips leave out the escalate entry kept beside the input', () => {
+    const { page } = loadPage({
+      ticketing: async () => ({ ok: true, thread: null, messages: [] }),
+    });
+
+    page.onLoad();
+
+    assert.deepEqual(
+      page.data.faqs.map((item) => item.id),
+      ['claim', 'missing', 'howto'],
+    );
+  });
+
   it('claim creates a persistent account and sends it to the current thread', async () => {
     const calls = [];
     const { page, storage } = loadPage({
       storage: {},
-      cs: async (data) => {
+      ticketing: async (data) => {
         calls.push(data);
         return {
           ok: true,
@@ -127,7 +140,7 @@ describe('contact page', () => {
     const calls = [];
     const { page } = loadPage({
       replyTplId: 'reply-template',
-      cs: async (data) => {
+      ticketing: async (data) => {
         calls.push(data);
         return {
           ok: true,
@@ -158,7 +171,7 @@ describe('contact page', () => {
     const calls = [];
     const { page } = loadPage({
       replyTplId: 'reply-template',
-      cs: async (data) => {
+      ticketing: async (data) => {
         calls.push(data);
         return {
           ok: true,
@@ -185,7 +198,7 @@ describe('contact page', () => {
     const calls = [];
     const { page, subscriptionRequests } = loadPage({
       replyTplId: 'reply-template',
-      cs: async (data) => {
+      ticketing: async (data) => {
         calls.push(data);
         return {
           ok: true,
@@ -218,7 +231,7 @@ describe('contact page', () => {
 
   it('empty replyTplId does not request subscription', async () => {
     const { page, subscriptionRequests } = loadPage({
-      cs: async () => ({
+      ticketing: async () => ({
         ok: true,
         thread: { _id: 'thread-1', status: 'waiting_human' },
         messages: [],

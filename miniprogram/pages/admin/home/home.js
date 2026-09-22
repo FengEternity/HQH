@@ -1,4 +1,4 @@
-const { csAdmin } = require('../../../utils/api');
+const { ticketingAdmin } = require('../../../utils/api');
 const release = require('../../../data/appRelease');
 const { normalizeDoc, envLabel } = require('../../../utils/appRelease');
 
@@ -17,7 +17,7 @@ Page({
     this.load();
   },
   load() {
-    return csAdmin({ action: 'csAdminList' })
+    return ticketingAdmin({ action: 'csAdminList' })
       .then((inboxRes) => {
         const pending = (inboxRes.threads || []).length;
         this.setData({

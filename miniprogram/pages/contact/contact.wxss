@@ -161,6 +161,8 @@ page {
 .human {
   flex-shrink: 0;
   padding: 16rpx 20rpx;
+  /* 盖掉全局 .btn 的蓝底，否则蓝字压蓝底看不见 */
+  background: #ffffff;
   border: 1rpx solid #4b6fdb;
   color: #4b6fdb;
   font-size: 26rpx;

@@ -22,7 +22,7 @@
 
 1. 安装[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)，用真实 AppID 导入本仓库根目录（含 `project.config.json`）。游客模式不能开通云开发、不能上传视频。
 2. 开通云开发并创建环境，设为当前环境。
-3. 对云函数 `catalog` 和 `cs` 安装依赖并上传部署。环境变量设置 `ADMIN_PIN`（运营口令）、`CS_NEW_TICKET_TPL`（新工单通知模板 ID）、`CS_REPLIED_TPL`（客服回复通知模板 ID）。需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。
+3. 对云函数 `catalog` 和 `ticketing` 安装依赖并上传部署。环境变量设置 `ADMIN_PIN`（运营口令）、`CS_NEW_TICKET_TPL`（新工单通知模板 ID）、`CS_REPLIED_TPL`（客服回复通知模板 ID）。需要内容安全时开通 `security.msgSecCheck`；本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。若云端还留着旧函数 `cs`，上传 `ticketing` 后可删掉。
 4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`、`cs_threads`、`cs_messages`、`admin_notify_subscribers`。也可在云函数测试里传入 `{ "action": "initDb" }`。
 5. 集合出现后，在云开发控制台把这 8 个集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。云存储可保持 **仅创建者可读写**（免费环境改「全员可读」常要升级）；播放由云函数 `getVideo` 服务端换临时 HTTPS，客户端不再调 `getTempFileURL`。
 
@@ -47,7 +47,7 @@
 ## 检索单测（不依赖微信）
 
 ```bash
-node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js cloudfunctions/cs/lib/csThreadState.test.js cloudfunctions/cs/lib/csFaq.test.js cloudfunctions/cs/lib/csSendFlow.test.js cloudfunctions/cs/lib/notify.test.js cloudfunctions/cs/lib/csStore.test.js cloudfunctions/shop/lib/shopListAndLinks.test.js cloudfunctions/shop/lib/shopPublishGate.test.js cloudfunctions/shop/lib/videoShopLink.test.js miniprogram/utils/api.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/coverCrop.test.js miniprogram/utils/cloudReady.test.js miniprogram/utils/decodeQueryName.test.js miniprogram/utils/appRelease.test.js miniprogram/constants/tabs.test.js miniprogram/pages/contact/contact.test.js miniprogram/pages/admin/login/login.test.js
+node --test cloudfunctions/catalog/lib/catalogSearch.test.js cloudfunctions/catalog/lib/videoPublishGate.test.js cloudfunctions/catalog/lib/ensureCollections.test.js cloudfunctions/catalog/lib/resolveMediaUrls.test.js cloudfunctions/catalog/lib/listHome.test.js cloudfunctions/ticketing/lib/csThreadState.test.js cloudfunctions/ticketing/lib/csFaq.test.js cloudfunctions/ticketing/lib/csSendFlow.test.js cloudfunctions/ticketing/lib/notify.test.js cloudfunctions/ticketing/lib/csStore.test.js miniprogram/utils/api.test.js miniprogram/utils/videoMedia.test.js miniprogram/utils/coverCrop.test.js miniprogram/utils/cloudReady.test.js miniprogram/utils/decodeQueryName.test.js miniprogram/utils/appRelease.test.js miniprogram/constants/tabs.test.js miniprogram/pages/contact/contact.test.js miniprogram/pages/admin/login/login.test.js
 ```
 
 ## 手测清单

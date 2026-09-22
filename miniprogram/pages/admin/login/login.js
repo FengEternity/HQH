@@ -3,7 +3,7 @@ const {
   setTicket,
   getTicket,
   admin,
-  csAdmin,
+  ticketingAdmin,
 } = require('../../../utils/api');
 const { contact } = require('../../../config.js');
 
@@ -62,7 +62,7 @@ Page({
         setTicket(res.ticket);
         return requestNewTicketSubscription()
           .then(() =>
-            csAdmin({ action: 'csRegisterNotify' }).catch(() => {}),
+            ticketingAdmin({ action: 'csRegisterNotify' }).catch(() => {}),
           )
           .then(() => {
             wx.redirectTo({ url: '/pages/admin/home/home' });

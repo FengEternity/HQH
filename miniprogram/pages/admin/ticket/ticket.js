@@ -1,4 +1,4 @@
-const { csAdmin } = require('../../../utils/api');
+const { ticketingAdmin } = require('../../../utils/api');
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -73,7 +73,7 @@ Page({
   },
   load() {
     this.setData({ loading: true });
-    return csAdmin({
+    return ticketingAdmin({
       action: 'csAdminGet',
       threadId: this.data.threadId,
     })
@@ -111,7 +111,7 @@ Page({
       return;
     }
     this.setData({ submitting: true });
-    return csAdmin({
+    return ticketingAdmin({
       action: 'csAdminReply',
       threadId: this.data.threadId,
       text,
@@ -134,7 +134,7 @@ Page({
           return;
         }
         this.setData({ submitting: true });
-        csAdmin({
+        ticketingAdmin({
           action: 'csAdminClose',
           threadId: this.data.threadId,
         })

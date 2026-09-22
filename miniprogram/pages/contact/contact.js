@@ -1,4 +1,4 @@
-const { cs } = require('../../utils/api');
+const { ticketing } = require('../../utils/api');
 const { contact } = require('../../config.js');
 
 const STORE_ACCOUNT = 'hqh_support_account';
@@ -13,6 +13,11 @@ function faqs() {
 
 function findFaq(id) {
   return faqs().find((item) => item.id === id);
+}
+
+// 输入框旁常驻「转人工」，快捷区不再重复一颗
+function quickFaqs() {
+  return faqs().filter((item) => item.id !== 'human');
 }
 
 function makeAccount() {
@@ -41,11 +46,11 @@ Page({
     const cfg = contactCfg();
     this.setData({
       hours: cfg.hours || '工作日 9:00–18:00',
-      faqs: faqs(),
+      faqs: quickFaqs(),
     });
   },
   onShow() {
-    return cs({ action: 'csHistory' })
+    return ticketing({ action: 'csHistory' })
       .then((result) => this.applyResult(result))
       .catch((err) => this.showError(err));
   },
@@ -67,7 +72,7 @@ Page({
     return threadId ? Object.assign({}, data, { threadId }) : data;
   },
   submit(data) {
-    return cs(this.withThread(data))
+    return ticketing(this.withThread(data))
       .then((result) => this.applyResult(result))
       .catch((err) => this.showError(err));
   },

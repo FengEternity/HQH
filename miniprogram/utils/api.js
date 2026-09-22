@@ -15,9 +15,9 @@ function catalog(data) {
     });
 }
 
-function cs(data) {
+function ticketing(data) {
   return wx.cloud
-    .callFunction({ name: 'cs', data })
+    .callFunction({ name: 'ticketing', data })
     .then((res) => {
       const result = res.result;
       if (!result || result.ok === false) {
@@ -41,15 +41,15 @@ function admin(data) {
   return catalog(Object.assign({ ticket: getTicket() }, data));
 }
 
-function csAdmin(data) {
-  return cs(Object.assign({ ticket: getTicket() }, data));
+function ticketingAdmin(data) {
+  return ticketing(Object.assign({ ticket: getTicket() }, data));
 }
 
 module.exports = {
   catalog,
-  cs,
+  ticketing,
   admin,
-  csAdmin,
+  ticketingAdmin,
   getTicket,
   setTicket,
 };

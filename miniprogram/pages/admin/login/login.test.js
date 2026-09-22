@@ -9,17 +9,17 @@ const pagePath = require.resolve('./login');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
-function loadPage({ templateId, catalog, csAdmin }) {
+function loadPage({ templateId, catalog, ticketingAdmin }) {
   delete require.cache[pagePath];
   const api = require(apiPath);
   const originals = {
     catalog: api.catalog,
-    csAdmin: api.csAdmin,
+    ticketingAdmin: api.ticketingAdmin,
     setTicket: api.setTicket,
   };
   const tickets = [];
   api.catalog = catalog;
-  api.csAdmin = csAdmin;
+  api.ticketingAdmin = ticketingAdmin;
   api.setTicket = (ticket) => tickets.push(ticket);
 
   const config = require(configPath);
@@ -64,7 +64,7 @@ it('registers admin notifications after denied subscription, then redirects', as
   const { page, tickets } = loadPage({
     templateId: 'new-ticket-template',
     catalog: async () => ({ ok: true, ticket: 'ticket-1' }),
-    csAdmin: async (data) => {
+    ticketingAdmin: async (data) => {
       events.push(['register', data]);
       return { ok: true };
     },
@@ -94,7 +94,7 @@ it('redirects after notification registration fails without showing login failur
   const { page, tickets } = loadPage({
     templateId: '',
     catalog: async () => ({ ok: true, ticket: 'ticket-2' }),
-    csAdmin: async () => {
+    ticketingAdmin: async () => {
       throw new Error('register failed');
     },
   });

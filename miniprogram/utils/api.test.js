@@ -11,8 +11,8 @@ afterEach(() => {
   global.wx = originalWx;
 });
 
-describe('cs', () => {
-  it('calls the cs cloud function and returns its result', async () => {
+describe('ticketing', () => {
+  it('calls the ticketing cloud function and returns its result', async () => {
     const calls = [];
     global.wx = {
       cloud: {
@@ -24,17 +24,17 @@ describe('cs', () => {
       getStorageSync() {},
       setStorageSync() {},
     };
-    const { cs } = require('./api');
+    const { ticketing } = require('./api');
 
-    const result = await cs({ action: 'csHistory' });
+    const result = await ticketing({ action: 'csHistory' });
 
     assert.deepEqual(calls, [
-      { name: 'cs', data: { action: 'csHistory' } },
+      { name: 'ticketing', data: { action: 'csHistory' } },
     ]);
     assert.deepEqual(result, { ok: true, messages: [] });
   });
 
-  it('throws the cloud result message and code when cs rejects the request', async () => {
+  it('throws the cloud result message and code when ticketing rejects the request', async () => {
     global.wx = {
       cloud: {
         callFunction() {
@@ -46,16 +46,16 @@ describe('cs', () => {
       getStorageSync() {},
       setStorageSync() {},
     };
-    const { cs } = require('./api');
+    const { ticketing } = require('./api');
 
     await assert.rejects(
-      () => cs({ action: 'csSend', text: '问题' }),
+      () => ticketing({ action: 'csSend', text: '问题' }),
       (error) => error.message === '状态已变化' && error.code === 'INVALID_STATE',
     );
   });
 });
 
-describe('csAdmin', () => {
+describe('ticketingAdmin', () => {
   it('adds the stored admin ticket without mutating the request', async () => {
     const calls = [];
     global.wx = {
@@ -70,15 +70,15 @@ describe('csAdmin', () => {
       },
       setStorageSync() {},
     };
-    const { csAdmin } = require('./api');
+    const { ticketingAdmin } = require('./api');
     const data = { action: 'csAdminList' };
 
-    await csAdmin(data);
+    await ticketingAdmin(data);
 
     assert.deepEqual(data, { action: 'csAdminList' });
     assert.deepEqual(calls, [
       {
-        name: 'cs',
+        name: 'ticketing',
         data: { ticket: 'ticket-1', action: 'csAdminList' },
       },
     ]);

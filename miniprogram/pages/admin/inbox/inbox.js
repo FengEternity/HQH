@@ -1,4 +1,4 @@
-const { csAdmin } = require('../../../utils/api');
+const { ticketingAdmin } = require('../../../utils/api');
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -38,7 +38,7 @@ Page({
   },
   load() {
     this.setData({ loading: true });
-    return csAdmin({ action: 'csAdminList', status: this.data.status })
+    return ticketingAdmin({ action: 'csAdminList', status: this.data.status })
       .then((res) => {
         const threads = (res.threads || []).map((item) =>
           Object.assign({}, item, {
