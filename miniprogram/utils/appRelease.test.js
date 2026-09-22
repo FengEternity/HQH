@@ -21,6 +21,16 @@ describe('release data module', () => {
     assert.ok(doc.releases.length > 0);
   });
 
+  it('current package is 0.2.0 with notes at the front of the log', () => {
+    delete require.cache[require.resolve('../data/appRelease')];
+    const doc = require('../data/appRelease');
+    assert.equal(doc.version, '0.2.0');
+    assert.equal(doc.releases[0].version, '0.2.0');
+    assert.equal(doc.releases[0].date, '2026-09-22');
+    assert.ok(doc.releases[0].user.some((line) => line.includes('转人工')));
+    assert.ok(doc.releases[0].user.some((line) => line.includes('商城')));
+  });
+
   it('stays on 0.x until official WeChat release', () => {
     const doc = require('../data/appRelease');
     assert.match(String(doc.version), /^0\.\d+\.\d+$/);

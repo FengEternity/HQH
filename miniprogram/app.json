@@ -36,12 +36,6 @@
         "selectedIconPath": "tab-explain-on.png"
       },
       {
-        "pagePath": "pages/shop/shop",
-        "text": "商城",
-        "iconPath": "tab-shop.png",
-        "selectedIconPath": "tab-shop-on.png"
-      },
-      {
         "pagePath": "pages/contact/contact",
         "text": "客服",
         "iconPath": "tab-cs.png",
