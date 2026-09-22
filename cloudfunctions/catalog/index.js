@@ -9,7 +9,7 @@ const {
   nextStatusAfterSave,
 } = require('./lib/videoPublishGate');
 const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
-const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
+const { attachPosterUrls, resolveMediaUrls } = require('./lib/resolveMediaUrls');
 const { listHomeCatalog } = require('./lib/listHome');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
@@ -226,6 +226,7 @@ async function listPublished(event) {
   if (event.tag) {
     list = list.filter((item) => (item.tags || []).includes(event.tag));
   }
+  list = await attachPosterUrls(list, (payload) => cloud.getTempFileURL(payload));
   return { ok: true, videos: list };
 }
 
@@ -246,7 +247,7 @@ async function getVideo(event) {
   return {
     ok: true,
     video: Object.assign({}, video, {
-      posterUrl: media.posterUrl || video.coverFileId || '',
+      posterUrl: media.posterUrl || '',
     }),
     videoUrl: media.videoUrl,
   };
