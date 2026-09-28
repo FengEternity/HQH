@@ -327,6 +327,45 @@ describe('createVideoIngestActions', () => {
     assert.deepEqual(repository.snapshot().jobs, {});
   });
 
+  it('preserves compliant playback when an empty draft receives its first controlled file', async () => {
+    const repository = createMemoryRepository({
+      videos: {
+        v1: editableVideo({
+          videoFileId: '',
+          media: { videoCodec: '', audioCodec: '', hasAudio: false },
+          ingest: {
+            ...editableVideo().ingest,
+            phase: 'idle',
+            videoFileId: '',
+          },
+        }),
+      },
+    });
+    const service = createActions(repository);
+
+    await service.saveVideo(
+      saveInput({
+        intro: '人工审核简介',
+        coverFileId: 'cloud://cover',
+        videoFileId: 'cloud://first',
+        transcriptSegments: [{ startSec: 0, endSec: 1, text: '受控字幕' }],
+        durationSec: 2,
+        media: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          hasAudio: true,
+          playback: playback(),
+        },
+      }),
+    );
+    const saved = repository.snapshot().videos.v1;
+
+    assert.deepEqual(saved.media.playback, playback());
+    assert.equal(isReadyToPublish(saved), true);
+    assert.equal(saved.status, 'draft');
+    assert.deepEqual(repository.snapshot().jobs, {});
+  });
+
   it('still enqueues an ops upload that carries no transcript', async () => {
     const repository = createMemoryRepository();
     const service = createActions(repository);
