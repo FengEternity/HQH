@@ -20,6 +20,24 @@ const {
   getOptionalDocument,
 } = actions;
 
+function playback(overrides = {}) {
+  return {
+    videoCodec: 'h264',
+    profile: 'Main',
+    pixelFormat: 'yuv420p',
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    hasBFrames: false,
+    maxKeyframeGapSec: 2,
+    fastStart: true,
+    hasAudio: true,
+    audioCodec: 'aac',
+    compliant: true,
+    ...overrides,
+  };
+}
+
 function readyVideo(overrides = {}) {
   return {
     videoFileId: 'cloud://old',
@@ -384,6 +402,36 @@ describe('createVideoIngestActions', () => {
     assert.equal(saved.ingest.introSource, 'auto');
   });
 
+  it('普通运营保存不清除或覆盖已有播放检查结果', async () => {
+    const storedPlayback = playback();
+    const repository = createMemoryRepository({
+      videos: {
+        v1: editableVideo({
+          media: {
+            videoCodec: 'h264',
+            audioCodec: 'aac',
+            hasAudio: true,
+            playback: storedPlayback,
+          },
+        }),
+      },
+    });
+    const service = createActions(repository);
+    await service.saveVideo(saveInput({
+      media: {
+        videoCodec: 'h264',
+        audioCodec: 'aac',
+        hasAudio: true,
+        playback: playback({ width: 640 }),
+      },
+    }));
+
+    assert.deepEqual(
+      repository.snapshot().videos.v1.media.playback,
+      storedPlayback,
+    );
+  });
+
   it('recomputes after a completion conflict without reverting worker output', async () => {
     const repository = createMemoryRepository({
       videos: { v1: editableVideo() },
@@ -604,7 +652,12 @@ describe('applyCompleteToVideo', () => {
         intro: '新的自动简介',
         transcriptSegments: [{ startSec: 0, endSec: 1.24, text: '新词' }],
         durationSec: 1.26,
-        media: { videoCodec: 'H264', audioCodec: 'AAC', hasAudio: true },
+        media: {
+          videoCodec: 'H264',
+          audioCodec: 'AAC',
+          hasAudio: true,
+          playback: playback(),
+        },
         coverFileId: 'cloud://cover',
         transcodedVideoFileId: 'cloud://transcoded',
       },
@@ -625,6 +678,7 @@ describe('applyCompleteToVideo', () => {
       videoCodec: 'h264',
       audioCodec: 'aac',
       hasAudio: true,
+      playback: playback(),
     });
     assert.equal(patch.coverFileId, 'cloud://cover');
   });

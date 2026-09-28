@@ -13,6 +13,12 @@ const { pipeline } = require('node:stream/promises');
 const cloudbase = require('@cloudbase/node-sdk');
 
 const { PLACEHOLDER_INTRO, resolveAutoIntro } = require('./lib/autoIntro');
+const {
+  assessPlaybackProfile,
+  buildPlaybackFfmpegArgs,
+  probePlaybackMedia,
+  toPlaybackMetadata,
+} = require('./lib/playbackProfile');
 const { runOnce } = require('./lib/workerLoop');
 
 const IDLE_SLEEP_MS = 5000;
@@ -38,38 +44,29 @@ function assertCommandSuccess(result, command) {
 }
 
 function probeLocalMedia(mediaPath, runCommand = defaultCommandRunner) {
-  const result = runCommand(
-    'ffprobe',
-    [
-      '-v',
-      'error',
-      '-show_entries',
-      'format=duration:stream=codec_type,codec_name',
-      '-of',
-      'json',
-      mediaPath,
-    ],
-    { timeout: FFPROBE_TIMEOUT_MS, killSignal: 'SIGKILL' },
+  const probed = probePlaybackMedia(
+    mediaPath,
+    (command, args, options) =>
+      runCommand(command, args, {
+        ...options,
+        timeout: FFPROBE_TIMEOUT_MS,
+        killSignal: 'SIGKILL',
+      }),
   );
-  assertCommandSuccess(result, 'ffprobe');
-  const payload = JSON.parse(Buffer.from(result.stdout || '').toString('utf8'));
-  const video = payload.streams?.find((stream) => stream.codec_type === 'video');
-  const audio = payload.streams?.find((stream) => stream.codec_type === 'audio');
   // 与 lib/manifest.js 及云端 normalizeVideoMedia 保持同一精度：先按一位小数定稿，
   // 转写才不会产出超过云端时长上界的 endSec，complete 也就不会被判 BAD_INPUT。
-  const durationSec = Math.round(Number(payload.format?.duration) * 10) / 10;
-  if (!video?.codec_name || !Number.isFinite(durationSec) || durationSec <= 0) {
+  const probe = {
+    ...probed,
+    durationSec: Math.round(probed.durationSec * 10) / 10,
+  };
+  if (probe.durationSec <= 0) {
     throw new Error('媒体信息不完整');
   }
-  const videoCodec = video.codec_name.toLowerCase();
-  const audioCodec = audio?.codec_name?.toLowerCase() || '';
-  const hasAudio = Boolean(audio);
+  const assessment = assessPlaybackProfile(probe);
   return {
-    hasAudio,
-    videoCodec,
-    audioCodec,
-    durationSec,
-    needsTranscode: videoCodec !== 'h264' || (hasAudio && audioCodec !== 'aac'),
+    ...probe,
+    needsTranscode: !assessment.compliant,
+    playback: toPlaybackMetadata(probe),
   };
 }
 
@@ -77,35 +74,13 @@ function transcodeLocalMedia({
   app,
   mediaPath,
   workspace,
+  probe,
   runCommand = defaultCommandRunner,
 }) {
   const outputPath = path.join(workspace, 'transcoded.mp4');
   const result = runCommand(
     'ffmpeg',
-    [
-      '-nostdin',
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-y',
-      '-i',
-      mediaPath,
-      '-vf',
-      "scale='min(1280,iw)':-2",
-      '-c:v',
-      'libx264',
-      '-preset',
-      'medium',
-      '-crf',
-      '23',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
-      '-movflags',
-      '+faststart',
-      outputPath,
-    ],
+    buildPlaybackFfmpegArgs(mediaPath, outputPath, probe),
     { timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' },
   );
   assertCommandSuccess(result, 'ffmpeg');
@@ -310,6 +285,7 @@ function createJobDependencies({
   workerId,
   workspace,
   env,
+  stderr = process.stderr,
   runCommand = defaultCommandRunner,
 }) {
   let latestProbe;
@@ -322,8 +298,8 @@ function createJobDependencies({
       latestProbe = probeLocalMedia(mediaPath, runCommand);
       return latestProbe;
     },
-    transcodeIfNeeded: (mediaPath) =>
-      transcodeLocalMedia({ app, mediaPath, workspace, runCommand }),
+    transcodeIfNeeded: (mediaPath, probe) =>
+      transcodeLocalMedia({ app, mediaPath, workspace, probe, runCommand }),
     transcribe: (mediaPath) =>
       transcribeLocalFile({
         mediaPath,
@@ -337,6 +313,14 @@ function createJobDependencies({
     resolveAutoIntro,
     placeholderIntro: PLACEHOLDER_INTRO,
     now: Date.now,
+    deleteCloudFiles: async (fileIds) => {
+      if (fileIds.length > 0) {
+        await app.deleteFile({ fileList: fileIds });
+      }
+    },
+    warn: () => {
+      stderr.write('云文件清理失败\n');
+    },
   };
 }
 
@@ -407,6 +391,7 @@ async function runCli({
             workerId,
             workspace,
             env,
+            stderr,
           }),
         ),
       );

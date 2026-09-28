@@ -7,6 +7,24 @@ const { runOnce } = require('./workerLoop');
 
 const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
 
+function playback(overrides = {}) {
+  return {
+    videoCodec: 'h264',
+    profile: 'Main',
+    pixelFormat: 'yuv420p',
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    hasBFrames: false,
+    maxKeyframeGapSec: 2,
+    fastStart: true,
+    hasAudio: true,
+    audioCodec: 'aac',
+    compliant: true,
+    ...overrides,
+  };
+}
+
 function claimedJob() {
   return {
     job: {
@@ -24,8 +42,10 @@ function claimedJob() {
 
 function createDeps(overrides = {}) {
   const completes = [];
+  const deletedFileIds = [];
   return {
     completes,
+    deletedFileIds,
     deps: {
       catalog: {
         claim: async ({ workerId }) => {
@@ -47,6 +67,7 @@ function createDeps(overrides = {}) {
         audioCodec: 'aac',
         durationSec: 3,
         needsTranscode: false,
+        playback: playback(),
       }),
       transcodeIfNeeded: async (localPath) => ({ path: localPath }),
       transcribe: async () => ({
@@ -57,6 +78,10 @@ function createDeps(overrides = {}) {
       resolveAutoIntro: () => ({ grounded: false, intro: PLACEHOLDER_INTRO }),
       placeholderIntro: PLACEHOLDER_INTRO,
       now: () => 1,
+      deleteCloudFiles: async (fileIds) => {
+        deletedFileIds.push(...fileIds);
+      },
+      warn: () => {},
       ...overrides,
     },
   };
@@ -108,6 +133,7 @@ describe('runOnce', () => {
         audioCodec: '',
         durationSec: 3,
         needsTranscode: false,
+        playback: playback({ hasAudio: false, audioCodec: '' }),
       }),
       transcodeIfNeeded: async () => {
         throw new Error('可播编码不应转码');
@@ -132,6 +158,7 @@ describe('runOnce', () => {
           hasAudio: false,
           videoCodec: 'h264',
           audioCodec: '',
+          playback: playback({ hasAudio: false, audioCodec: '' }),
         },
       },
     ]);
@@ -149,6 +176,12 @@ describe('runOnce', () => {
             audioCodec: '',
             durationSec: 3,
             needsTranscode: true,
+            playback: playback({
+              videoCodec: 'hevc',
+              hasAudio: false,
+              audioCodec: '',
+              compliant: false,
+            }),
           };
         }
         return {
@@ -157,6 +190,7 @@ describe('runOnce', () => {
           audioCodec: '',
           durationSec: 3,
           needsTranscode: false,
+          playback: playback({ hasAudio: false, audioCodec: '' }),
         };
       },
       transcodeIfNeeded: async () => ({
@@ -180,6 +214,7 @@ describe('runOnce', () => {
         hasAudio: false,
         videoCodec: 'h264',
         audioCodec: '',
+        playback: playback({ hasAudio: false, audioCodec: '' }),
       },
       transcodedVideoFileId: 'cloud://transcoded-no-audio',
     });
@@ -196,6 +231,7 @@ describe('runOnce', () => {
         audioCodec: 'aac',
         durationSec: 3,
         needsTranscode: true,
+        playback: playback({ videoCodec: 'hevc', compliant: false }),
       }),
       transcodeIfNeeded: async () => {
         throw timeout;
@@ -225,6 +261,11 @@ describe('runOnce', () => {
               audioCodec: 'opus',
               durationSec: 3,
               needsTranscode: true,
+              playback: playback({
+                videoCodec: 'hevc',
+                audioCodec: 'opus',
+                compliant: false,
+              }),
             }
           : {
               hasAudio: true,
@@ -232,6 +273,7 @@ describe('runOnce', () => {
               audioCodec: 'aac',
               durationSec: 3,
               needsTranscode: false,
+              playback: playback(),
             },
       transcodeIfNeeded: async () => ({
         path: '/tmp/a-transcoded.mp4',
@@ -247,7 +289,206 @@ describe('runOnce', () => {
       hasAudio: true,
       videoCodec: 'h264',
       audioCodec: 'aac',
+      playback: playback(),
     });
+  });
+
+  it('转码后二次检查仍不合格时回写失败并删除新产物', async () => {
+    const deletedFileIds = [];
+    const { deps, completes } = createDeps({
+      probeMedia: async (mediaPath) =>
+        mediaPath === '/tmp/a.mp4'
+          ? {
+              hasAudio: true,
+              videoCodec: 'hevc',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: true,
+              playback: playback({ videoCodec: 'hevc', compliant: false }),
+            }
+          : {
+              hasAudio: true,
+              videoCodec: 'h264',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: true,
+              playback: playback({ maxKeyframeGapSec: 10, compliant: false }),
+            },
+      transcodeIfNeeded: async () => ({
+        path: '/tmp/a-transcoded.mp4',
+        uploadedFileId: 'cloud://bad-transcoded',
+      }),
+      deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
+    });
+
+    assert.equal(await runOnce(deps), 'failed');
+    assert.equal(completes[0].errorCode, 'TRANSCODE_FAILED');
+    assert.deepEqual(deletedFileIds, ['cloud://bad-transcoded']);
+  });
+
+  it('原片合格时使用原 fileId 且不上传或删除文件', async () => {
+    let transcodeCount = 0;
+    const { deps, completes, deletedFileIds } = createDeps({
+      transcodeIfNeeded: async () => {
+        transcodeCount += 1;
+        return { path: '/tmp/unexpected.mp4', uploadedFileId: 'cloud://unexpected' };
+      },
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(transcodeCount, 0);
+    assert.equal(Object.hasOwn(completes[0], 'transcodedVideoFileId'), false);
+    assert.deepEqual(deletedFileIds, []);
+  });
+
+  it('转码成功回写后删除原始云文件', async () => {
+    const deletedFileIds = [];
+    const { deps } = createDeps({
+      probeMedia: async (mediaPath) =>
+        mediaPath === '/tmp/a.mp4'
+          ? {
+              hasAudio: true,
+              videoCodec: 'hevc',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: true,
+              playback: playback({ videoCodec: 'hevc', compliant: false }),
+            }
+          : {
+              hasAudio: true,
+              videoCodec: 'h264',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: false,
+              playback: playback(),
+            },
+      transcodeIfNeeded: async () => ({
+        path: '/tmp/a-transcoded.mp4',
+        uploadedFileId: 'cloud://transcoded',
+      }),
+      deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.deepEqual(deletedFileIds, ['cloud://v']);
+  });
+
+  it('原文件删除失败只记录受控警告且不反转成功回写', async () => {
+    const warnings = [];
+    const { deps, completes } = createDeps({
+      probeMedia: async (mediaPath) =>
+        mediaPath === '/tmp/a.mp4'
+          ? {
+              hasAudio: false,
+              videoCodec: 'hevc',
+              audioCodec: '',
+              durationSec: 3,
+              needsTranscode: true,
+              playback: playback({
+                videoCodec: 'hevc',
+                hasAudio: false,
+                audioCodec: '',
+                compliant: false,
+              }),
+            }
+          : {
+              hasAudio: false,
+              videoCodec: 'h264',
+              audioCodec: '',
+              durationSec: 3,
+              needsTranscode: false,
+              playback: playback({ hasAudio: false, audioCodec: '' }),
+            },
+      transcodeIfNeeded: async () => ({
+        path: '/tmp/a-transcoded.mp4',
+        uploadedFileId: 'cloud://transcoded',
+      }),
+      deleteCloudFiles: async () => {
+        throw new Error('cloud://v private-url');
+      },
+      warn: (message) => warnings.push(message),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes.length, 1);
+    assert.deepEqual(warnings, ['云文件清理失败']);
+    assert.equal(warnings[0].includes('cloud://'), false);
+  });
+
+  it('转码后 ASR 失败时删除新产物并保留原始文件', async () => {
+    const deletedFileIds = [];
+    const { deps } = createDeps({
+      probeMedia: async (mediaPath) =>
+        mediaPath === '/tmp/a.mp4'
+          ? {
+              hasAudio: true,
+              videoCodec: 'hevc',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: true,
+              playback: playback({ videoCodec: 'hevc', compliant: false }),
+            }
+          : {
+              hasAudio: true,
+              videoCodec: 'h264',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: false,
+              playback: playback(),
+            },
+      transcodeIfNeeded: async () => ({
+        path: '/tmp/a-transcoded.mp4',
+        uploadedFileId: 'cloud://transcoded',
+      }),
+      transcribe: async () => ({ ok: false }),
+      deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
+    });
+
+    assert.equal(await runOnce(deps), 'failed');
+    assert.deepEqual(deletedFileIds, ['cloud://transcoded']);
+  });
+
+  it('转码后 ready 回写失败时删除新产物并保留原始文件', async () => {
+    const completes = [];
+    const deletedFileIds = [];
+    const { deps } = createDeps({
+      catalog: {
+        claim: async () => claimedJob(),
+        complete: async (payload) => {
+          completes.push(payload);
+          if (payload.outcome === 'ready') {
+            throw new Error('云端写库失败');
+          }
+        },
+      },
+      probeMedia: async (mediaPath) =>
+        mediaPath === '/tmp/a.mp4'
+          ? {
+              hasAudio: true,
+              videoCodec: 'hevc',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: true,
+              playback: playback({ videoCodec: 'hevc', compliant: false }),
+            }
+          : {
+              hasAudio: true,
+              videoCodec: 'h264',
+              audioCodec: 'aac',
+              durationSec: 3,
+              needsTranscode: false,
+              playback: playback(),
+            },
+      transcodeIfNeeded: async () => ({
+        path: '/tmp/a-transcoded.mp4',
+        uploadedFileId: 'cloud://transcoded',
+      }),
+      deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
+    });
+
+    assert.equal(await runOnce(deps), 'failed');
+    assert.equal(completes.at(-1).errorCode, 'INTERNAL');
+    assert.deepEqual(deletedFileIds, ['cloud://transcoded']);
   });
 
   it('Python 转写超时时回写 ASR_FAILED 且不生成简介', async () => {

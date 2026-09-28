@@ -4,6 +4,24 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { normalizeVideoMedia } = require('./videoMediaMetadata');
 
+function playback(overrides = {}) {
+  return {
+    videoCodec: 'h264',
+    profile: 'Main',
+    pixelFormat: 'yuv420p',
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    hasBFrames: false,
+    maxKeyframeGapSec: 2,
+    fastStart: true,
+    hasAudio: true,
+    audioCodec: 'aac',
+    compliant: true,
+    ...overrides,
+  };
+}
+
 describe('normalizeVideoMedia', () => {
   it('rounds durationSec to one decimal place', () => {
     const out = normalizeVideoMedia({ durationSec: 65.44 });
@@ -135,5 +153,64 @@ describe('normalizeVideoMedia', () => {
       () => normalizeVideoMedia({ durationSec: Infinity }),
       (error) => error.code === 'BAD_INPUT',
     );
+  });
+
+  it('accepts the exact compliant playback field set', () => {
+    const out = normalizeVideoMedia({
+      media: {
+        videoCodec: 'h264',
+        audioCodec: 'aac',
+        hasAudio: true,
+        playback: playback(),
+      },
+    });
+
+    assert.deepEqual(out.media.playback, playback());
+  });
+
+  it('rejects extra, missing, non-finite, wrong-type, or non-compliant playback', () => {
+    const invalidValues = [
+      { ...playback(), sourceBytes: 1 },
+      Object.fromEntries(
+        Object.entries(playback()).filter(([key]) => key !== 'frameRate'),
+      ),
+      playback({ frameRate: Number.NaN }),
+      playback({ width: '1280' }),
+      playback({ fastStart: 1 }),
+      playback({ compliant: false }),
+    ];
+
+    for (const value of invalidValues) {
+      assert.throws(
+        () =>
+          normalizeVideoMedia({
+            media: {
+              videoCodec: 'h264',
+              audioCodec: 'aac',
+              hasAudio: true,
+              playback: value,
+            },
+          }),
+        (error) => error.code === 'BAD_INPUT',
+      );
+    }
+  });
+
+  it('deep-copies previous playback when a later payload omits it', () => {
+    const previous = {
+      durationSec: 2,
+      media: {
+        videoCodec: 'h264',
+        audioCodec: 'aac',
+        hasAudio: true,
+        playback: playback(),
+      },
+    };
+    const out = normalizeVideoMedia({
+      media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: true },
+    }, previous);
+
+    assert.deepEqual(out.media.playback, previous.media.playback);
+    assert.notEqual(out.media.playback, previous.media.playback);
   });
 });

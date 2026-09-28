@@ -93,7 +93,9 @@ function applyCompleteToVideo({ prevData, complete, now }) {
   if (Object.prototype.hasOwnProperty.call(complete, 'media')) {
     mediaInput.media = complete.media;
   }
-  const mediaMeta = normalizeVideoMedia(mediaInput, previous);
+  const mediaMeta = normalizeVideoMedia(mediaInput, previous, {
+    allowPlaybackUpdate: true,
+  });
 
   const shouldApplyTranscript =
     complete.outcome === 'ready' && complete.asr === 'ready';
@@ -176,7 +178,9 @@ function createVideoIngestActions({
       if (Object.prototype.hasOwnProperty.call(event, 'media')) {
         mediaInput.media = event.media;
       }
-      const mediaMeta = normalizeVideoMedia(mediaInput, prevData);
+      const mediaMeta = normalizeVideoMedia(mediaInput, prevData, {
+        allowPlaybackUpdate: false,
+      });
       const knowledgeEvent = planned.clearTranscript
         ? Object.assign({}, event, { transcriptSegments: [] })
         : event;

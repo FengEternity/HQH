@@ -16,6 +16,7 @@ function mediaPayload(probe) {
       hasAudio: probe.hasAudio,
       videoCodec: probe.videoCodec,
       audioCodec: probe.audioCodec,
+      playback: probe.playback,
     },
   };
 }
@@ -54,6 +55,8 @@ async function runOnce({
   transcribe,
   resolveAutoIntro,
   placeholderIntro,
+  deleteCloudFiles = async () => {},
+  warn = () => {},
 }) {
   let claimed;
   try {
@@ -85,16 +88,53 @@ async function runOnce({
       prepared = await transcodeIfNeeded(localPath, probe);
       probe = await probeMedia(prepared.path);
     } catch {
-      return completeFailure(catalog, claimed, 'TRANSCODE_FAILED');
+      const result = await completeFailure(catalog, claimed, 'TRANSCODE_FAILED');
+      if (prepared.uploadedFileId) {
+        try {
+          await deleteCloudFiles([prepared.uploadedFileId]);
+        } catch {
+          warn('云文件清理失败');
+        }
+      }
+      return result;
+    }
+    if (!probe.playback || probe.playback.compliant !== true) {
+      const result = await completeFailure(catalog, claimed, 'TRANSCODE_FAILED');
+      if (prepared.uploadedFileId) {
+        try {
+          await deleteCloudFiles([prepared.uploadedFileId]);
+        } catch {
+          warn('云文件清理失败');
+        }
+      }
+      return result;
     }
   }
+
+  const cleanupAfterResult = async (result) => {
+    if (!prepared.uploadedFileId) {
+      return result;
+    }
+    const fileId =
+      result === 'processed' ? claimed.videoFileId : prepared.uploadedFileId;
+    try {
+      await deleteCloudFiles([fileId]);
+    } catch {
+      warn('云文件清理失败');
+    }
+    return result;
+  };
+  const failPrepared = async (errorCode) =>
+    cleanupAfterResult(await completeFailure(catalog, claimed, errorCode));
+  const completePrepared = async (payload) =>
+    cleanupAfterResult(await completeReady(catalog, claimed, payload));
 
   const transcoded =
     typeof prepared.uploadedFileId === 'string' && prepared.uploadedFileId
       ? { transcodedVideoFileId: prepared.uploadedFileId }
       : {};
   if (!probe.hasAudio) {
-    return completeReady(catalog, claimed, {
+    return completePrepared({
       ...jobIdentity(claimed),
       outcome: 'ready',
       asr: 'skipped',
@@ -107,14 +147,14 @@ async function runOnce({
   try {
     transcription = await transcribe(prepared.path);
   } catch {
-    return completeFailure(catalog, claimed, 'ASR_FAILED');
+    return failPrepared('ASR_FAILED');
   }
   if (!transcription || transcription.ok !== true) {
-    return completeFailure(catalog, claimed, 'ASR_FAILED');
+    return failPrepared('ASR_FAILED');
   }
 
   if (transcription.skipped) {
-    return completeReady(catalog, claimed, {
+    return completePrepared({
       ...jobIdentity(claimed),
       outcome: 'ready',
       asr: 'skipped',
@@ -130,10 +170,10 @@ async function runOnce({
       placeholderIntro,
     });
   } catch {
-    return completeFailure(catalog, claimed, 'INTERNAL');
+    return failPrepared('INTERNAL');
   }
 
-  return completeReady(catalog, claimed, {
+  return completePrepared({
     ...jobIdentity(claimed),
     outcome: 'ready',
     asr: 'ready',

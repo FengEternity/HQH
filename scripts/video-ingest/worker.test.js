@@ -24,6 +24,16 @@ const COMPLETE_CREDENTIALS = {
   ADMIN_PIN: 'admin-pin',
 };
 
+function writePlaybackMp4(filePath) {
+  const box = (type) => {
+    const buffer = Buffer.alloc(8);
+    buffer.writeUInt32BE(8, 0);
+    buffer.write(type, 4, 'ascii');
+    return buffer;
+  };
+  fs.writeFileSync(filePath, Buffer.concat([box('moov'), box('mdat')]));
+}
+
 describe('worker 生产胶水', () => {
   it('凭据缺失时非零退出且不打印任何凭据值', async () => {
     let stderr = '';
@@ -49,65 +59,133 @@ describe('worker 生产胶水', () => {
     assert.equal(stderr.includes('secret-value'), false);
   });
 
-  it('ffprobe 识别非 H.264+AAC 媒体需要转码', () => {
-    const calls = [];
-    const probe = probeLocalMedia('/private/input.mp4', (command, args, options) => {
-      calls.push({ command, args, options });
-      return {
-        status: 0,
-        stdout: Buffer.from(JSON.stringify({
-          format: { duration: '12.5' },
-          streams: [
-            { codec_type: 'video', codec_name: 'hevc' },
-            { codec_type: 'audio', codec_name: 'opus' },
-          ],
-        })),
-        stderr: Buffer.alloc(0),
-      };
-    });
+  it('H.264 + AAC 但关键帧间隔 10 秒时仍需要转码', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-probe-test-'));
+    try {
+      const mediaPath = path.join(root, 'input.mp4');
+      writePlaybackMp4(mediaPath);
+      const calls = [];
+      const probe = probeLocalMedia(mediaPath, (command, args, options) => {
+        calls.push({ command, args, options });
+        return calls.length === 1
+          ? {
+              status: 0,
+              stdout: Buffer.from(JSON.stringify({
+                format: { duration: '12.5' },
+                streams: [
+                  {
+                    codec_type: 'video',
+                    codec_name: 'h264',
+                    profile: 'Main',
+                    pix_fmt: 'yuv420p',
+                    width: 1280,
+                    height: 720,
+                    avg_frame_rate: '30/1',
+                    has_b_frames: 0,
+                  },
+                  { codec_type: 'audio', codec_name: 'aac' },
+                ],
+              })),
+              stderr: Buffer.alloc(0),
+            }
+          : {
+              status: 0,
+              stdout: Buffer.from('0.000000,K_\n10.000000,K_\n'),
+              stderr: Buffer.alloc(0),
+            };
+      });
 
-    assert.equal(calls[0].command, 'ffprobe');
-    assert.equal(calls[0].args.at(-1), '/private/input.mp4');
-    assert.equal(calls[0].options.timeout > 0, true);
-    assert.equal(calls[0].options.killSignal, 'SIGKILL');
-    assert.deepEqual(probe, {
-      hasAudio: true,
-      videoCodec: 'hevc',
-      audioCodec: 'opus',
-      durationSec: 12.5,
-      needsTranscode: true,
-    });
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].command, 'ffprobe');
+      assert.equal(calls[0].args.at(-1), mediaPath);
+      assert.equal(calls[0].options.timeout > 0, true);
+      assert.equal(calls[0].options.killSignal, 'SIGKILL');
+      assert.equal(probe.needsTranscode, true);
+      assert.equal(probe.playback.compliant, false);
+      assert.equal(probe.playback.maxKeyframeGapSec, 10);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('时长四舍五入到一位小数，避免字幕越过云端归一化后的上界', () => {
-    const probe = probeLocalMedia('/private/input.mp4', () => ({
-      status: 0,
-      stdout: Buffer.from(JSON.stringify({
-        format: { duration: '12.345678' },
-        streams: [
-          { codec_type: 'video', codec_name: 'h264' },
-          { codec_type: 'audio', codec_name: 'aac' },
-        ],
-      })),
-      stderr: Buffer.alloc(0),
-    }));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-probe-duration-'));
+    try {
+      const mediaPath = path.join(root, 'input.mp4');
+      writePlaybackMp4(mediaPath);
+      let callCount = 0;
+      const probe = probeLocalMedia(mediaPath, () => {
+        callCount += 1;
+        return callCount === 1
+          ? {
+              status: 0,
+              stdout: Buffer.from(JSON.stringify({
+                format: { duration: '12.345678' },
+                streams: [{
+                  codec_type: 'video',
+                  codec_name: 'h264',
+                  profile: 'Main',
+                  pix_fmt: 'yuv420p',
+                  width: 1280,
+                  height: 720,
+                  avg_frame_rate: '30/1',
+                  has_b_frames: 0,
+                }],
+              })),
+              stderr: Buffer.alloc(0),
+            }
+          : {
+              status: 0,
+              stdout: Buffer.from('0.000000,K_\n2.000000,K_\n'),
+              stderr: Buffer.alloc(0),
+            };
+      });
 
-    assert.equal(probe.durationSec, 12.3);
+      assert.equal(probe.durationSec, 12.3);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('时长舍入后为零时按媒体信息不完整拒绝', () => {
-    assert.throws(
-      () =>
-        probeLocalMedia('/private/input.mp4', () => ({
-          status: 0,
-          stdout: Buffer.from(JSON.stringify({
-            format: { duration: '0.04' },
-            streams: [{ codec_type: 'video', codec_name: 'h264' }],
-          })),
-          stderr: Buffer.alloc(0),
-        })),
-      /媒体信息不完整/,
-    );
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-probe-zero-'));
+    try {
+      const mediaPath = path.join(root, 'input.mp4');
+      writePlaybackMp4(mediaPath);
+      let callCount = 0;
+      assert.throws(
+        () =>
+          probeLocalMedia(mediaPath, () => {
+            callCount += 1;
+            return callCount === 1
+              ? {
+                  status: 0,
+                  stdout: Buffer.from(JSON.stringify({
+                    format: { duration: '0.04' },
+                    streams: [{
+                      codec_type: 'video',
+                      codec_name: 'h264',
+                      profile: 'Main',
+                      pix_fmt: 'yuv420p',
+                      width: 1280,
+                      height: 720,
+                      avg_frame_rate: '30/1',
+                      has_b_frames: 0,
+                    }],
+                  })),
+                  stderr: Buffer.alloc(0),
+                }
+              : {
+                  status: 0,
+                  stdout: Buffer.from('0.000000,K_\n'),
+                  stderr: Buffer.alloc(0),
+                };
+          }),
+        /媒体信息不完整/,
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('单文件转写通过临时 manifest 调用既有 CLI 并读取结果', () => {
@@ -381,7 +459,7 @@ describe('worker 生产胶水', () => {
     }
   });
 
-  it('ffmpeg 设置超时和强制终止信号', async () => {
+  it('ffmpeg 使用统一播放规格参数并设置超时', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-transcode-test-'));
     try {
       const mediaPath = path.join(root, 'input.mp4');
@@ -397,9 +475,17 @@ describe('worker 生产胶水', () => {
         },
         mediaPath,
         workspace: root,
+        probe: { hasAudio: true },
         runCommand: (command, args, options) => {
           assert.equal(command, 'ffmpeg');
           assert.equal(args.includes(mediaPath), true);
+          assert.equal(args[args.indexOf('-profile:v') + 1], 'main');
+          assert.equal(args[args.indexOf('-bf') + 1], '0');
+          assert.equal(
+            args[args.indexOf('-force_key_frames') + 1],
+            'expr:gte(t,n_forced*2)',
+          );
+          assert.equal(args[args.indexOf('-movflags') + 1], '+faststart');
           assert.equal(options.timeout > 0, true);
           assert.equal(options.killSignal, 'SIGKILL');
           fs.writeFileSync(path.join(root, 'transcoded.mp4'), 'converted');
