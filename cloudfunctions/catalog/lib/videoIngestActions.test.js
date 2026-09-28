@@ -289,6 +289,148 @@ function saveInput(overrides = {}) {
 }
 
 describe('createVideoIngestActions', () => {
+  it('rejects playback replacement for a missing video', async () => {
+    const service = createActions(createMemoryRepository());
+
+    await assert.rejects(
+      service.replacePlaybackMedia({
+        id: 'missing',
+        expectedVideoFileId: 'cloud://old',
+        videoFileId: 'cloud://new',
+        durationSec: 12.3,
+        media: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          hasAudio: true,
+          playback: playback(),
+        },
+      }),
+      (error) => error.code === 'NOT_FOUND',
+    );
+  });
+
+  it('rejects playback replacement when the expected file is stale', async () => {
+    const repository = createMemoryRepository({
+      videos: { v1: editableVideo() },
+    });
+    const before = repository.snapshot();
+
+    await assert.rejects(
+      createActions(repository).replacePlaybackMedia({
+        id: 'v1',
+        expectedVideoFileId: 'cloud://stale',
+        videoFileId: 'cloud://new',
+        durationSec: 12.3,
+        media: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          hasAudio: true,
+          playback: playback(),
+        },
+      }),
+      (error) => error.code === 'BAD_INPUT',
+    );
+    assert.deepEqual(repository.snapshot(), before);
+  });
+
+  it('rejects playback replacement when playback is non-compliant', async () => {
+    const repository = createMemoryRepository({
+      videos: { v1: editableVideo() },
+    });
+    const before = repository.snapshot();
+
+    await assert.rejects(
+      createActions(repository).replacePlaybackMedia({
+        id: 'v1',
+        expectedVideoFileId: 'cloud://v1',
+        videoFileId: 'cloud://new',
+        durationSec: 12.3,
+        media: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          hasAudio: true,
+          playback: playback({ compliant: false }),
+        },
+      }),
+      (error) => error.code === 'BAD_INPUT',
+    );
+    assert.deepEqual(repository.snapshot(), before);
+  });
+
+  it('atomically replaces only playback media fields and marks ingest ready', async () => {
+    const original = editableVideo({
+      status: 'published',
+      publishedAt: 99,
+      coverFileId: 'cloud://cover',
+      intro: '保留简介',
+      transcript: '保留字幕',
+      transcriptSegments: [{ startSec: 0, endSec: 1, text: '保留字幕' }],
+      searchBlob: '保留搜索字段',
+      searchAbstract: '保留摘要',
+      ingest: {
+        ...editableVideo().ingest,
+        phase: 'failed',
+        mediaRevision: 7,
+        errorCode: 'TRANSCODE_FAILED',
+        errorMessage: '旧错误',
+        queuedAt: 11,
+        startedAt: 12,
+        finishedAt: 13,
+      },
+    });
+    const repository = createMemoryRepository({
+      videos: { v1: original },
+    });
+    const service = createActions(repository, 2000);
+    const result = await service.replacePlaybackMedia({
+      id: 'v1',
+      expectedVideoFileId: 'cloud://v1',
+      videoFileId: 'cloud://new',
+      durationSec: 12.34,
+      media: {
+        videoCodec: 'H264',
+        audioCodec: 'AAC',
+        hasAudio: true,
+        playback: playback(),
+      },
+    });
+    const saved = repository.snapshot().videos.v1;
+
+    assert.deepEqual(result, {
+      ok: true,
+      id: 'v1',
+      oldVideoFileId: 'cloud://v1',
+    });
+    assert.deepEqual(
+      Object.keys(saved)
+        .filter((key) => !['_id', 'videoFileId', 'durationSec', 'media', 'ingest', 'updatedAt'].includes(key))
+        .reduce((record, key) => ({ ...record, [key]: saved[key] }), {}),
+      Object.keys(original)
+        .filter((key) => !['_id', 'videoFileId', 'durationSec', 'media', 'ingest', 'updatedAt'].includes(key))
+        .reduce((record, key) => ({ ...record, [key]: original[key] }), {}),
+    );
+    assert.equal(saved.videoFileId, 'cloud://new');
+    assert.equal(saved.durationSec, 12.3);
+    assert.deepEqual(saved.media, {
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      hasAudio: true,
+      playback: playback(),
+    });
+    assert.deepEqual(saved.ingest, {
+      ...original.ingest,
+      phase: 'ready',
+      mediaRevision: 8,
+      videoFileId: 'cloud://new',
+      errorCode: '',
+      errorMessage: '',
+      queuedAt: 0,
+      startedAt: 0,
+      finishedAt: 2000,
+    });
+    assert.equal(saved.updatedAt, 2000);
+  });
+
   it('preserves controlled segments and reviewed intro on first upload', async () => {
     const repository = createMemoryRepository();
     const service = createActions(repository);

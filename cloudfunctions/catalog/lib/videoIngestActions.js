@@ -140,6 +140,55 @@ function createVideoIngestActions({
   buildSearchBlob,
   nextStatusAfterSave,
 }) {
+  async function replacePlaybackMedia({
+    id,
+    expectedVideoFileId,
+    videoFileId,
+    durationSec,
+    media,
+  }) {
+    if (!id || !expectedVideoFileId || !videoFileId) {
+      throw badInput('id、expectedVideoFileId 与 videoFileId 必填');
+    }
+    const mediaMeta = normalizeVideoMedia(
+      { durationSec, media },
+      null,
+      { allowPlaybackUpdate: true },
+    );
+    if (!mediaMeta.media.playback?.compliant) {
+      throw badInput('playback must be compliant');
+    }
+    await repository.runTransaction(async (transaction) => {
+      const current = await transaction.getVideo(id);
+      if (!current) {
+        throw notFound();
+      }
+      if (current.videoFileId !== expectedVideoFileId) {
+        throw badInput('expectedVideoFileId mismatch');
+      }
+      const timestamp = now();
+      const currentIngest = normalizeIngest(current.ingest);
+      await transaction.updateVideo(id, {
+        videoFileId,
+        durationSec: mediaMeta.durationSec,
+        media: mediaMeta.media,
+        ingest: {
+          ...currentIngest,
+          phase: 'ready',
+          mediaRevision: currentIngest.mediaRevision + 1,
+          videoFileId,
+          errorCode: '',
+          errorMessage: '',
+          queuedAt: 0,
+          startedAt: 0,
+          finishedAt: timestamp,
+        },
+        updatedAt: timestamp,
+      });
+    });
+    return { ok: true, id, oldVideoFileId: expectedVideoFileId };
+  }
+
   async function saveVideo({ event, basePayload }) {
     let operatorChangedIntro;
     const saved = await repository.runTransaction(async (transaction) => {
@@ -416,6 +465,7 @@ function createVideoIngestActions({
     completeVideo,
     deleteVideo,
     enqueueVideo,
+    replacePlaybackMedia,
     saveVideo,
   };
 }

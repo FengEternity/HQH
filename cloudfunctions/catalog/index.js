@@ -189,6 +189,8 @@ async function dispatch(event) {
       return await upsertSynonym(event);
     case 'upsertVideo':
       return await upsertVideo(event);
+    case 'replacePlaybackMedia':
+      return await replacePlaybackMedia(event);
     case 'enqueueVideoIngest':
       return await enqueueVideoIngest(event);
     case 'claimVideoIngest':
@@ -563,6 +565,17 @@ async function enqueueVideoIngest(event) {
   await requireAdmin(event.ticket);
   const id = String(event.id || '').trim();
   return await videoIngestActions.enqueueVideo({ id });
+}
+
+async function replacePlaybackMedia(event) {
+  await requireAdmin(event.ticket);
+  return await videoIngestActions.replacePlaybackMedia({
+    id: event.id,
+    expectedVideoFileId: event.expectedVideoFileId,
+    videoFileId: event.videoFileId,
+    durationSec: event.durationSec,
+    media: event.media,
+  });
 }
 
 async function claimVideoIngest(event) {
