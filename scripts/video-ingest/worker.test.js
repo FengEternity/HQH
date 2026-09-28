@@ -9,6 +9,7 @@ const { PassThrough } = require('node:stream');
 const { describe, it } = require('node:test');
 
 const {
+  deleteCloudFiles,
   downloadVideoFile,
   probeLocalMedia,
   runCli,
@@ -35,6 +36,32 @@ function writePlaybackMp4(filePath) {
 }
 
 describe('worker 生产胶水', () => {
+  it('云文件逐项删除失败时抛出不含 fileID 的固定错误', async () => {
+    const privateFileId = 'cloud://private-old-video';
+    await assert.rejects(
+      () =>
+        deleteCloudFiles(
+          {
+            deleteFile: async ({ fileList }) => {
+              assert.deepEqual(fileList, [privateFileId]);
+              return {
+                fileList: [
+                  {
+                    fileID: privateFileId,
+                    code: 'STORAGE_FILE_NOT_EXIST',
+                  },
+                ],
+              };
+            },
+          },
+          [privateFileId],
+        ),
+      (error) =>
+        error.message === '云文件删除失败' &&
+        !error.message.includes(privateFileId),
+    );
+  });
+
   it('凭据缺失时非零退出且不打印任何凭据值', async () => {
     let stderr = '';
     let createCount = 0;

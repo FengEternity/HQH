@@ -279,6 +279,20 @@ async function downloadVideoFile({
   return localPath;
 }
 
+async function deleteCloudFiles(app, fileIds) {
+  if (fileIds.length === 0) {
+    return;
+  }
+  const result = await app.deleteFile({ fileList: fileIds });
+  if (
+    !Array.isArray(result?.fileList) ||
+    result.fileList.length !== fileIds.length ||
+    result.fileList.some((file) => file?.code !== 'SUCCESS')
+  ) {
+    throw new Error('云文件删除失败');
+  }
+}
+
 function createJobDependencies({
   app,
   catalog,
@@ -313,11 +327,7 @@ function createJobDependencies({
     resolveAutoIntro,
     placeholderIntro: PLACEHOLDER_INTRO,
     now: Date.now,
-    deleteCloudFiles: async (fileIds) => {
-      if (fileIds.length > 0) {
-        await app.deleteFile({ fileList: fileIds });
-      }
-    },
+    deleteCloudFiles: (fileIds) => deleteCloudFiles(app, fileIds),
     warn: () => {
       stderr.write('云文件清理失败\n');
     },
@@ -413,6 +423,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  deleteCloudFiles,
   downloadVideoFile,
   probeLocalMedia,
   runCli,
