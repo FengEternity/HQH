@@ -171,14 +171,26 @@ function createVideoIngestActions({
         controlledTranscript: hasControlledTranscript(event),
         now: timestamp,
       });
-      const mediaInput = {};
+      const previousForMedia = planned.clearPlayback
+        ? {
+            ...prevData,
+            media: {
+              videoCodec: String(prevData?.media?.videoCodec || ''),
+              audioCodec: String(prevData?.media?.audioCodec || ''),
+              hasAudio: Boolean(prevData?.media?.hasAudio),
+            },
+          }
+        : prevData;
+      const mediaInput = planned.clearPlayback
+        ? { media: previousForMedia.media }
+        : {};
       if (Object.prototype.hasOwnProperty.call(event, 'durationSec')) {
         mediaInput.durationSec = event.durationSec;
       }
       if (Object.prototype.hasOwnProperty.call(event, 'media')) {
         mediaInput.media = event.media;
       }
-      const mediaMeta = normalizeVideoMedia(mediaInput, prevData, {
+      const mediaMeta = normalizeVideoMedia(mediaInput, previousForMedia, {
         allowPlaybackUpdate: false,
       });
       const knowledgeEvent = planned.clearTranscript

@@ -330,7 +330,17 @@ describe('createVideoIngestActions', () => {
 
   it('forces transcript empty when replacing an existing file', async () => {
     const repository = createMemoryRepository({
-      videos: { v1: editableVideo({ ingest: readyVideo().ingest }) },
+      videos: {
+        v1: editableVideo({
+          ingest: readyVideo().ingest,
+          media: {
+            videoCodec: 'h264',
+            audioCodec: 'aac',
+            hasAudio: true,
+            playback: playback(),
+          },
+        }),
+      },
     });
     const service = createActions(repository);
     await service.saveVideo(
@@ -344,6 +354,8 @@ describe('createVideoIngestActions', () => {
     assert.deepEqual(repository.snapshot().videos.v1.transcriptSegments, []);
     assert.equal(repository.snapshot().videos.v1.transcript, '');
     assert.equal(repository.snapshot().videos.v1.videoFileId, 'cloud://replacement');
+    assert.equal(repository.snapshot().videos.v1.media.playback, undefined);
+    assert.equal(repository.snapshot().videos.v1.ingest.phase, 'queued');
   });
 
   it('ignores a stale form fileId that was never re-uploaded', async () => {

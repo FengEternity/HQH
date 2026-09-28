@@ -89,7 +89,7 @@ function planAdminSave({
 
   if (!nextVideoFileId) {
     const ingest = { ...prevIngest, introSource: resolveIntroSource(prevData, nextIntro, prevIngest) };
-    return { ingest, enqueue: false, clearTranscript: false };
+    return { ingest, enqueue: false, clearTranscript: false, clearPlayback: false };
   }
 
   if (nextVideoFileId !== prevVideoFileId) {
@@ -110,7 +110,7 @@ function planAdminSave({
         startedAt: 0,
         finishedAt: now,
       };
-      return { ingest, enqueue: false, clearTranscript: false };
+      return { ingest, enqueue: false, clearTranscript: false, clearPlayback: true };
     }
     const ingest = {
       ...prevIngest,
@@ -128,14 +128,19 @@ function planAdminSave({
       finishedAt: 0,
       attempt: prevIngest.attempt + 1,
     };
-    return { ingest, enqueue: true, clearTranscript: isReplacement };
+    return {
+      ingest,
+      enqueue: true,
+      clearTranscript: isReplacement,
+      clearPlayback: true,
+    };
   }
 
   const ingest = {
     ...prevIngest,
     introSource: resolveIntroSource(prevData, nextIntro, prevIngest),
   };
-  return { ingest, enqueue: false, clearTranscript: false };
+  return { ingest, enqueue: false, clearTranscript: false, clearPlayback: false };
 }
 
 function planWorkerComplete({

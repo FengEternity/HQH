@@ -14,19 +14,27 @@ function formatLocalTimestamp() {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
 }
 
-function deriveIngestUi(ingest) {
+function deriveVideoUi(video) {
+  const source = video && typeof video === 'object' ? video : {};
+  const ingest = source.ingest;
   const src = ingest && typeof ingest === 'object' ? ingest : {};
   const phase = src.phase || 'idle';
   const asr = src.asr || 'pending';
   const introSource = src.introSource || 'placeholder';
-  const errorMessage = typeof src.errorMessage === 'string' ? src.errorMessage : '';
   const ingestBusy = phase === 'queued' || phase === 'running';
+  const processedFile = src.videoFileId === source.videoFileId;
+  const playbackCompliant = source.media?.playback?.compliant === true;
+  const canPublish = phase === 'ready' && processedFile && playbackCompliant;
   let ingestHint = '';
 
   if (phase === 'queued' || phase === 'running') {
-    ingestHint = '正在生成字幕和简介';
+    ingestHint = '等待视频处理';
   } else if (phase === 'failed') {
-    ingestHint = errorMessage.trim() || '处理失败';
+    ingestHint = '视频处理失败，请重试';
+  } else if (phase !== 'ready' || !processedFile) {
+    ingestHint = '等待视频处理';
+  } else if (!playbackCompliant) {
+    ingestHint = '视频未通过播放检查';
   } else if (phase === 'ready') {
     if (asr === 'skipped') {
       ingestHint = '无音轨，已跳过转写';
@@ -47,6 +55,7 @@ function deriveIngestUi(ingest) {
     ingestBusy,
     showRetryIngest,
     canRetryIngest,
+    canPublish,
   };
 }
 
@@ -69,6 +78,7 @@ Page({
     ingestBusy: false,
     showRetryIngest: false,
     canRetryIngest: false,
+    canPublish: false,
   },
   onLoad(query) {
     const brandId = query.brandId || '';
@@ -106,7 +116,7 @@ Page({
           brandId: video.brandId || brandId,
           id: video._id || this.data.id,
         },
-        deriveIngestUi(video.ingest),
+        deriveVideoUi(video),
       ),
     );
   },

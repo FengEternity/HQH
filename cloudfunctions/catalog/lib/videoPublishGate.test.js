@@ -30,32 +30,42 @@ describe('videoPublishGate', () => {
     assert.throws(() => assertReadyToPublish(doc), (err) => err.code === 'BAD_INPUT');
   });
 
-  it('accepts publish when title intro cover and video are present', () => {
-    assert.equal(
-      isReadyToPublish({
-        title: '主机架设',
-        intro: '对中讲解',
-        brandId: 'b1',
-        coverFileId: 'cloud://c',
-        videoFileId: 'cloud://v',
-      }),
-      true,
-    );
-  });
-
-  it('rejects publish while ingest is queued or running', () => {
+  it('only publishes the processed file after a compliant playback check', () => {
     const base = {
       title: '主机架设',
       intro: '对中讲解',
       brandId: 'b1',
       coverFileId: 'cloud://c',
-      videoFileId: 'cloud://v',
+      videoFileId: 'cloud://processed',
     };
-    assert.equal(isReadyToPublish({ ...base, ingest: { phase: 'queued' } }), false);
-    assert.equal(isReadyToPublish({ ...base, ingest: { phase: 'running' } }), false);
-    assert.equal(isReadyToPublish({ ...base, ingest: { phase: 'ready' } }), true);
-    assert.equal(isReadyToPublish({ ...base, ingest: { phase: 'failed' } }), true);
-    assert.equal(isReadyToPublish(base), true);
+    const ready = {
+      ...base,
+      ingest: { phase: 'ready', videoFileId: 'cloud://processed' },
+      videoFileId: 'cloud://processed',
+      media: { playback: { compliant: true } },
+    };
+    assert.equal(isReadyToPublish(ready), true);
+    assert.equal(
+      isReadyToPublish({ ...ready, ingest: { ...ready.ingest, phase: 'queued' } }),
+      false,
+    );
+    assert.equal(
+      isReadyToPublish({ ...ready, ingest: { ...ready.ingest, phase: 'running' } }),
+      false,
+    );
+    assert.equal(
+      isReadyToPublish({ ...ready, ingest: { ...ready.ingest, phase: 'failed' } }),
+      false,
+    );
+    assert.equal(
+      isReadyToPublish({
+        ...ready,
+        ingest: { ...ready.ingest, videoFileId: 'cloud://old' },
+      }),
+      false,
+    );
+    assert.equal(isReadyToPublish({ ...ready, media: {} }), false);
+    assert.equal(isReadyToPublish(base), false);
   });
 
   it('rejects publish while the intro is still the processing placeholder', () => {
@@ -64,7 +74,8 @@ describe('videoPublishGate', () => {
       brandId: 'b1',
       coverFileId: 'cloud://c',
       videoFileId: 'cloud://v',
-      ingest: { phase: 'ready' },
+      ingest: { phase: 'ready', videoFileId: 'cloud://v' },
+      media: { playback: { compliant: true } },
     };
     assert.equal(
       isReadyToPublish({ ...base, intro: '讲解处理中，完成后请核对简介。' }),

@@ -124,6 +124,7 @@ describe('planAdminSave', () => {
     });
     assert.equal(out.enqueue, true);
     assert.equal(out.clearTranscript, true);
+    assert.equal(out.clearPlayback, true);
     assert.equal(out.ingest.mediaRevision, 2);
     assert.equal(out.ingest.videoFileId, 'cloud://new');
     assert.equal(out.ingest.phase, 'queued');
