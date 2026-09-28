@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -156,7 +157,15 @@ test('预处理使用数组命令并生成转码媒体、封面、关键帧与�
   assert.equal(manifest.entries.length, 2);
   assert.equal(manifest.entries.every((entry) => !JSON.stringify(entry).includes(root)), true);
   for (const entry of manifest.entries) {
-    assert.equal(fs.existsSync(path.join(output, entry.prepared.media)), true);
+    const preparedMediaPath = path.join(output, entry.prepared.media);
+    assert.equal(fs.existsSync(preparedMediaPath), true);
+    assert.equal(
+      entry.prepared.mediaSha256,
+      crypto
+        .createHash('sha256')
+        .update(fs.readFileSync(preparedMediaPath))
+        .digest('hex'),
+    );
     assert.equal(fs.existsSync(path.join(output, entry.prepared.cover)), true);
     assert.equal(fs.existsSync(path.join(output, entry.prepared.keyframes, '0001.jpg')), true);
   }
@@ -225,6 +234,33 @@ test('转码产物二次检查不合格时不写 manifest', () => {
     /转码产物不符合播放规格：KEYFRAME_GAP/,
   );
   assert.equal(fs.existsSync(path.join(output, 'manifest.json')), false);
+});
+
+test('失败重跑覆盖 prepared 媒体前移除旧 manifest', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-video-ingest-'));
+  const input = path.join(root, 'input');
+  const output = path.join(root, 'output');
+  fs.mkdirSync(path.join(input, '南方'), { recursive: true });
+  writeFastStartMp4(path.join(input, '南方', '南方数据导出.mp4'), 'hevc-source');
+
+  preprocess({
+    inputDirectory: input,
+    outputDirectory: output,
+    runCommand: createFakeRunner(),
+  });
+  const manifestPath = path.join(output, 'manifest.json');
+  assert.equal(fs.existsSync(manifestPath), true);
+
+  assert.throws(
+    () =>
+      preprocess({
+        inputDirectory: input,
+        outputDirectory: output,
+        runCommand: createFakeRunner({ transcodedKeyframeTimes: [0, 10] }),
+      }),
+    /转码产物不符合播放规格/,
+  );
+  assert.equal(fs.existsSync(manifestPath), false);
 });
 
 test('copy 与 transcode 路径可在同一 output 连续运行两次', () => {

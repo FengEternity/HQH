@@ -243,6 +243,8 @@ function preprocess({
   const directories = validateDirectories(inputDirectory, outputDirectory);
   checkMediaTools(runCommand);
   fs.mkdirSync(directories.output, { recursive: true });
+  const manifestPath = path.join(directories.output, 'manifest.json');
+  fs.rmSync(manifestPath, { force: true });
 
   const candidates = selectCandidates(scanMp4Files(directories.input));
   const entries = [];
@@ -277,6 +279,7 @@ function preprocess({
       hasAudio: preparedProbe.hasAudio,
       playback: toPlaybackMetadata(preparedProbe),
     };
+    entry.prepared.mediaSha256 = hashFile(mediaPath);
     entry.transcodeRequired = !preparedAssessment.compliant;
     extractImages(
       mediaPath,
@@ -293,7 +296,6 @@ function preprocess({
     generatedAt: new Date().toISOString(),
     entries,
   };
-  const manifestPath = path.join(directories.output, 'manifest.json');
   writeJsonAtomic(manifestPath, manifest);
   return manifest;
 }

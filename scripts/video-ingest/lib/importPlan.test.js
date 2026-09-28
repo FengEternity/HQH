@@ -1,10 +1,16 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
 const { buildDraftPayload, buildImportPlan } = require('./importPlan');
+
+const PREPARED_MEDIA_SHA256 = crypto
+  .createHash('sha256')
+  .update('video')
+  .digest('hex');
 
 function playbackMetadata(overrides = {}) {
   return {
@@ -42,6 +48,7 @@ function readyEntry(overrides = {}) {
     },
     prepared: {
       media: 'media/abc123.mp4',
+      mediaSha256: PREPARED_MEDIA_SHA256,
       cover: 'covers/abc123.jpg',
     },
     transcriptSegments: [
@@ -426,6 +433,21 @@ test('prepared 媒体播放规格不合格时拒绝导入', (t) => {
   });
 
   assert.deepEqual(plan.rejected[0].issues, ['PLAYBACK_NOT_COMPLIANT']);
+});
+
+test('prepared 媒体内容与播放检查绑定哈希不一致时拒绝导入', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  fs.writeFileSync(
+    path.join(manifestDirectory, 'media/abc123.mp4'),
+    'replaced-video',
+  );
+
+  const plan = buildImportPlan({
+    entries: [readyEntry()],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['PLAYBACK_MEDIA_MISMATCH']);
 });
 
 test('无 videoId 的 inflight 草稿拒绝自动重试', (t) => {

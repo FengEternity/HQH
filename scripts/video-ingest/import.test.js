@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -11,6 +12,11 @@ const {
   parseArguments,
   runCli,
 } = require('./import');
+
+const PREPARED_MEDIA_SHA256 = crypto
+  .createHash('sha256')
+  .update('video')
+  .digest('hex');
 
 function playbackMetadata() {
   return {
@@ -45,7 +51,11 @@ function manifestEntry(overrides = {}) {
       hasAudio: true,
       playback: playbackMetadata(),
     },
-    prepared: { media: 'media/abc.mp4', cover: 'covers/abc.jpg' },
+    prepared: {
+      media: 'media/abc.mp4',
+      mediaSha256: PREPARED_MEDIA_SHA256,
+      cover: 'covers/abc.jpg',
+    },
     transcriptSegments: [{ startSec: 0, endSec: 2, text: '连接仪器' }],
     transcription: { status: 'ready' },
     ...overrides,

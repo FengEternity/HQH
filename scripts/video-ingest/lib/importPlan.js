@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -17,6 +18,26 @@ function isNonEmptyFile(filePath) {
   } catch {
     return false;
   }
+}
+
+function hashFile(filePath) {
+  const hash = crypto.createHash('sha256');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  const descriptor = fs.openSync(filePath, 'r');
+
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) {
+        hash.update(buffer.subarray(0, bytesRead));
+      }
+    } while (bytesRead > 0);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+
+  return hash.digest('hex');
 }
 
 function isInside(root, candidate) {
@@ -188,6 +209,12 @@ function validateEntry(entry, manifestDirectory) {
   }
   if (!mediaPath || !isNonEmptyFile(mediaPath)) {
     issues.push('MEDIA_FILE_MISSING');
+  } else if (
+    !/^[a-f0-9]{64}$/.test(String(entry?.prepared?.mediaSha256 || ''))
+  ) {
+    issues.push('PLAYBACK_MEDIA_BINDING_INVALID');
+  } else if (hashFile(mediaPath) !== entry.prepared.mediaSha256) {
+    issues.push('PLAYBACK_MEDIA_MISMATCH');
   }
   return { issues, coverPath, mediaPath };
 }
