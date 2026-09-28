@@ -110,7 +110,12 @@ function planAdminSave({
         startedAt: 0,
         finishedAt: now,
       };
-      return { ingest, enqueue: false, clearTranscript: false, clearPlayback: true };
+      return {
+        ingest,
+        enqueue: false,
+        clearTranscript: false,
+        clearPlayback: isReplacement,
+      };
     }
     const ingest = {
       ...prevIngest,
@@ -132,7 +137,7 @@ function planAdminSave({
       ingest,
       enqueue: true,
       clearTranscript: isReplacement,
-      clearPlayback: true,
+      clearPlayback: isReplacement,
     };
   }
 

@@ -3,6 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { PLACEHOLDER_INTRO } = require('./videoIngest');
+const { isReadyToPublish } = require('./videoPublishGate');
 
 let actions = {};
 try {
@@ -298,6 +299,12 @@ describe('createVideoIngestActions', () => {
         videoFileId: 'cloud://first',
         transcriptSegments: [{ startSec: 0, endSec: 1, text: '受控字幕' }],
         durationSec: 2,
+        media: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          hasAudio: true,
+          playback: playback(),
+        },
       }),
     );
     const saved = repository.snapshot().videos[result.id];
@@ -309,6 +316,14 @@ describe('createVideoIngestActions', () => {
     assert.equal(saved.ingest.introSource, 'human');
     assert.equal(saved.ingest.phase, 'ready');
     assert.equal(saved.ingest.asr, 'ready');
+    assert.deepEqual(saved.media.playback, playback());
+    assert.equal(
+      isReadyToPublish({
+        ...saved,
+        coverFileId: 'cloud://cover',
+      }),
+      true,
+    );
     assert.deepEqual(repository.snapshot().jobs, {});
   });
 
@@ -333,6 +348,7 @@ describe('createVideoIngestActions', () => {
       videos: {
         v1: editableVideo({
           ingest: readyVideo().ingest,
+          status: 'published',
           media: {
             videoCodec: 'h264',
             audioCodec: 'aac',
@@ -356,6 +372,7 @@ describe('createVideoIngestActions', () => {
     assert.equal(repository.snapshot().videos.v1.videoFileId, 'cloud://replacement');
     assert.equal(repository.snapshot().videos.v1.media.playback, undefined);
     assert.equal(repository.snapshot().videos.v1.ingest.phase, 'queued');
+    assert.equal(repository.snapshot().videos.v1.status, 'published');
   });
 
   it('ignores a stale form fileId that was never re-uploaded', async () => {

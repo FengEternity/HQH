@@ -41,6 +41,26 @@ function isReadyToPublish(doc) {
   }
 }
 
+async function publishReadyVideo({ repository, id, checkText, now }) {
+  return await repository.runTransaction(async (transaction) => {
+    const doc = await transaction.getVideo(id);
+    if (!doc) {
+      const error = new Error('NOT_FOUND');
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+    assertReadyToPublish(doc);
+    await checkText(`${doc.title}\n${doc.intro}`);
+    const timestamp = now();
+    await transaction.updateVideo(id, {
+      status: 'published',
+      publishedAt: timestamp,
+      updatedAt: timestamp,
+    });
+    return { ok: true };
+  });
+}
+
 function nextStatusAfterSave(prevStatus) {
   if (prevStatus === 'published') {
     return 'published';
@@ -55,5 +75,6 @@ module.exports = {
   assertVideoDraftFields,
   assertReadyToPublish,
   isReadyToPublish,
+  publishReadyVideo,
   nextStatusAfterSave,
 };

@@ -5,8 +5,8 @@ const { buildSearchBlob, searchPublished } = require('./lib/catalogSearch');
 const { issueTicket, verifyTicket } = require('./lib/ticket');
 const {
   assertVideoDraftFields,
-  assertReadyToPublish,
   nextStatusAfterSave,
+  publishReadyVideo,
 } = require('./lib/videoPublishGate');
 const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
 const { resolveMediaUrls } = require('./lib/resolveMediaUrls');
@@ -19,8 +19,9 @@ const {
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
+const videoIngestRepository = createVideoIngestRepository(db);
 const videoIngestActions = createVideoIngestActions({
-  repository: createVideoIngestRepository(db),
+  repository: videoIngestRepository,
   now: Date.now,
   buildSearchBlob,
   nextStatusAfterSave,
@@ -398,6 +399,7 @@ async function adminListVideos(event) {
       publishedAt: true,
       updatedAt: true,
       ingest: true,
+      media: true,
     })
     .limit(100)
     .get();
@@ -579,23 +581,12 @@ async function completeVideoIngest(event) {
 
 async function publishVideo(event) {
   await requireAdmin(event.ticket);
-  const snap = await db.collection('videos').doc(event.id).get();
-  const doc = snap.data;
-  if (!doc) {
-    const err = new Error('NOT_FOUND');
-    err.code = 'NOT_FOUND';
-    throw err;
-  }
-  assertReadyToPublish(doc);
-  await checkText(`${doc.title}\n${doc.intro}`);
-  await db.collection('videos').doc(event.id).update({
-    data: {
-      status: 'published',
-      publishedAt: Date.now(),
-      updatedAt: Date.now(),
-    },
+  return await publishReadyVideo({
+    repository: videoIngestRepository,
+    id: event.id,
+    checkText,
+    now: Date.now,
   });
-  return { ok: true };
 }
 
 async function unpublishVideo(event) {

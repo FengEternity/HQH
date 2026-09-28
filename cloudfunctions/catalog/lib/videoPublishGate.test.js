@@ -7,10 +7,73 @@ const {
   assertReadyToPublish,
   isReadyToPublish,
   nextStatusAfterSave,
+  publishReadyVideo,
 } = require('./videoPublishGate');
 const { searchPublished, buildSearchBlob } = require('./catalogSearch');
 
 describe('videoPublishGate', () => {
+  it('provides the publish operation used by the cloud handler', () => {
+    assert.equal(typeof publishReadyVideo, 'function');
+  });
+
+  it('rejects publish when a concurrent replace makes the transaction retry', async () => {
+    assert.equal(typeof publishReadyVideo, 'function');
+    let state = {
+      title: '主机架设',
+      intro: '对中讲解',
+      brandId: 'b1',
+      coverFileId: 'cloud://cover',
+      videoFileId: 'cloud://processed',
+      ingest: { phase: 'ready', videoFileId: 'cloud://processed' },
+      media: { playback: { compliant: true } },
+      status: 'draft',
+    };
+    let conflict = true;
+    const repository = {
+      async runTransaction(callback) {
+        for (;;) {
+          const draft = JSON.parse(JSON.stringify(state));
+          const result = await callback({
+            async getVideo() {
+              return JSON.parse(JSON.stringify(draft));
+            },
+            async updateVideo(id, patch) {
+              Object.assign(draft, patch);
+            },
+          });
+          if (conflict) {
+            conflict = false;
+            state = {
+              ...state,
+              videoFileId: 'cloud://replacement',
+              ingest: {
+                ...state.ingest,
+                phase: 'queued',
+                videoFileId: 'cloud://replacement',
+              },
+              media: {},
+            };
+            continue;
+          }
+          state = draft;
+          return result;
+        }
+      },
+    };
+
+    await assert.rejects(
+      publishReadyVideo({
+        repository,
+        id: 'v1',
+        checkText: async () => {},
+        now: () => 100,
+      }),
+      (error) => error.code === 'BAD_INPUT',
+    );
+    assert.equal(state.status, 'draft');
+    assert.equal(state.ingest.phase, 'queued');
+  });
+
   it('rejects upsert-shaped payload without intro', () => {
     assert.throws(
       () => assertVideoDraftFields({ title: '主机架设', brandId: 'b1', intro: '  ' }),

@@ -191,7 +191,7 @@ function createVideoIngestActions({
         mediaInput.media = event.media;
       }
       const mediaMeta = normalizeVideoMedia(mediaInput, previousForMedia, {
-        allowPlaybackUpdate: false,
+        allowPlaybackUpdate: !prevData && hasControlledTranscript(event),
       });
       const knowledgeEvent = planned.clearTranscript
         ? Object.assign({}, event, { transcriptSegments: [] })
