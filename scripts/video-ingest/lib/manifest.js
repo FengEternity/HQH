@@ -1,6 +1,11 @@
 const crypto = require('node:crypto');
 const path = require('node:path');
 
+const {
+  assessPlaybackProfile,
+  toPlaybackMetadata,
+} = require('./playbackProfile');
+
 // 该副本与正片字节不同，无法依靠内容哈希去重，但业务规则只保留正片。
 const EXCLUDED_TITLES = new Set(['中海达主机固件升级_副本']);
 
@@ -58,10 +63,7 @@ function buildManifestEntry(file, probe, content) {
 
   const sourceKey = crypto.createHash('sha256').update(sourceRelativePath).digest('hex');
   const slug = sourceKey.slice(0, 16);
-  const videoCodec = probe.videoCodec.toLowerCase();
-  const audioCodec = probe.audioCodec.toLowerCase();
-  const transcodeRequired =
-    videoCodec !== 'h264' || (probe.hasAudio && audioCodec !== 'aac');
+  const assessment = assessPlaybackProfile(probe);
 
   return {
     sourceKey,
@@ -74,15 +76,16 @@ function buildManifestEntry(file, probe, content) {
     modelName: draft.modelName || '',
     durationSec: Math.round(probe.durationSec * 10) / 10,
     media: {
-      videoCodec: 'h264',
-      audioCodec: probe.hasAudio ? 'aac' : '',
+      videoCodec: probe.videoCodec,
+      audioCodec: probe.audioCodec,
       hasAudio: probe.hasAudio,
+      playback: toPlaybackMetadata(probe),
     },
     sourceMedia: {
       videoCodec: probe.videoCodec,
       audioCodec: probe.audioCodec,
     },
-    transcodeRequired,
+    transcodeRequired: !assessment.compliant,
     prepared: {
       media: `media/${slug}.mp4`,
       cover: `covers/${slug}.jpg`,

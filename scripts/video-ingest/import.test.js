@@ -12,6 +12,23 @@ const {
   runCli,
 } = require('./import');
 
+function playbackMetadata() {
+  return {
+    videoCodec: 'h264',
+    profile: 'Main',
+    pixelFormat: 'yuv420p',
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    hasBFrames: false,
+    maxKeyframeGapSec: 2,
+    fastStart: true,
+    hasAudio: true,
+    audioCodec: 'aac',
+    compliant: true,
+  };
+}
+
 function manifestEntry(overrides = {}) {
   return {
     sourceKey: 'abc',
@@ -22,7 +39,12 @@ function manifestEntry(overrides = {}) {
     tags: ['点测量'],
     modelName: '',
     durationSec: 12.5,
-    media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: true },
+    media: {
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      hasAudio: true,
+      playback: playbackMetadata(),
+    },
     prepared: { media: 'media/abc.mp4', cover: 'covers/abc.jpg' },
     transcriptSegments: [{ startSec: 0, endSec: 2, text: '连接仪器' }],
     transcription: { status: 'ready' },

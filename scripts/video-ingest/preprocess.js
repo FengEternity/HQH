@@ -10,6 +10,12 @@ const {
   buildManifestEntry,
   selectCandidates,
 } = require('./lib/manifest');
+const {
+  assessPlaybackProfile,
+  buildPlaybackFfmpegArgs,
+  probePlaybackMedia,
+  toPlaybackMetadata,
+} = require('./lib/playbackProfile');
 const content = require('./content.zh-CN.json');
 
 function defaultCommandRunner(command, args, options = {}) {
@@ -83,35 +89,6 @@ function scanMp4Files(inputDirectory) {
   return files;
 }
 
-function probeMedia(filePath, runCommand) {
-  const args = [
-    '-v',
-    'error',
-    '-show_entries',
-    'format=duration:stream=codec_type,codec_name',
-    '-of',
-    'json',
-    filePath,
-  ];
-  const result = runCommand('ffprobe', args, { encoding: null, shell: false });
-  assertCommandSuccess(result, 'ffprobe');
-
-  const payload = JSON.parse(Buffer.from(result.stdout || '').toString('utf8'));
-  const video = payload.streams?.find((stream) => stream.codec_type === 'video');
-  const audio = payload.streams?.find((stream) => stream.codec_type === 'audio');
-  const durationSec = Number(payload.format?.duration);
-  if (!video?.codec_name || !Number.isFinite(durationSec) || durationSec <= 0) {
-    throw new Error(`媒体信息不完整：${path.basename(filePath)}`);
-  }
-
-  return {
-    durationSec,
-    videoCodec: video.codec_name.toLowerCase(),
-    audioCodec: audio?.codec_name?.toLowerCase() || '',
-    hasAudio: Boolean(audio),
-  };
-}
-
 function runFfmpeg(args, runCommand) {
   const result = runCommand('ffmpeg', args, { encoding: null, shell: false });
   assertCommandSuccess(result, 'ffmpeg');
@@ -120,7 +97,7 @@ function runFfmpeg(args, runCommand) {
 function prepareMedia(
   sourcePath,
   destinationPath,
-  transcodeRequired,
+  probe,
   outputDirectory,
   runCommand,
 ) {
@@ -131,7 +108,7 @@ function prepareMedia(
 
   fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
   fs.rmSync(destinationPath, { force: true });
-  if (!transcodeRequired) {
+  if (assessPlaybackProfile(probe).compliant) {
     fs.copyFileSync(sourcePath, destinationPath);
     fs.chmodSync(
       destinationPath,
@@ -141,30 +118,7 @@ function prepareMedia(
   }
 
   runFfmpeg(
-    [
-      '-nostdin',
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-y',
-      '-i',
-      sourcePath,
-      '-vf',
-      "scale='min(1280,iw)':-2",
-      '-c:v',
-      'libx264',
-      '-preset',
-      'medium',
-      '-crf',
-      '23',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
-      '-movflags',
-      '+faststart',
-      destinationPath,
-    ],
+    buildPlaybackFfmpegArgs(sourcePath, destinationPath, probe),
     runCommand,
   );
   fs.chmodSync(
@@ -293,7 +247,7 @@ function preprocess({
   const candidates = selectCandidates(scanMp4Files(directories.input));
   const entries = [];
   for (const file of candidates) {
-    const probe = probeMedia(file.absolutePath, runCommand);
+    const probe = probePlaybackMedia(file.absolutePath, runCommand);
     const entry = buildManifestEntry(file, probe, content);
     const mediaPath = path.join(directories.output, entry.prepared.media);
     const coverPath = path.join(directories.output, entry.prepared.cover);
@@ -305,15 +259,30 @@ function preprocess({
     prepareMedia(
       file.absolutePath,
       mediaPath,
-      entry.transcodeRequired,
+      probe,
       directories.output,
       runCommand,
     );
+    const preparedProbe = probePlaybackMedia(mediaPath, runCommand);
+    const preparedAssessment = assessPlaybackProfile(preparedProbe);
+    if (!preparedAssessment.compliant) {
+      throw new Error(
+        `转码产物不符合播放规格：${preparedAssessment.reasons.join(',')}`,
+      );
+    }
+    entry.durationSec = Math.round(preparedProbe.durationSec * 10) / 10;
+    entry.media = {
+      videoCodec: preparedProbe.videoCodec,
+      audioCodec: preparedProbe.audioCodec,
+      hasAudio: preparedProbe.hasAudio,
+      playback: toPlaybackMetadata(preparedProbe),
+    };
+    entry.transcodeRequired = !preparedAssessment.compliant;
     extractImages(
       mediaPath,
       coverPath,
       keyframesDirectory,
-      probe.durationSec,
+      preparedProbe.durationSec,
       runCommand,
     );
     entries.push(entry);

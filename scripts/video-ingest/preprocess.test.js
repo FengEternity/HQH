@@ -6,13 +6,35 @@ const test = require('node:test');
 
 const { preprocess } = require('./preprocess');
 
+function mp4Box(type, payload = '') {
+  const body = Buffer.from(payload);
+  const box = Buffer.alloc(8 + body.length);
+  box.writeUInt32BE(box.length, 0);
+  box.write(type, 4, 4, 'ascii');
+  body.copy(box, 8);
+  return box;
+}
+
+function writeFastStartMp4(filePath, payload = 'video') {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(
+    filePath,
+    Buffer.concat([mp4Box('ftyp'), mp4Box('moov'), mp4Box('mdat', payload)]),
+  );
+}
+
 function createFakeRunner({
   durationSec,
+  sourceKeyframeTimes,
+  transcodedKeyframeTimes,
   rejectExistingTranscodeOutput = false,
   successfulCoverSeeks,
   writeKeyframes = true,
+  calls = [],
 } = {}) {
+  const transcodedOutputs = new Set();
   return (command, args, options = {}) => {
+    calls.push({ command, args: [...args] });
     assert.equal(typeof command, 'string');
     assert.equal(Array.isArray(args), true);
     assert.notEqual(options.shell, true);
@@ -23,14 +45,40 @@ function createFakeRunner({
 
     if (command === 'ffprobe') {
       const input = args.at(-1);
-      const isHevc = input.includes('南方数据导出');
+      const isPacketProbe = args.includes('-show_packets');
+      const isTranscoded = transcodedOutputs.has(input);
+      if (isPacketProbe) {
+        const keyframeTimes =
+          isTranscoded && transcodedKeyframeTimes
+            ? transcodedKeyframeTimes
+            : !isTranscoded && sourceKeyframeTimes
+              ? sourceKeyframeTimes
+              : [0, 2, 4, 6, 8];
+        return {
+          status: 0,
+          stdout: Buffer.from(
+            keyframeTimes.map((time) => `${time},K_`).join('\n'),
+          ),
+          stderr: Buffer.alloc(0),
+        };
+      }
+      const isHevc = !isTranscoded && input.includes('南方数据导出');
       return {
         status: 0,
         stdout: Buffer.from(
           JSON.stringify({
             format: { duration: String(durationSec ?? (isHevc ? 16.04 : 8.01)) },
             streams: [
-              { codec_type: 'video', codec_name: isHevc ? 'hevc' : 'h264' },
+              {
+                codec_type: 'video',
+                codec_name: isHevc ? 'hevc' : 'h264',
+                profile: 'Main',
+                pix_fmt: 'yuv420p',
+                width: 1280,
+                height: 720,
+                avg_frame_rate: '30/1',
+                has_b_frames: 0,
+              },
               { codec_type: 'audio', codec_name: 'aac' },
             ],
           }),
@@ -54,6 +102,9 @@ function createFakeRunner({
       };
     }
     const isKeyframeExtraction = args.includes('fps=1/8');
+    if (isTranscode) {
+      transcodedOutputs.add(outputArgument);
+    }
     const seekIndex = args.indexOf('-ss');
     const seek = seekIndex >= 0 ? args[seekIndex + 1] : null;
     const shouldWrite =
@@ -64,8 +115,12 @@ function createFakeRunner({
           successfulCoverSeeks.includes(seek)));
     if (shouldWrite) {
       const output = args.at(-1).replace('%04d', '0001');
-      fs.mkdirSync(path.dirname(output), { recursive: true });
-      fs.writeFileSync(output, 'generated');
+      if (isTranscode) {
+        writeFastStartMp4(output, 'transcoded');
+      } else {
+        fs.mkdirSync(path.dirname(output), { recursive: true });
+        fs.writeFileSync(output, 'generated');
+      }
     }
     return { status: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   };
@@ -76,7 +131,10 @@ function createSingleVideoFixture() {
   const input = path.join(root, 'input');
   const output = path.join(root, 'output');
   fs.mkdirSync(path.join(input, '中海达'), { recursive: true });
-  fs.writeFileSync(path.join(input, '中海达', '中海达点测量.mp4'), 'h264-source');
+  writeFastStartMp4(
+    path.join(input, '中海达', '中海达点测量.mp4'),
+    'h264-source',
+  );
   return { input, output };
 }
 
@@ -86,8 +144,8 @@ test('预处理使用数组命令并生成转码媒体、封面、关键帧与�
   const output = path.join(root, 'output');
   fs.mkdirSync(path.join(input, '中海达'), { recursive: true });
   fs.mkdirSync(path.join(input, '南方'), { recursive: true });
-  fs.writeFileSync(path.join(input, '中海达', '中海达点测量.mp4'), 'h264-source');
-  fs.writeFileSync(path.join(input, '南方', '南方数据导出.mp4'), 'hevc-source');
+  writeFastStartMp4(path.join(input, '中海达', '中海达点测量.mp4'), 'h264-source');
+  writeFastStartMp4(path.join(input, '南方', '南方数据导出.mp4'), 'hevc-source');
 
   const manifest = preprocess({
     inputDirectory: input,
@@ -104,9 +162,69 @@ test('预处理使用数组命令并生成转码媒体、封面、关键帧与�
   }
   assert.equal(fs.existsSync(path.join(output, 'manifest.json')), true);
   assert.equal(
-    fs.readFileSync(path.join(input, '南方', '南方数据导出.mp4'), 'utf8'),
-    'hevc-source',
+    fs.readFileSync(path.join(input, '南方', '南方数据导出.mp4')).includes('hevc-source'),
+    true,
   );
+});
+
+test('H.264 + AAC 但关键帧间隔 10 秒时按统一规格转码', () => {
+  const { input, output } = createSingleVideoFixture();
+  const calls = [];
+
+  const manifest = preprocess({
+    inputDirectory: input,
+    outputDirectory: output,
+    runCommand: createFakeRunner({
+      durationSec: 20,
+      sourceKeyframeTimes: [0, 10, 20],
+      calls,
+    }),
+  });
+
+  const entry = manifest.entries[0];
+  const transcodeArgs = calls.find(
+    ({ command, args }) => command === 'ffmpeg' && args.includes('libx264'),
+  ).args;
+  assert.equal(entry.transcodeRequired, false);
+  assert.equal(entry.media.playback.maxKeyframeGapSec, 2);
+  assert.equal(transcodeArgs.includes('-bf'), true);
+  assert.equal(transcodeArgs.includes('+faststart'), true);
+});
+
+test('完全符合播放规格且关键帧间隔 2 秒时直接复制', () => {
+  const { input, output } = createSingleVideoFixture();
+  const calls = [];
+
+  const manifest = preprocess({
+    inputDirectory: input,
+    outputDirectory: output,
+    runCommand: createFakeRunner({ sourceKeyframeTimes: [0, 2, 4, 6, 8], calls }),
+  });
+
+  assert.equal(manifest.entries[0].transcodeRequired, false);
+  assert.equal(
+    calls.some(({ command, args }) => command === 'ffmpeg' && args.includes('libx264')),
+    false,
+  );
+});
+
+test('转码产物二次检查不合格时不写 manifest', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-video-ingest-'));
+  const input = path.join(root, 'input');
+  const output = path.join(root, 'output');
+  fs.mkdirSync(path.join(input, '南方'), { recursive: true });
+  writeFastStartMp4(path.join(input, '南方', '南方数据导出.mp4'), 'hevc-source');
+
+  assert.throws(
+    () =>
+      preprocess({
+        inputDirectory: input,
+        outputDirectory: output,
+        runCommand: createFakeRunner({ transcodedKeyframeTimes: [0, 10] }),
+      }),
+    /转码产物不符合播放规格：KEYFRAME_GAP/,
+  );
+  assert.equal(fs.existsSync(path.join(output, 'manifest.json')), false);
 });
 
 test('copy 与 transcode 路径可在同一 output 连续运行两次', () => {
@@ -136,7 +254,7 @@ test('copy 与 transcode 路径可在同一 output 连续运行两次', () => {
       `${scenario.title}.mp4`,
     );
     fs.mkdirSync(path.dirname(source), { recursive: true });
-    fs.writeFileSync(source, 'source');
+    writeFastStartMp4(source, 'source');
     fs.chmodSync(source, scenario.sourceMode);
     const sourceModeBefore = fs.statSync(source).mode & 0o777;
 

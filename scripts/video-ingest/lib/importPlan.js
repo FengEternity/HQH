@@ -1,6 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { assessPlaybackProfile } = require('./playbackProfile');
+
 const EMPTY_ENTITIES = Object.freeze({
   models: Object.freeze([]),
   actions: Object.freeze([]),
@@ -83,7 +85,12 @@ function validateEntry(entry, manifestDirectory) {
   if (!media || typeof media !== 'object' || Array.isArray(media)) {
     issues.push('MEDIA_INVALID');
   } else {
-    const allowedFields = new Set(['videoCodec', 'audioCodec', 'hasAudio']);
+    const allowedFields = new Set([
+      'videoCodec',
+      'audioCodec',
+      'hasAudio',
+      'playback',
+    ]);
     if (Object.keys(media).some((field) => !allowedFields.has(field))) {
       issues.push('MEDIA_FIELDS_INVALID');
     }
@@ -95,6 +102,41 @@ function validateEntry(entry, manifestDirectory) {
     }
     if (typeof media.hasAudio !== 'boolean') {
       issues.push('HAS_AUDIO_INVALID');
+    }
+    const playback = media.playback;
+    const playbackFields = new Set([
+      'videoCodec',
+      'profile',
+      'pixelFormat',
+      'width',
+      'height',
+      'frameRate',
+      'hasBFrames',
+      'maxKeyframeGapSec',
+      'fastStart',
+      'hasAudio',
+      'audioCodec',
+      'compliant',
+    ]);
+    if (
+      !playback ||
+      typeof playback !== 'object' ||
+      Array.isArray(playback) ||
+      Object.keys(playback).some((field) => !playbackFields.has(field)) ||
+      (typeof media.videoCodec === 'string' &&
+        playback.videoCodec !== media.videoCodec) ||
+      (typeof media.audioCodec === 'string' &&
+        playback.audioCodec !== media.audioCodec) ||
+      (typeof media.hasAudio === 'boolean' &&
+        playback.hasAudio !== media.hasAudio) ||
+      typeof playback.compliant !== 'boolean'
+    ) {
+      issues.push('PLAYBACK_INVALID');
+    } else if (
+      playback.compliant !== true ||
+      !assessPlaybackProfile(playback).compliant
+    ) {
+      issues.push('PLAYBACK_NOT_COMPLIANT');
     }
   }
   if (!Array.isArray(entry?.transcriptSegments) || entry.transcriptSegments.length === 0) {

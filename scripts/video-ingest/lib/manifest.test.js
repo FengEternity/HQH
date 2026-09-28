@@ -10,6 +10,24 @@ const {
   selectCandidates,
 } = require('./manifest');
 
+function playbackProbe(overrides = {}) {
+  return {
+    durationSec: 42,
+    videoCodec: 'h264',
+    profile: 'Main',
+    pixelFormat: 'yuv420p',
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    hasBFrames: false,
+    maxKeyframeGapSec: 2,
+    fastStart: true,
+    hasAudio: true,
+    audioCodec: 'aac',
+    ...overrides,
+  };
+}
+
 test('字节哈希相同的副本只保留正片', () => {
   const selected = selectCandidates([
     { relativePath: '中海达/中海达点测量_副本.mp4', sha256: 'same-bytes' },
@@ -48,12 +66,10 @@ test('HEVC 条目标记为需要转码并只记录相对路径', () => {
       relativePath: '南方/南方数据导出.mp4',
       sha256: 'source-content-hash',
     },
-    {
+    playbackProbe({
       durationSec: 42.26,
       videoCodec: 'hevc',
-      audioCodec: 'aac',
-      hasAudio: true,
-    },
+    }),
     {
       南方数据导出: {
         intro: '演示南方手簿数据导出。',
@@ -67,9 +83,23 @@ test('HEVC 条目标记为需要转码并只记录相对路径', () => {
   assert.equal(entry.sourceRelativePath, '南方/南方数据导出.mp4');
   assert.equal(entry.durationSec, 42.3);
   assert.deepEqual(entry.media, {
-    videoCodec: 'h264',
+    videoCodec: 'hevc',
     audioCodec: 'aac',
     hasAudio: true,
+    playback: {
+      videoCodec: 'hevc',
+      profile: 'Main',
+      pixelFormat: 'yuv420p',
+      width: 1280,
+      height: 720,
+      frameRate: 30,
+      hasBFrames: false,
+      maxKeyframeGapSec: 2,
+      fastStart: true,
+      hasAudio: true,
+      audioCodec: 'aac',
+      compliant: false,
+    },
   });
   assert.equal(entry.status, 'prepared');
   assert.equal('sourcePath' in entry, false);
@@ -81,12 +111,9 @@ test('H.264 有音轨但非 AAC 时仍转码为 H.264 加 AAC', () => {
       relativePath: '南方/南方数据导出.mp4',
       sha256: 'source-content-hash',
     },
-    {
-      durationSec: 42,
-      videoCodec: 'h264',
+    playbackProbe({
       audioCodec: 'mp3',
-      hasAudio: true,
-    },
+    }),
     {
       南方数据导出: {
         intro: '演示南方手簿数据导出。',
@@ -99,9 +126,44 @@ test('H.264 有音轨但非 AAC 时仍转码为 H.264 加 AAC', () => {
   assert.equal(entry.transcodeRequired, true);
   assert.deepEqual(entry.media, {
     videoCodec: 'h264',
-    audioCodec: 'aac',
+    audioCodec: 'mp3',
     hasAudio: true,
+    playback: {
+      videoCodec: 'h264',
+      profile: 'Main',
+      pixelFormat: 'yuv420p',
+      width: 1280,
+      height: 720,
+      frameRate: 30,
+      hasBFrames: false,
+      maxKeyframeGapSec: 2,
+      fastStart: true,
+      hasAudio: true,
+      audioCodec: 'mp3',
+      compliant: false,
+    },
   });
+});
+
+test('H.264 + AAC 但最大关键帧间隔 10 秒时仍标记转码', () => {
+  const entry = buildManifestEntry(
+    {
+      relativePath: '南方/南方数据导出.mp4',
+      sha256: 'source-content-hash',
+    },
+    playbackProbe({ maxKeyframeGapSec: 10 }),
+    {
+      南方数据导出: {
+        intro: '演示南方手簿数据导出。',
+        tags: ['导出', '数据'],
+        modelName: '',
+      },
+    },
+  );
+
+  assert.equal(entry.transcodeRequired, true);
+  assert.equal(entry.media.playback.maxKeyframeGapSec, 10);
+  assert.equal(entry.media.playback.compliant, false);
 });
 
 test('无音轨媒体的 prepared audioCodec 保持为空', () => {
@@ -110,12 +172,10 @@ test('无音轨媒体的 prepared audioCodec 保持为空', () => {
       relativePath: '南方/南方数据导出.mp4',
       sha256: 'source-content-hash',
     },
-    {
-      durationSec: 42,
-      videoCodec: 'h264',
+    playbackProbe({
       audioCodec: '',
       hasAudio: false,
-    },
+    }),
     {
       南方数据导出: {
         intro: '演示南方手簿数据导出。',
@@ -130,6 +190,20 @@ test('无音轨媒体的 prepared audioCodec 保持为空', () => {
     videoCodec: 'h264',
     audioCodec: '',
     hasAudio: false,
+    playback: {
+      videoCodec: 'h264',
+      profile: 'Main',
+      pixelFormat: 'yuv420p',
+      width: 1280,
+      height: 720,
+      frameRate: 30,
+      hasBFrames: false,
+      maxKeyframeGapSec: 2,
+      fastStart: true,
+      hasAudio: false,
+      audioCodec: '',
+      compliant: true,
+    },
   });
 });
 
@@ -141,12 +215,9 @@ test('运营草案按规范化标题补齐 intro、tags 与 modelName', () => {
       relativePath: '南方/南方C10手簿软件升级 .mp4',
       sha256: 'source-content-hash',
     },
-    {
+    playbackProbe({
       durationSec: 60,
-      videoCodec: 'h264',
-      audioCodec: 'aac',
-      hasAudio: true,
-    },
+    }),
     content,
   );
 

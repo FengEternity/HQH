@@ -6,6 +6,24 @@ const test = require('node:test');
 
 const { buildDraftPayload, buildImportPlan } = require('./importPlan');
 
+function playbackMetadata(overrides = {}) {
+  return {
+    videoCodec: 'h264',
+    profile: 'Main',
+    pixelFormat: 'yuv420p',
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    hasBFrames: false,
+    maxKeyframeGapSec: 2,
+    fastStart: true,
+    hasAudio: true,
+    audioCodec: 'aac',
+    compliant: true,
+    ...overrides,
+  };
+}
+
 function readyEntry(overrides = {}) {
   return {
     sourceKey: 'abc123',
@@ -16,7 +34,12 @@ function readyEntry(overrides = {}) {
     tags: ['点测量'],
     modelName: '',
     durationSec: 12.5,
-    media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: true },
+    media: {
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      hasAudio: true,
+      playback: playbackMetadata(),
+    },
     prepared: {
       media: 'media/abc123.mp4',
       cover: 'covers/abc123.jpg',
@@ -306,6 +329,7 @@ test('media 出现额外字段变成清晰 rejected', (t) => {
           videoCodec: 'h264',
           audioCodec: 'aac',
           hasAudio: true,
+          playback: playbackMetadata(),
           width: 1280,
         },
       }),
@@ -321,7 +345,12 @@ test('media codec 非字符串变成对应 rejected', (t) => {
   const videoPlan = buildImportPlan({
     entries: [
       readyEntry({
-        media: { videoCodec: 264, audioCodec: 'aac', hasAudio: true },
+        media: {
+          videoCodec: 264,
+          audioCodec: 'aac',
+          hasAudio: true,
+          playback: playbackMetadata(),
+        },
       }),
     ],
     manifestDirectory,
@@ -329,7 +358,12 @@ test('media codec 非字符串变成对应 rejected', (t) => {
   const audioPlan = buildImportPlan({
     entries: [
       readyEntry({
-        media: { videoCodec: 'h264', audioCodec: null, hasAudio: true },
+        media: {
+          videoCodec: 'h264',
+          audioCodec: null,
+          hasAudio: true,
+          playback: playbackMetadata(),
+        },
       }),
     ],
     manifestDirectory,
@@ -344,13 +378,54 @@ test('media hasAudio 非布尔变成清晰 rejected', (t) => {
   const plan = buildImportPlan({
     entries: [
       readyEntry({
-        media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: 1 },
+        media: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          hasAudio: 1,
+          playback: playbackMetadata(),
+        },
       }),
     ],
     manifestDirectory,
   });
 
   assert.deepEqual(plan.rejected[0].issues, ['HAS_AUDIO_INVALID']);
+});
+
+test('缺少 playback 检查结果时拒绝导入', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        media: { videoCodec: 'h264', audioCodec: 'aac', hasAudio: true },
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['PLAYBACK_INVALID']);
+});
+
+test('prepared 媒体播放规格不合格时拒绝导入', (t) => {
+  const manifestDirectory = preparedFixture(t);
+  const plan = buildImportPlan({
+    entries: [
+      readyEntry({
+        media: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          hasAudio: true,
+          playback: playbackMetadata({
+            maxKeyframeGapSec: 10,
+            compliant: false,
+          }),
+        },
+      }),
+    ],
+    manifestDirectory,
+  });
+
+  assert.deepEqual(plan.rejected[0].issues, ['PLAYBACK_NOT_COMPLIANT']);
 });
 
 test('无 videoId 的 inflight 草稿拒绝自动重试', (t) => {
