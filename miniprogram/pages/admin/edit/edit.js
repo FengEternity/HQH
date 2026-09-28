@@ -1,5 +1,5 @@
 const { admin } = require('../../../utils/api');
-const { withPosterUrl, planVideoCoverUpload } = require('../../../utils/videoMedia');
+const { withPosterUrl, planVideoCoverUpload, cloudUploadOptions } = require('../../../utils/videoMedia');
 
 function fileExt(filePath, fallback) {
   const match = String(filePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
@@ -92,7 +92,7 @@ Page({
     const cloudPath = `${kind}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
     wx.showLoading({ title: '上传中' });
     return wx.cloud
-      .uploadFile({ cloudPath, filePath })
+      .uploadFile(cloudUploadOptions({ kind, cloudPath, filePath }))
       .then((up) => {
         wx.hideLoading();
         return up.fileID;

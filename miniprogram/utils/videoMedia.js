@@ -1,5 +1,17 @@
 'use strict';
 
+// wx.cloud.uploadFile 会把 timeout 交给 wx.uploadFile。不传时平台默认 60 秒，
+// 管理端长视频经常在这一分钟被掐断。
+const VIDEO_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
+
+function cloudUploadOptions({ kind, cloudPath, filePath }) {
+  const options = { cloudPath, filePath };
+  if (kind === 'video') {
+    options.timeout = VIDEO_UPLOAD_TIMEOUT_MS;
+  }
+  return options;
+}
+
 function withPosterUrl(video) {
   if (!video) {
     return video;
@@ -25,6 +37,8 @@ function planVideoCoverUpload(input) {
 }
 
 module.exports = {
+  VIDEO_UPLOAD_TIMEOUT_MS,
+  cloudUploadOptions,
   withPosterUrl,
   withPosterUrls,
   planVideoCoverUpload,

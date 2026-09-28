@@ -2,7 +2,15 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { withPosterUrl, withPosterUrls, planVideoCoverUpload } = require('./videoMedia');
+const fs = require('fs');
+const path = require('path');
+const {
+  withPosterUrl,
+  withPosterUrls,
+  planVideoCoverUpload,
+  cloudUploadOptions,
+  VIDEO_UPLOAD_TIMEOUT_MS,
+} = require('./videoMedia');
 
 describe('withPosterUrl', () => {
   it('fills posterUrl from coverFileId when posterUrl is missing', () => {
@@ -59,5 +67,42 @@ describe('planVideoCoverUpload', () => {
       planVideoCoverUpload({ coverFileId: '', thumbTempFilePath: '' }),
       { action: 'missing_thumb' },
     );
+  });
+});
+
+describe('cloudUploadOptions', () => {
+  it('gives video uploads longer than the 60s wx.uploadFile default', () => {
+    assert.ok(VIDEO_UPLOAD_TIMEOUT_MS > 60 * 1000);
+    assert.deepEqual(
+      cloudUploadOptions({
+        kind: 'video',
+        cloudPath: 'video/a.mp4',
+        filePath: '/tmp/a.mp4',
+      }),
+      {
+        cloudPath: 'video/a.mp4',
+        filePath: '/tmp/a.mp4',
+        timeout: VIDEO_UPLOAD_TIMEOUT_MS,
+      },
+    );
+  });
+
+  it('leaves cover uploads on the platform default timeout', () => {
+    assert.deepEqual(
+      cloudUploadOptions({
+        kind: 'cover',
+        cloudPath: 'cover/a.jpg',
+        filePath: '/tmp/a.jpg',
+      }),
+      {
+        cloudPath: 'cover/a.jpg',
+        filePath: '/tmp/a.jpg',
+      },
+    );
+  });
+
+  it('matches app.json uploadFile timeout so unset callers are not stuck at 60s', () => {
+    const app = JSON.parse(fs.readFileSync(path.join(__dirname, '../app.json'), 'utf8'));
+    assert.equal(app.networkTimeout.uploadFile, VIDEO_UPLOAD_TIMEOUT_MS);
   });
 });
