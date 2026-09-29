@@ -107,6 +107,23 @@ node scripts/video-ingest/apply-intros.js \
 
 然后按下文先执行 import dry-run；只有所有安全与导入闸门都满足后，才可执行草稿导入。
 
+## 存量播放规格替换
+
+已经上架的成片不要走运营换片。先把 prepared 媒体重编码到播放规格，再经 `replacePlaybackMedia` 只替换云端文件引用。执行前备份 manifest，确认没有第二个 worker，并先部署包含该 action 的 `catalog`。凭据只来自 `TCB_ENV_ID`、`TCB_SECRET_ID`、`TCB_SECRET_KEY`、`ADMIN_PIN`。
+
+```bash
+node scripts/video-ingest/normalize-prepared.js \
+  --manifest .video-ingest/prepared/manifest.json
+
+node scripts/video-ingest/replace-playback.js \
+  --manifest .video-ingest/prepared/manifest.json \
+  --dry-run
+
+node scripts/video-ingest/replace-playback.js \
+  --manifest .video-ingest/prepared/manifest.json \
+  --execute
+```
+
 ## 安全边界
 
 - 无云端凭据时，可以运行 `preprocess`、`transcribe`、`apply-intros` 和 `import --dry-run`。
