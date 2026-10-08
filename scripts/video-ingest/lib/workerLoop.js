@@ -147,10 +147,24 @@ async function runOnce({
   try {
     transcription = await transcribe(prepared.path);
   } catch {
-    return failPrepared('ASR_FAILED');
+    return completePrepared({
+      ...jobIdentity(claimed),
+      outcome: 'ready',
+      asr: 'failed',
+      errorMessage: '转写失败，播放文件已更新',
+      ...mediaPayload(probe),
+      ...transcoded,
+    });
   }
   if (!transcription || transcription.ok !== true) {
-    return failPrepared('ASR_FAILED');
+    return completePrepared({
+      ...jobIdentity(claimed),
+      outcome: 'ready',
+      asr: 'failed',
+      errorMessage: '转写失败，播放文件已更新',
+      ...mediaPayload(probe),
+      ...transcoded,
+    });
   }
 
   if (transcription.skipped) {

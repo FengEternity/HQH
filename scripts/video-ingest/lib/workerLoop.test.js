@@ -415,9 +415,16 @@ describe('runOnce', () => {
     assert.equal(warnings[0].includes('cloud://'), false);
   });
 
-  it('转码后 ASR 失败时删除新产物并保留原始文件', async () => {
+  it('转码后 ASR 失败时保留新产物并删除原始文件', async () => {
     const deletedFileIds = [];
+    const completes = [];
     const { deps } = createDeps({
+      catalog: {
+        claim: async () => claimedJob(),
+        complete: async (payload) => {
+          completes.push(payload);
+        },
+      },
       probeMedia: async (mediaPath) =>
         mediaPath === '/tmp/a.mp4'
           ? {
@@ -444,8 +451,11 @@ describe('runOnce', () => {
       deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
     });
 
-    assert.equal(await runOnce(deps), 'failed');
-    assert.deepEqual(deletedFileIds, ['cloud://transcoded']);
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes[0].outcome, 'ready');
+    assert.equal(completes[0].asr, 'failed');
+    assert.equal(completes[0].transcodedVideoFileId, 'cloud://transcoded');
+    assert.deepEqual(deletedFileIds, ['cloud://v']);
   });
 
   it('转码后 ready 回写失败时删除新产物并保留原始文件', async () => {
@@ -504,9 +514,48 @@ describe('runOnce', () => {
       },
     });
 
-    assert.equal(await runOnce(deps), 'failed');
-    assert.equal(completes[0].errorCode, 'ASR_FAILED');
-    assert.equal(completes[0].errorMessage, '处理失败');
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes[0].outcome, 'ready');
+    assert.equal(completes[0].asr, 'failed');
+    assert.equal(completes[0].errorMessage, '转写失败，播放文件已更新');
+    assert.equal(Object.hasOwn(completes[0], 'intro'), false);
+    assert.equal(Object.hasOwn(completes[0], 'errorCode'), false);
+  });
+
+  it('转写失败时保留已上传的合格文件并删除原文件', async () => {
+    const deletedFileIds = [];
+    let probes = 0;
+    const { deps, completes } = createDeps({
+      probeMedia: async () => {
+        probes += 1;
+        if (probes === 1) {
+          return {
+            hasAudio: true,
+            durationSec: 3,
+            needsTranscode: true,
+            playback: playback({ compliant: false }),
+          };
+        }
+        return {
+          hasAudio: true,
+          durationSec: 3,
+          needsTranscode: false,
+          playback: playback(),
+        };
+      },
+      transcodeIfNeeded: async () => ({
+        path: '/tmp/a-transcoded.mp4',
+        uploadedFileId: 'cloud://transcoded',
+      }),
+      transcribe: async () => {
+        throw new Error('asr down');
+      },
+      deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes[0].transcodedVideoFileId, 'cloud://transcoded');
+    assert.deepEqual(deletedFileIds, ['cloud://v']);
   });
 
   it('有取证简介时携带字幕和 intro 完成任务', async () => {
