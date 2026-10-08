@@ -570,6 +570,27 @@ describe('planWorkerComplete', () => {
     assert.equal(out.ingest.asr, 'skipped');
   });
 
+  it('keeps the asr failure message when playback is ready', () => {
+    const out = planWorkerComplete({
+      prevIngest: base,
+      prevIntro: PLACEHOLDER_INTRO,
+      prevIntroSource: 'placeholder',
+      complete: {
+        mediaRevision: 3,
+        outcome: 'ready',
+        asr: 'failed',
+        errorMessage: '转写失败，播放文件已更新',
+      },
+      now: 9,
+    });
+    assert.equal(out.ingest.phase, 'ready');
+    assert.equal(out.ingest.asr, 'failed');
+    assert.equal(out.ingest.errorCode, '');
+    assert.equal(out.ingest.errorMessage, '转写失败，播放文件已更新');
+    assert.equal(out.applyIntro, false);
+    assert.equal(out.intro, PLACEHOLDER_INTRO);
+  });
+
   it('rejects invalid errorCode on failed outcome', () => {
     assert.throws(
       () =>

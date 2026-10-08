@@ -179,7 +179,10 @@ function planWorkerComplete({
   ingest.phase = 'ready';
   ingest.asr = complete.asr || 'ready';
   ingest.errorCode = '';
-  ingest.errorMessage = '';
+  ingest.errorMessage =
+    ingest.asr === 'failed' && typeof complete.errorMessage === 'string'
+      ? complete.errorMessage
+      : '';
   ingest.finishedAt = now;
 
   if (
