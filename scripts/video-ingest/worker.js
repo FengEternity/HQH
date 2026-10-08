@@ -24,9 +24,17 @@ const { runOnce } = require('./lib/workerLoop');
 const IDLE_SLEEP_MS = 5000;
 const DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000;
 const FFPROBE_TIMEOUT_MS = 30 * 1000;
-const FFMPEG_TIMEOUT_MS = 30 * 60 * 1000;
+const DEFAULT_FFMPEG_TIMEOUT_MS = 30 * 60 * 1000;
 const TRANSCRIBE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const TRANSCRIBE_SCRIPT = path.join(__dirname, 'transcribe.py');
+
+function ffmpegTimeoutMs(env = process.env) {
+  const parsed = Number(env.FFMPEG_TIMEOUT_MS);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return DEFAULT_FFMPEG_TIMEOUT_MS;
+}
 
 function defaultCommandRunner(command, args, options = {}) {
   return spawnSync(command, args, {
@@ -81,7 +89,7 @@ function transcodeLocalMedia({
   const result = runCommand(
     'ffmpeg',
     buildPlaybackFfmpegArgs(mediaPath, outputPath, probe),
-    { timeout: FFMPEG_TIMEOUT_MS, killSignal: 'SIGKILL' },
+    { timeout: ffmpegTimeoutMs(), killSignal: 'SIGKILL' },
   );
   assertCommandSuccess(result, 'ffmpeg');
   return app
@@ -423,9 +431,14 @@ if (require.main === module) {
 }
 
 module.exports = {
+  callCatalog,
+  createCatalog,
+  createJobDependencies,
   deleteCloudFiles,
   downloadVideoFile,
+  hasAllCredentials,
   probeLocalMedia,
+  readCredentials,
   runCli,
   runInTemporaryWorkspace,
   transcodeLocalMedia,
