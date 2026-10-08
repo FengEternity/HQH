@@ -16,6 +16,8 @@ const {
   createVideoIngestActions,
   getOptionalDocument,
 } = require('./lib/videoIngestActions');
+const { CLAIM_TIMEOUT_MS } = require('./lib/videoIngest');
+const { jobNeedsWake, wakeVideoIngest } = require('./lib/wakeVideoIngest');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -219,6 +221,9 @@ async function dispatch(event) {
 
 exports.main = async (event) => {
   try {
+    if (event && event.Type === 'timer') {
+      return await runWithCollections(db, () => wakeIfIngestPending());
+    }
     const action = event && event.action;
     if (action === 'ping' || action === 'initDb') {
       return await dispatch(event);
@@ -232,6 +237,19 @@ exports.main = async (event) => {
     };
   }
 };
+
+async function wakeIfIngestPending() {
+  const now = Date.now();
+  const candidate = await videoIngestRepository.findClaimCandidate(
+    now,
+    CLAIM_TIMEOUT_MS,
+  );
+  if (!jobNeedsWake(candidate, now, CLAIM_TIMEOUT_MS)) {
+    return { ok: true, woke: false };
+  }
+  const woke = await wakeVideoIngest((options) => cloud.callContainer(options));
+  return { ok: true, woke };
+}
 
 async function initDb() {
   const result = await ensureCollections(db);
@@ -548,7 +566,7 @@ async function upsertVideo(event) {
         .split(/[,，\s]+/)
         .map((tag) => tag.trim())
         .filter(Boolean);
-  return await videoIngestActions.saveVideo({
+  const saved = await videoIngestActions.saveVideo({
     event: { ...event, intro },
     basePayload: {
       title,
@@ -559,12 +577,20 @@ async function upsertVideo(event) {
       tags,
     },
   });
+  if (saved.enqueued) {
+    await wakeVideoIngest((options) => cloud.callContainer(options));
+  }
+  return saved;
 }
 
 async function enqueueVideoIngest(event) {
   await requireAdmin(event.ticket);
   const id = String(event.id || '').trim();
-  return await videoIngestActions.enqueueVideo({ id });
+  const saved = await videoIngestActions.enqueueVideo({ id });
+  if (saved.enqueued) {
+    await wakeVideoIngest((options) => cloud.callContainer(options));
+  }
+  return saved;
 }
 
 async function replacePlaybackMedia(event) {

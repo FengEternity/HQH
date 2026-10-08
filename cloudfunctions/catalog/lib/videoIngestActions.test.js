@@ -457,6 +457,7 @@ describe('createVideoIngestActions', () => {
     ]);
     assert.equal(saved.ingest.introSource, 'human');
     assert.equal(saved.ingest.phase, 'ready');
+    assert.equal(result.enqueued, false);
     assert.equal(saved.ingest.asr, 'ready');
     assert.deepEqual(saved.media.playback, playback());
     assert.equal(
@@ -522,6 +523,7 @@ describe('createVideoIngestActions', () => {
 
     assert.equal(state.videos[result.id].ingest.phase, 'queued');
     assert.equal(Object.values(state.jobs).length, 1);
+    assert.equal(result.enqueued, true);
   });
 
   it('forces transcript empty when replacing an existing file', async () => {

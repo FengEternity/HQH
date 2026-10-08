@@ -298,9 +298,9 @@ function createVideoIngestActions({
           }),
         );
       }
-      return { id: videoId };
+      return { id: videoId, enqueued: planned.enqueue === true };
     });
-    return { ok: true, id: saved.id };
+    return { ok: true, id: saved.id, enqueued: saved.enqueued === true };
   }
 
   async function enqueueVideo({ id }) {
@@ -345,7 +345,7 @@ function createVideoIngestActions({
         }),
       );
     });
-    return { ok: true, id };
+    return { ok: true, id, enqueued: true };
   }
 
   async function claimVideo({ workerId }) {
