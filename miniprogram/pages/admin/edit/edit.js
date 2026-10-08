@@ -36,7 +36,9 @@ function deriveVideoUi(video) {
   } else if (!playbackCompliant) {
     ingestHint = '视频未通过播放检查';
   } else if (phase === 'ready') {
-    if (asr === 'skipped') {
+    if (asr === 'failed') {
+      ingestHint = '转写失败，播放文件已更新，请手写简介后再上架';
+    } else if (asr === 'skipped') {
       ingestHint = '无音轨，已跳过转写';
     } else if (asr === 'ready' && introSource === 'placeholder') {
       ingestHint = '字幕已出，简介需手写';

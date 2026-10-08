@@ -64,4 +64,17 @@ describe('deriveVideoUi', () => {
       '视频未通过播放检查',
     );
   });
+
+  it('asks for a handwritten intro when transcription failed after playback was ready', () => {
+    const data = apply(video({
+      ingest: {
+        phase: 'ready',
+        videoFileId: 'cloud://processed',
+        asr: 'failed',
+        introSource: 'placeholder',
+      },
+    }));
+    assert.equal(data.ingestHint, '转写失败，播放文件已更新，请手写简介后再上架');
+    assert.equal(data.canPublish, true);
+  });
 });
