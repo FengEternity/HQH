@@ -11,10 +11,17 @@ const {
 } = require('./ensureCollections');
 
 describe('ensureCollections', () => {
-  it('includes cs ticket collections', () => {
-    assert.ok(CATALOG_COLLECTIONS.includes('cs_threads'));
-    assert.ok(CATALOG_COLLECTIONS.includes('cs_messages'));
-    assert.ok(CATALOG_COLLECTIONS.includes('admin_notify_subscribers'));
+  it('includes ticket, shop, and ingest collections', () => {
+    for (const name of [
+      'cs_threads',
+      'cs_messages',
+      'admin_notify_subscribers',
+      'shop_products',
+      'video_shop_links',
+      'video_ingest_jobs',
+    ]) {
+      assert.ok(CATALOG_COLLECTIONS.includes(name), name);
+    }
   });
 
   it('creates all catalog collections when none exist', async () => {

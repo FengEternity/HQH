@@ -4,7 +4,7 @@
     <video
       wx:if="{{src}}"
       id="player"
-      class="player-video"
+      class="player-video {{shopProducts.length ? 'player-video-compact' : ''}}"
       src="{{src}}"
       poster="{{video.posterUrl}}"
       autoplay
@@ -15,6 +15,22 @@
       binderror="onVideoError"
     ></video>
     <view wx:else class="player-empty">暂无视频文件</view>
+    <view wx:if="{{shopProducts.length}}" class="player-shop">
+      <view class="player-shop-title">相关商品</view>
+      <view
+        class="player-shop-row"
+        wx:for="{{shopProducts}}"
+        wx:key="_id"
+        data-id="{{item._id}}"
+        bindtap="openShopProduct"
+      >
+        <image wx:if="{{item.coverUrl}}" class="player-shop-cover" src="{{item.coverUrl}}" mode="aspectFill" />
+        <view class="player-shop-main">
+          <view class="tile-title">{{item.name}}</view>
+          <view class="muted">¥{{item.priceYuan}}</view>
+        </view>
+      </view>
+    </view>
   </block>
   <view wx:else class="player-empty">加载中</view>
 </view>

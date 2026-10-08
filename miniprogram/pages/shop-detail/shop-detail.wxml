@@ -1,0 +1,25 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="empty">加载中</view>
+  <view wx:elif="{{error}}" class="empty">{{error}}</view>
+  <block wx:elif="{{product}}">
+    <image wx:if="{{product.coverUrl}}" class="shop-cover" src="{{product.coverUrl}}" mode="aspectFill" />
+    <view class="tile-title" style="margin-top: 24rpx">{{product.name}}</view>
+    <view class="muted" style="margin-top: 8rpx">¥{{product.priceYuan}}</view>
+    <view wx:if="{{product.specName || product.specValue}}" class="muted" style="margin-top: 8rpx">
+      {{product.specName}}{{product.specName && product.specValue ? '：' : ''}}{{product.specValue}}
+    </view>
+    <view wx:if="{{product.detail}}" style="margin-top: 24rpx; white-space: pre-wrap">{{product.detail}}</view>
+
+    <view wx:if="{{videos.length}}" style="margin-top: 40rpx">
+      <view class="tile-title" style="margin-bottom: 16rpx">相关讲解</view>
+      <view class="list">
+        <view class="list-row" wx:for="{{videos}}" wx:key="_id" data-id="{{item._id}}" bindtap="openVideo">
+          <view class="list-main">
+            <view class="tile-title">{{item.title}}</view>
+            <view class="muted">{{item.brandName || ''}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>

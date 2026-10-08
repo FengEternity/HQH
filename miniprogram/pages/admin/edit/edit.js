@@ -23,6 +23,66 @@ function openCoverCrop(src) {
   });
 }
 
+const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
+
+function fileExt(filePath, fallback) {
+  const match = String(filePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
+  return (match && match[1]) || fallback;
+}
+
+function formatLocalTimestamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+function deriveVideoUi(video) {
+  const source = video && typeof video === 'object' ? video : {};
+  const ingest = source.ingest;
+  const src = ingest && typeof ingest === 'object' ? ingest : {};
+  const phase = src.phase || 'idle';
+  const asr = src.asr || 'pending';
+  const introSource = src.introSource || 'placeholder';
+  const ingestBusy = phase === 'queued' || phase === 'running';
+  const processedFile = src.videoFileId === source.videoFileId;
+  const playbackCompliant = source.media?.playback?.compliant === true;
+  const canPublish = phase === 'ready' && processedFile && playbackCompliant;
+  let ingestHint = '';
+
+  if (phase === 'queued' || phase === 'running') {
+    ingestHint = '等待视频处理';
+  } else if (phase === 'failed') {
+    ingestHint = '视频处理失败，请重试';
+  } else if (phase !== 'ready' || !processedFile) {
+    ingestHint = '等待视频处理';
+  } else if (!playbackCompliant) {
+    ingestHint = '视频未通过播放检查';
+  } else if (phase === 'ready') {
+    if (asr === 'failed') {
+      ingestHint = '转写失败，播放文件已更新，请手写简介后再上架';
+    } else if (asr === 'skipped') {
+      ingestHint = '无音轨，已跳过转写';
+    } else if (asr === 'ready' && introSource === 'placeholder') {
+      ingestHint = '字幕已出，简介需手写';
+    } else {
+      ingestHint = '待核对后上架';
+    }
+  }
+
+  const showRetryIngest = phase === 'failed' || phase === 'ready';
+  const canRetryIngest = showRetryIngest && !ingestBusy;
+
+  return {
+    ingestPhase: phase,
+    ingestHint,
+    introSource,
+    ingestBusy,
+    showRetryIngest,
+    canRetryIngest,
+    canPublish,
+  };
+}
+
 Page({
   data: {
     id: '',
@@ -36,6 +96,13 @@ Page({
     videoFileId: '',
     posterUrl: '',
     coverHint: '',
+    ingestPhase: 'idle',
+    ingestHint: '',
+    introSource: 'placeholder',
+    ingestBusy: false,
+    showRetryIngest: false,
+    canRetryIngest: false,
+    canPublish: false,
   },
   onLoad(query) {
     const brandId = query.brandId || '';
@@ -60,16 +127,31 @@ Page({
   },
   applyVideo(found, brandId) {
     const video = withPosterUrl(found);
-    this.setData({
-      title: video.title,
-      intro: video.intro,
-      modelName: video.modelName,
-      tags: (video.tags || []).join(','),
-      coverFileId: video.coverFileId,
-      videoFileId: video.videoFileId,
-      posterUrl: video.posterUrl || '',
-      brandId: video.brandId || brandId,
-      id: video._id || this.data.id,
+    this.setData(
+      Object.assign(
+        {
+          title: video.title,
+          intro: video.intro,
+          modelName: video.modelName,
+          tags: (video.tags || []).join(','),
+          coverFileId: video.coverFileId,
+          videoFileId: video.videoFileId,
+          posterUrl: video.posterUrl || '',
+          brandId: video.brandId || brandId,
+          id: video._id || this.data.id,
+        },
+        deriveVideoUi(video),
+      ),
+    );
+  },
+  reloadVideo() {
+    if (!this.data.id) {
+      return Promise.resolve();
+    }
+    return admin({ action: 'adminGetVideo', id: this.data.id }).then((payload) => {
+      if (payload && payload.video) {
+        this.applyVideo(payload.video, this.data.brandId);
+      }
     });
   },
   onTitle(e) {
@@ -84,11 +166,31 @@ Page({
   onTags(e) {
     this.setData({ tags: e.detail.value });
   },
-  ensureSaved() {
-    if (this.data.id) {
-      return Promise.resolve(this.data.id);
+  applyUploadShell() {
+    const patch = {};
+    if (!String(this.data.title || '').trim()) {
+      patch.title = `讲解${formatLocalTimestamp()}`;
     }
-    return this.persist(true);
+    if (!String(this.data.intro || '').trim()) {
+      patch.intro = PLACEHOLDER_INTRO;
+    }
+    if (!Object.keys(patch).length) {
+      return Promise.resolve(false);
+    }
+    return new Promise((resolve) => {
+      this.setData(patch, () => resolve(true));
+    });
+  },
+  ensureSaved() {
+    return this.applyUploadShell().then((patched) => {
+      if (!this.data.id) {
+        return this.persist(true);
+      }
+      if (patched) {
+        return this.persist(true).then(() => this.data.id);
+      }
+      return this.data.id;
+    });
   },
   pickCoverPhoto() {
     wx.chooseMedia({
@@ -144,10 +246,10 @@ Page({
           .then((fileID) => {
             this.setData({ videoFileId: fileID });
             if (plan.action === 'keep') {
-              return this.persist(true).then(() => 'video');
+              return this.persistUploadedVideo().then(() => 'video');
             }
             if (plan.action === 'missing_thumb') {
-              return this.persist(true).then(() => 'missing_thumb');
+              return this.persistUploadedVideo().then(() => 'missing_thumb');
             }
             return openCoverCrop(plan.path).then((croppedPath) => {
               if (!croppedPath) {
@@ -163,6 +265,7 @@ Page({
               });
             });
           })
+          .then((kind) => this.reloadVideo().then(() => kind))
           .then((kind) => {
             if (kind === 'missing_thumb') {
               wx.showToast({ title: '未获取到视频缩略图，请手动选封面', icon: 'none' });
@@ -182,12 +285,28 @@ Page({
       },
     });
   },
+  retryIngest() {
+    if (!this.data.canRetryIngest || !this.data.id) {
+      return;
+    }
+    admin({ action: 'enqueueVideoIngest', id: this.data.id })
+      .then(() => {
+        wx.showToast({ title: '已重新排队' });
+        return this.reloadVideo();
+      })
+      .catch((err) => wx.showToast({ title: err.message || '重试失败', icon: 'none' }));
+  },
   save() {
     this.persist(false).catch((err) => {
       wx.showToast({ title: err.message || '保存失败', icon: 'none' });
     });
   },
-  persist(silent) {
+  // 只有刚上传完视频的这一步可以声明换片；其它保存里表单上的 videoFileId 可能已经
+  // 被 worker 的转码文件取代，回传旧值会白白清掉字幕并重排一次。
+  persistUploadedVideo() {
+    return this.persist(true, { replaceVideo: true });
+  },
+  persist(silent, options) {
     if (!this.data.brandId) {
       wx.showToast({ title: '缺少品牌', icon: 'none' });
       return Promise.reject(new Error('缺少品牌'));
@@ -202,6 +321,7 @@ Page({
       tags: this.data.tags,
       coverFileId: this.data.coverFileId,
       videoFileId: this.data.videoFileId,
+      replaceVideo: Boolean(options && options.replaceVideo),
     }).then((res) => {
       this.setData({ id: res.id });
       if (!silent) {

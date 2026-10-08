@@ -9,6 +9,9 @@ const CATALOG_COLLECTIONS = [
   'cs_threads',
   'cs_messages',
   'admin_notify_subscribers',
+  'shop_products',
+  'video_shop_links',
+  'video_ingest_jobs',
 ];
 
 function errorText(error) {

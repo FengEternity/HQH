@@ -5,39 +5,31 @@ const { buildSearchBlob, searchPublished } = require('./lib/catalogSearch');
 const { issueTicket, verifyTicket } = require('./lib/ticket');
 const {
   assertVideoDraftFields,
-  assertReadyToPublish,
   nextStatusAfterSave,
+  publishReadyVideo,
 } = require('./lib/videoPublishGate');
 const { ensureCollections, runWithCollections } = require('./lib/ensureCollections');
 const { attachPosterUrls, resolveMediaUrls } = require('./lib/resolveMediaUrls');
 const { listHomeCatalog } = require('./lib/listHome');
+const { publicVideo } = require('./lib/publicVideo');
+const {
+  createVideoIngestActions,
+  getOptionalDocument,
+} = require('./lib/videoIngestActions');
+const { CLAIM_TIMEOUT_MS } = require('./lib/videoIngest');
+const { jobNeedsWake, wakeVideoIngest } = require('./lib/wakeVideoIngest');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
+const videoIngestRepository = createVideoIngestRepository(db);
+const videoIngestActions = createVideoIngestActions({
+  repository: videoIngestRepository,
+  now: Date.now,
+  buildSearchBlob,
+  nextStatusAfterSave,
+});
 
 const TICKET_TTL_MS = 12 * 60 * 60 * 1000;
-
-function publicVideo(doc) {
-  if (!doc) {
-    return null;
-  }
-  return {
-    _id: doc._id,
-    title: doc.title,
-    intro: doc.intro,
-    brandId: doc.brandId,
-    brandName: doc.brandName,
-    productId: doc.productId || '',
-    modelName: doc.modelName || '',
-    tags: doc.tags || [],
-    coverFileId: doc.coverFileId || '',
-    videoFileId: doc.videoFileId || '',
-    searchAbstract: doc.searchAbstract || '',
-    entities: doc.entities || { models: [], actions: [], menus: [], aliases: [] },
-    status: doc.status,
-    publishedAt: doc.publishedAt || 0,
-  };
-}
 
 function withCoverPosters(videos) {
   return attachPosterUrls(videos, (payload) => cloud.getTempFileURL(payload));
@@ -50,6 +42,94 @@ async function requireAdmin(ticket) {
     err.code = 'UNAUTHORIZED';
     throw err;
   }
+}
+
+function withoutId(record) {
+  const data = { ...record };
+  delete data._id;
+  return data;
+}
+
+function transactionRepository(transaction) {
+  return {
+    async getVideo(id) {
+      return await getOptionalDocument(transaction.collection('videos').doc(id));
+    },
+    async addVideo(data) {
+      const added = await transaction.collection('videos').add({ data });
+      return added._id;
+    },
+    async updateVideo(id, data) {
+      await transaction.collection('videos').doc(id).update({ data });
+    },
+    async removeVideo(id) {
+      await transaction.collection('videos').doc(id).remove();
+    },
+    async addJob(data) {
+      const added = await transaction.collection('video_ingest_jobs').add({ data });
+      return added._id;
+    },
+    async getJob(id) {
+      return await getOptionalDocument(
+        transaction.collection('video_ingest_jobs').doc(id),
+      );
+    },
+    async updateJob(id, data) {
+      await transaction
+        .collection('video_ingest_jobs')
+        .doc(id)
+        .update({ data: withoutId(data) });
+    },
+    async removeJob(id) {
+      await transaction.collection('video_ingest_jobs').doc(id).remove();
+    },
+  };
+}
+
+function createVideoIngestRepository(database) {
+  return {
+    async runTransaction(callback) {
+      return await database.runTransaction(async (transaction) => {
+        return await callback(transactionRepository(transaction));
+      });
+    },
+    async findClaimCandidate(now, timeoutMs) {
+      const queued = await database
+        .collection('video_ingest_jobs')
+        .where({ phase: 'queued' })
+        .orderBy('createdAt', 'asc')
+        .limit(1)
+        .get();
+      if (queued.data.length) {
+        return queued.data[0];
+      }
+      const expired = await database
+        .collection('video_ingest_jobs')
+        .where({
+          phase: 'running',
+          claimedAt: database.command.lte(now - timeoutMs),
+        })
+        .orderBy('claimedAt', 'asc')
+        .limit(1)
+        .get();
+      return expired.data[0] || null;
+    },
+    async findRunningJob(videoId, mediaRevision) {
+      const running = await database
+        .collection('video_ingest_jobs')
+        .where({ videoId, mediaRevision, phase: 'running' })
+        .limit(1)
+        .get();
+      return running.data[0] || null;
+    },
+    async findJobsForVideo(videoId) {
+      const jobs = await database
+        .collection('video_ingest_jobs')
+        .where({ videoId })
+        .get();
+      return jobs.data || [];
+    },
+  };
 }
 
 async function checkText(content) {
@@ -115,6 +195,14 @@ async function dispatch(event) {
       return await upsertSynonym(event);
     case 'upsertVideo':
       return await upsertVideo(event);
+    case 'replacePlaybackMedia':
+      return await replacePlaybackMedia(event);
+    case 'enqueueVideoIngest':
+      return await enqueueVideoIngest(event);
+    case 'claimVideoIngest':
+      return await claimVideoIngest(event);
+    case 'completeVideoIngest':
+      return await completeVideoIngest(event);
     case 'publishVideo':
       return await publishVideo(event);
     case 'unpublishVideo':
@@ -137,6 +225,9 @@ async function dispatch(event) {
 
 exports.main = async (event) => {
   try {
+    if (event && event.Type === 'timer') {
+      return await runWithCollections(db, () => wakeIfIngestPending());
+    }
     const action = event && event.action;
     if (action === 'ping' || action === 'initDb') {
       return await dispatch(event);
@@ -150,6 +241,19 @@ exports.main = async (event) => {
     };
   }
 };
+
+async function wakeIfIngestPending() {
+  const now = Date.now();
+  const candidate = await videoIngestRepository.findClaimCandidate(
+    now,
+    CLAIM_TIMEOUT_MS,
+  );
+  if (!jobNeedsWake(candidate, now, CLAIM_TIMEOUT_MS)) {
+    return { ok: true, woke: false };
+  }
+  const woke = await wakeVideoIngest((options) => cloud.callContainer(options));
+  return { ok: true, woke };
+}
 
 async function initDb() {
   const result = await ensureCollections(db);
@@ -318,6 +422,8 @@ async function adminListVideos(event) {
       status: true,
       publishedAt: true,
       updatedAt: true,
+      ingest: true,
+      media: true,
     })
     .limit(100)
     .get();
@@ -464,61 +570,66 @@ async function upsertVideo(event) {
         .split(/[,，\s]+/)
         .map((tag) => tag.trim())
         .filter(Boolean);
-  const prevData = event.id ? (await db.collection('videos').doc(event.id).get()).data : null;
-  const payload = {
-    title,
-    intro,
-    brandId,
-    brandName: brand.name,
-    productId,
-    modelName,
-    tags,
-    coverFileId: event.coverFileId || (prevData && prevData.coverFileId) || '',
-    videoFileId: event.videoFileId || (prevData && prevData.videoFileId) || '',
-    transcript: event.transcript || (prevData && prevData.transcript) || '',
-    transcriptSegments: event.transcriptSegments || (prevData && prevData.transcriptSegments) || [],
-    searchAbstract: event.searchAbstract || (prevData && prevData.searchAbstract) || '',
-    entities: event.entities || (prevData && prevData.entities) || {
-      models: [],
-      actions: [],
-      menus: [],
-      aliases: [],
+  const saved = await videoIngestActions.saveVideo({
+    event: { ...event, intro },
+    basePayload: {
+      title,
+      brandId,
+      brandName: brand.name,
+      productId,
+      modelName,
+      tags,
     },
-    status: 'draft',
-    searchBlob: '',
-    updatedAt: Date.now(),
-  };
-  payload.searchBlob = buildSearchBlob(payload);
-  if (event.id) {
-    payload.status = nextStatusAfterSave(prevData && prevData.status);
-    await db.collection('videos').doc(event.id).update({ data: payload });
-    return { ok: true, id: event.id };
+  });
+  if (saved.enqueued) {
+    await wakeVideoIngest((options) => cloud.callContainer(options));
   }
-  payload.createdAt = Date.now();
-  payload.publishedAt = 0;
-  const added = await db.collection('videos').add({ data: payload });
-  return { ok: true, id: added._id };
+  return saved;
+}
+
+async function enqueueVideoIngest(event) {
+  await requireAdmin(event.ticket);
+  const id = String(event.id || '').trim();
+  const saved = await videoIngestActions.enqueueVideo({ id });
+  if (saved.enqueued) {
+    await wakeVideoIngest((options) => cloud.callContainer(options));
+  }
+  return saved;
+}
+
+async function replacePlaybackMedia(event) {
+  await requireAdmin(event.ticket);
+  return await videoIngestActions.replacePlaybackMedia({
+    id: event.id,
+    expectedVideoFileId: event.expectedVideoFileId,
+    videoFileId: event.videoFileId,
+    durationSec: event.durationSec,
+    media: event.media,
+  });
+}
+
+async function claimVideoIngest(event) {
+  await requireAdmin(event.ticket);
+  const workerId = String(event.workerId || '').trim();
+  return await videoIngestActions.claimVideo({ workerId });
+}
+
+async function completeVideoIngest(event) {
+  await requireAdmin(event.ticket);
+  return await videoIngestActions.completeVideo({
+    ...event,
+    videoId: String(event.videoId || '').trim(),
+  });
 }
 
 async function publishVideo(event) {
   await requireAdmin(event.ticket);
-  const snap = await db.collection('videos').doc(event.id).get();
-  const doc = snap.data;
-  if (!doc) {
-    const err = new Error('NOT_FOUND');
-    err.code = 'NOT_FOUND';
-    throw err;
-  }
-  assertReadyToPublish(doc);
-  await checkText(`${doc.title}\n${doc.intro}`);
-  await db.collection('videos').doc(event.id).update({
-    data: {
-      status: 'published',
-      publishedAt: Date.now(),
-      updatedAt: Date.now(),
-    },
+  return await publishReadyVideo({
+    repository: videoIngestRepository,
+    id: event.id,
+    checkText,
+    now: Date.now,
   });
-  return { ok: true };
 }
 
 async function unpublishVideo(event) {
@@ -540,13 +651,9 @@ async function unpublishVideo(event) {
 
 async function deleteVideo(event) {
   await requireAdmin(event.ticket);
-  const snap = await db.collection('videos').doc(event.id).get();
-  const doc = snap.data;
-  if (!doc) {
-    const err = new Error('NOT_FOUND');
-    err.code = 'NOT_FOUND';
-    throw err;
-  }
+  const doc = await videoIngestActions.deleteVideo({
+    videoId: String(event.id || '').trim(),
+  });
   const fileList = [doc.coverFileId, doc.videoFileId].filter(Boolean);
   if (fileList.length) {
     try {
@@ -555,7 +662,6 @@ async function deleteVideo(event) {
       // File may already be gone; still drop the record.
     }
   }
-  await db.collection('videos').doc(event.id).remove();
   return { ok: true };
 }
 

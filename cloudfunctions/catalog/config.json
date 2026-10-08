@@ -1,5 +1,12 @@
 {
   "permissions": {
     "openapi": ["security.msgSecCheck"]
-  }
+  },
+  "triggers": [
+    {
+      "name": "wakeVideoIngest",
+      "type": "timer",
+      "config": "0 */5 * * * * *"
+    }
+  ]
 }

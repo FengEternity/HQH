@@ -11,7 +11,7 @@
       </view>
       <view class="list-main" data-id="{{item._id}}" bindtap="editVideo">
         <view class="tile-title">{{item.title}}</view>
-        <view class="muted">{{item.statusLabel}} · {{item.modelName || '未标型号'}}</view>
+        <view class="muted">{{item.statusLabel}}{{item.ingestLabel ? ' · ' + item.ingestLabel : ''}} · {{item.modelName || '未标型号'}}</view>
         <view class="list-actions" style="margin-top: 12rpx">
           <text data-id="{{item._id}}" bindtap="editVideo">编辑</text>
           <text data-id="{{item._id}}" bindtap="publish" wx:if="{{item.canPublish}}">上架</text>

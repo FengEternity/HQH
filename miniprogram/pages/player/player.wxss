@@ -11,6 +11,11 @@
   background: #000;
 }
 
+.player-video-compact {
+  height: 56.25vw;
+  max-height: 70vh;
+}
+
 .player-empty {
   min-height: 100vh;
   display: flex;
@@ -20,4 +25,41 @@
   color: #c8c8c8;
   text-align: center;
   font-size: 28rpx;
+}
+
+.player-shop {
+  background: #f7f7f8;
+  padding: 28rpx 24rpx 48rpx;
+  min-height: 30vh;
+}
+
+.player-shop-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 16rpx;
+}
+
+.player-shop-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  background: #ffffff;
+  border: 1rpx solid #e4e4e7;
+  border-radius: 12rpx;
+  padding: 20rpx;
+  margin-bottom: 12rpx;
+}
+
+.player-shop-cover {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 8rpx;
+  background: #e4e4e7;
+  flex-shrink: 0;
+}
+
+.player-shop-main {
+  flex: 1;
+  min-width: 0;
 }
