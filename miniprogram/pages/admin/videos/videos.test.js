@@ -60,4 +60,27 @@ describe('admin video publish control', () => {
       [true, false, false],
     );
   });
+
+  it('shows whether a video is queued or being transcoded', async () => {
+    listResponse = {
+      videos: [
+        video({ _id: 'q', ingest: { phase: 'queued' } }),
+        video({ _id: 'r', ingest: { phase: 'running' } }),
+      ],
+    };
+    const context = {
+      data: { brandId: 'b1', videos: [] },
+      setData(patch) {
+        this.data = { ...this.data, ...patch };
+      },
+    };
+
+    pageConfig.load.call(context);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.deepEqual(
+      context.data.videos.map((item) => item.ingestLabel),
+      ['排队', '正在转'],
+    );
+  });
 });

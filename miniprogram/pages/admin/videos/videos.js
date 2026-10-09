@@ -16,8 +16,11 @@ function statusLabel(status) {
 function ingestLabel(ingest) {
   const phase = (ingest && ingest.phase) || 'idle';
   const asr = (ingest && ingest.asr) || 'pending';
-  if (phase === 'queued' || phase === 'running') {
-    return '处理中';
+  if (phase === 'queued') {
+    return '排队';
+  }
+  if (phase === 'running') {
+    return '正在转';
   }
   if (phase === 'failed') {
     return '失败';

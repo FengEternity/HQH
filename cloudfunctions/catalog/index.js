@@ -215,6 +215,8 @@ async function dispatch(event) {
       return await enqueueVideoIngest(event);
     case 'enqueueNoncompliantVideos':
       return await enqueueNoncompliantVideos(event);
+    case 'getIngestProgress':
+      return await getIngestProgress(event);
     case 'claimVideoIngest':
       return await claimVideoIngest(event);
     case 'completeVideoIngest':
@@ -620,6 +622,11 @@ async function enqueueNoncompliantVideos(event) {
     await wakeVideoIngest((options) => cloud.callContainer(options));
   }
   return saved;
+}
+
+async function getIngestProgress(event) {
+  await requireAdmin(event.ticket);
+  return await videoIngestActions.getIngestProgress();
 }
 
 async function replacePlaybackMedia(event) {

@@ -28,6 +28,13 @@
     </view>
     <text class="muted">开始</text>
   </view>
+  <view class="list" style="margin: -8rpx 0 16rpx">
+    <view class="muted" style="margin-bottom: 12rpx">{{progressText}}</view>
+    <view class="list-row" wx:for="{{progressItems}}" wx:key="id">
+      <text class="tile-title">{{item.title}}</text>
+      <text class="muted">{{item.label}}</text>
+    </view>
+  </view>
   <view class="hub-item" bindtap="openAbout">
     <view>
       <view class="tile-title">版本与日志</view>

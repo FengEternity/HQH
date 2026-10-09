@@ -997,3 +997,37 @@ describe('enqueueNoncompliantVideos', () => {
     );
   });
 });
+
+describe('getIngestProgress', () => {
+  it('returns titles for videos that are running, queued, or failed', async () => {
+    const repository = createMemoryRepository({
+      videos: {
+        run: editableVideo({
+          _id: 'run',
+          title: '正在转的课',
+          ingest: { ...editableVideo().ingest, phase: 'running' },
+        }),
+        wait: editableVideo({
+          _id: 'wait',
+          title: '排队的课',
+          ingest: { ...editableVideo().ingest, phase: 'queued' },
+        }),
+        done: editableVideo({
+          _id: 'done',
+          title: '已完成的课',
+          ingest: { ...editableVideo().ingest, phase: 'ready' },
+        }),
+      },
+    });
+
+    const result = await createActions(repository).getIngestProgress();
+
+    assert.equal(result.ok, true);
+    assert.equal(result.running, 1);
+    assert.equal(result.queued, 1);
+    assert.deepEqual(
+      result.items.map((item) => item.title),
+      ['正在转的课', '排队的课'],
+    );
+  });
+});
