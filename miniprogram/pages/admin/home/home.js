@@ -1,4 +1,4 @@
-const { ticketingAdmin } = require('../../../utils/api');
+const { admin, ticketingAdmin } = require('../../../utils/api');
 const release = require('../../../data/appRelease');
 const { normalizeDoc, envLabel } = require('../../../utils/appRelease');
 
@@ -41,5 +41,33 @@ Page({
   },
   openAbout() {
     wx.navigateTo({ url: '/pages/about/about?staff=1' });
+  },
+  requeuePlayback() {
+    wx.showModal({
+      title: '重新处理不合格视频',
+      content: '把还没通过播放检查的已有视频放进转码队列。已上架的不会下架。',
+      success: (res) => {
+        if (!res.confirm) {
+          return;
+        }
+        wx.showLoading({ title: '入队中', mask: true });
+        admin({ action: 'enqueueNoncompliantVideos' })
+          .then((result) => {
+            wx.hideLoading();
+            wx.showToast({
+              title: '已入队 ' + result.enqueued + ' 条',
+              icon: 'none',
+            });
+          })
+          .catch((err) => {
+            wx.hideLoading();
+            if (err.code === 'UNAUTHORIZED') {
+              wx.redirectTo({ url: '/pages/admin/login/login' });
+              return;
+            }
+            wx.showToast({ title: err.message || '入队失败', icon: 'none' });
+          });
+      },
+    });
   },
 });

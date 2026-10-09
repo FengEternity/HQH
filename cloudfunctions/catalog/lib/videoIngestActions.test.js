@@ -197,6 +197,9 @@ function createMemoryRepository(initial) {
         .filter((item) => item.videoId === videoId)
         .map(clone);
     },
+    async listVideos() {
+      return Object.values(state.videos).map(clone);
+    },
     setConflictHook(hook) {
       conflictHook = hook;
     },
@@ -934,6 +937,63 @@ describe('applyCompleteToVideo', () => {
           now: 40,
         }),
       (error) => error.code === 'BAD_INPUT',
+    );
+  });
+});
+
+describe('enqueueNoncompliantVideos', () => {
+  it('queues published videos that are not playback compliant and leaves the rest', async () => {
+    const published = editableVideo({
+      _id: 'stutter',
+      status: 'published',
+      intro: '手写简介',
+      videoFileId: 'cloud://stutter',
+      ingest: { ...editableVideo().ingest, phase: 'idle', videoFileId: 'cloud://stutter' },
+      media: { playback: { compliant: false } },
+    });
+    const compliant = editableVideo({
+      _id: 'ok',
+      status: 'published',
+      intro: '合格简介',
+      videoFileId: 'cloud://ok',
+      ingest: { ...editableVideo().ingest, phase: 'ready', videoFileId: 'cloud://ok' },
+      media: { playback: { compliant: true } },
+    });
+    const busy = editableVideo({
+      _id: 'busy',
+      videoFileId: 'cloud://busy',
+      ingest: { ...editableVideo().ingest, phase: 'running', videoFileId: 'cloud://busy' },
+      media: { playback: { compliant: false } },
+    });
+    const empty = editableVideo({
+      _id: 'empty',
+      videoFileId: '',
+      ingest: { ...editableVideo().ingest, phase: 'idle', videoFileId: '' },
+    });
+    const repository = createMemoryRepository({
+      videos: {
+        stutter: published,
+        ok: compliant,
+        busy,
+        empty,
+      },
+    });
+
+    const result = await createActions(repository).enqueueNoncompliantVideos();
+    const saved = repository.snapshot().videos;
+
+    assert.equal(result.ok, true);
+    assert.equal(result.enqueued, 1);
+    assert.equal(saved.stutter.status, 'published');
+    assert.equal(saved.stutter.intro, '手写简介');
+    assert.equal(saved.stutter.ingest.phase, 'queued');
+    assert.equal(saved.ok.ingest.phase, 'ready');
+    assert.equal(saved.ok.intro, '合格简介');
+    assert.equal(saved.busy.ingest.phase, 'running');
+    assert.equal(saved.empty.ingest.phase, 'idle');
+    assert.equal(
+      Object.values(repository.snapshot().jobs).filter((item) => item.videoId === 'stutter').length,
+      1,
     );
   });
 });

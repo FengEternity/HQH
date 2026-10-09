@@ -129,6 +129,20 @@ function createVideoIngestRepository(database) {
         .get();
       return jobs.data || [];
     },
+    async listVideos() {
+      const pageSize = 100;
+      const videos = [];
+      let offset = 0;
+      for (;;) {
+        const page = await database.collection('videos').skip(offset).limit(pageSize).get();
+        const batch = page.data || [];
+        videos.push(...batch);
+        if (batch.length < pageSize) {
+          return videos;
+        }
+        offset += batch.length;
+      }
+    },
   };
 }
 
@@ -199,6 +213,8 @@ async function dispatch(event) {
       return await replacePlaybackMedia(event);
     case 'enqueueVideoIngest':
       return await enqueueVideoIngest(event);
+    case 'enqueueNoncompliantVideos':
+      return await enqueueNoncompliantVideos(event);
     case 'claimVideoIngest':
       return await claimVideoIngest(event);
     case 'completeVideoIngest':
@@ -592,6 +608,15 @@ async function enqueueVideoIngest(event) {
   const id = String(event.id || '').trim();
   const saved = await videoIngestActions.enqueueVideo({ id });
   if (saved.enqueued) {
+    await wakeVideoIngest((options) => cloud.callContainer(options));
+  }
+  return saved;
+}
+
+async function enqueueNoncompliantVideos(event) {
+  await requireAdmin(event.ticket);
+  const saved = await videoIngestActions.enqueueNoncompliantVideos();
+  if (saved.enqueued > 0) {
     await wakeVideoIngest((options) => cloud.callContainer(options));
   }
   return saved;

@@ -73,7 +73,8 @@ function createServer({
     }
     try {
       const active = await ensureQueue();
-      const result = await active.run();
+      const result = active.start();
+      result.done.catch(() => {});
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ ok: true, started: result.started }));
     } catch (error) {

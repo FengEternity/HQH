@@ -16,6 +16,7 @@ const {
 } = require('./videoIngestJobs');
 const { resolveVideoKnowledge } = require('./videoKnowledge');
 const { normalizeVideoMedia } = require('./videoMediaMetadata');
+const { needsPlaybackRequeue } = require('./requeuePlayback');
 
 function badInput(message) {
   const error = new Error(message);
@@ -348,6 +349,21 @@ function createVideoIngestActions({
     return { ok: true, id, enqueued: true };
   }
 
+  async function enqueueNoncompliantVideos() {
+    const videos = await repository.listVideos();
+    let enqueued = 0;
+    let skipped = 0;
+    for (const video of videos) {
+      if (!needsPlaybackRequeue(video)) {
+        skipped += 1;
+        continue;
+      }
+      await enqueueVideo({ id: video._id });
+      enqueued += 1;
+    }
+    return { ok: true, enqueued, skipped };
+  }
+
   async function claimVideo({ workerId }) {
     if (!workerId) {
       throw badInput('workerId 必填');
@@ -465,6 +481,7 @@ function createVideoIngestActions({
     completeVideo,
     deleteVideo,
     enqueueVideo,
+    enqueueNoncompliantVideos,
     replacePlaybackMedia,
     saveVideo,
   };
