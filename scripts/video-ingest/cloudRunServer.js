@@ -73,10 +73,15 @@ function createServer({
     }
     try {
       const active = await ensureQueue();
-      const result = active.start();
-      result.done.catch(() => {});
+      active.poke();
+      let started = true;
+      if (!active.isResident()) {
+        const result = active.start();
+        result.done.catch(() => {});
+        started = result.started;
+      }
       response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ ok: true, started: result.started }));
+      response.end(JSON.stringify({ ok: true, started }));
     } catch (error) {
       const code = error && error.code === 'NO_CREDENTIALS' ? 'NO_CREDENTIALS' : 'FAIL';
       response.writeHead(500, { 'content-type': 'application/json' });

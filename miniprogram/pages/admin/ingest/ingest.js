@@ -62,12 +62,18 @@ Page({
         if (!res.confirm) {
           return;
         }
-        wx.showLoading({ title: '入队中', mask: true });
+        wx.showLoading({ title: '唤醒中', mask: true });
         admin({ action: 'enqueueNoncompliantVideos' })
           .then((result) => {
             wx.hideLoading();
+            let title = '已入队 ' + result.enqueued + ' 条';
+            if (result.woke) {
+              title = result.enqueued > 0 ? '已入队并已唤醒' : '已唤醒，开始处理';
+            } else if (result.enqueued === 0) {
+              title = '唤醒失败';
+            }
             wx.showToast({
-              title: '已入队 ' + result.enqueued + ' 条',
+              title,
               icon: 'none',
             });
             this.loadProgress();

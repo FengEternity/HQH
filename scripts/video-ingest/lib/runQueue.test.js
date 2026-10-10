@@ -59,12 +59,12 @@ describe('createRunQueue', () => {
 describe('keepClaiming', () => {
   it('claims again after the queue goes idle', async () => {
     let calls = 0;
-    const queue = {
-      async run() {
+    const queue = createRunQueue({
+      runOnce: async () => {
         calls += 1;
-        return { started: true, outcomes: ['idle'] };
+        return 'idle';
       },
-    };
+    });
     const sleeps = [];
     await keepClaiming(queue, (ms) => {
       sleeps.push(ms);
@@ -73,5 +73,37 @@ describe('keepClaiming', () => {
 
     assert.equal(calls, 3);
     assert.deepEqual(sleeps, [15000, 15000]);
+  });
+
+  it('poke starts the next claim without waiting out the interval', async () => {
+    let calls = 0;
+    const queue = createRunQueue({
+      runOnce: async () => {
+        calls += 1;
+        return 'idle';
+      },
+    });
+    let waiting = false;
+    const done = keepClaiming(
+      queue,
+      () => {
+        waiting = true;
+        return new Promise(() => {});
+      },
+      15000,
+      2,
+    );
+    await new Promise((resolve) => {
+      const timer = setInterval(() => {
+        if (waiting) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 0);
+    });
+    assert.equal(calls, 1);
+    queue.poke();
+    await done;
+    assert.equal(calls, 2);
   });
 });

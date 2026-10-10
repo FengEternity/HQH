@@ -618,10 +618,8 @@ async function enqueueVideoIngest(event) {
 async function enqueueNoncompliantVideos(event) {
   await requireAdmin(event.ticket);
   const saved = await videoIngestActions.enqueueNoncompliantVideos();
-  if (saved.enqueued > 0) {
-    await wakeVideoIngest((options) => cloud.callContainer(options));
-  }
-  return saved;
+  const woke = await wakeVideoIngest((options) => cloud.callContainer(options));
+  return { ...saved, woke };
 }
 
 async function getIngestProgress(event) {

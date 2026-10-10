@@ -2,6 +2,19 @@
 
 function createRunQueue({ runOnce }) {
   let active = null;
+  let wakeResolve = () => {};
+  let wakePromise = new Promise((resolve) => {
+    wakeResolve = resolve;
+  });
+  let resident = false;
+
+  function poke() {
+    const resolve = wakeResolve;
+    wakePromise = new Promise((next) => {
+      wakeResolve = next;
+    });
+    resolve();
+  }
 
   function kick() {
     if (active) {
@@ -27,6 +40,16 @@ function createRunQueue({ runOnce }) {
   }
 
   return {
+    poke,
+    isResident() {
+      return resident;
+    },
+    markResident(activeResident) {
+      resident = activeResident === true;
+    },
+    untilWake(sleep, intervalMs) {
+      return Promise.race([sleep(intervalMs), wakePromise]);
+    },
     start() {
       return kick();
     },
@@ -41,11 +64,16 @@ function createRunQueue({ runOnce }) {
 }
 
 async function keepClaiming(queue, sleep, intervalMs, rounds = Infinity) {
-  for (let round = 0; round < rounds; round += 1) {
-    await queue.run();
-    if (round + 1 < rounds) {
-      await sleep(intervalMs);
+  queue.markResident(true);
+  try {
+    for (let round = 0; round < rounds; round += 1) {
+      await queue.run();
+      if (round + 1 < rounds) {
+        await queue.untilWake(sleep, intervalMs);
+      }
     }
+  } finally {
+    queue.markResident(false);
   }
 }
 
