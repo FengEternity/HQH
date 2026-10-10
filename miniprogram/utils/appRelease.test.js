@@ -21,14 +21,14 @@ describe('release data module', () => {
     assert.ok(doc.releases.length > 0);
   });
 
-  it('current package is 0.2.1 with notes at the front of the log', () => {
+  it('current package is 0.2.2 with notes at the front of the log', () => {
     delete require.cache[require.resolve('../data/appRelease')];
     const doc = require('../data/appRelease');
-    assert.equal(doc.version, '0.2.1');
-    assert.equal(doc.releases[0].version, '0.2.1');
-    assert.equal(doc.releases[0].date, '2026-10-09');
-    assert.ok(doc.releases[0].user.some((line) => line.includes('播放')));
-    assert.ok(doc.releases[1].user.some((line) => line.includes('转人工')));
+    assert.equal(doc.version, '0.2.2');
+    assert.equal(doc.releases[0].version, '0.2.2');
+    assert.equal(doc.releases[0].date, '2026-10-10');
+    assert.ok(doc.releases[0].user.some((line) => line.includes('排队')));
+    assert.ok(doc.releases[1].user.some((line) => line.includes('播放')));
   });
 
   it('stays on 0.x until official WeChat release', () => {
