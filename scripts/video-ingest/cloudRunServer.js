@@ -6,7 +6,7 @@ const os = require('node:os');
 const cloudbase = require('@cloudbase/node-sdk');
 
 const { runOnce } = require('./lib/workerLoop');
-const { createRunQueue } = require('./lib/runQueue');
+const { createRunQueue, keepClaiming } = require('./lib/runQueue');
 const {
   callCatalog,
   createCatalog,
@@ -93,7 +93,7 @@ if (require.main === module) {
   server.listen(port, () => {
     if (process.env.VIDEO_INGEST_RESIDENT === '1') {
       ensureQueue()
-        .then((active) => active.run())
+        .then((active) => keepClaiming(active, (ms) => new Promise((resolve) => setTimeout(resolve, ms)), 15000))
         .catch(() => {});
     }
   });

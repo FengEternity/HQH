@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { createRunQueue } = require('./runQueue');
+const { createRunQueue, keepClaiming } = require('./runQueue');
 
 describe('createRunQueue', () => {
   it('does not start a second loop while one is running', async () => {
@@ -53,5 +53,25 @@ describe('createRunQueue', () => {
     assert.equal(queue.start().started, false);
     release();
     await started.done;
+  });
+});
+
+describe('keepClaiming', () => {
+  it('claims again after the queue goes idle', async () => {
+    let calls = 0;
+    const queue = {
+      async run() {
+        calls += 1;
+        return { started: true, outcomes: ['idle'] };
+      },
+    };
+    const sleeps = [];
+    await keepClaiming(queue, (ms) => {
+      sleeps.push(ms);
+      return Promise.resolve();
+    }, 15000, 3);
+
+    assert.equal(calls, 3);
+    assert.deepEqual(sleeps, [15000, 15000]);
   });
 });

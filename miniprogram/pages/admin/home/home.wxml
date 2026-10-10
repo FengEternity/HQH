@@ -21,19 +21,12 @@
     </view>
     <text class="chip">{{pendingLabel}}</text>
   </view>
-  <view class="hub-item" bindtap="requeuePlayback">
+  <view class="hub-item" bindtap="openIngest">
     <view>
       <view class="tile-title">重处理不合格视频</view>
       <view class="muted">检查已上传视频，不合格的转成可播放格式</view>
     </view>
-    <text class="muted">开始</text>
-  </view>
-  <view class="list" style="margin: -8rpx 0 16rpx">
-    <view class="muted" style="margin-bottom: 12rpx">{{progressText}}</view>
-    <view class="list-row" wx:for="{{progressItems}}" wx:key="id">
-      <text class="tile-title">{{item.title}}</text>
-      <text class="muted">{{item.label}}</text>
-    </view>
+    <text class="chip">{{ingestChip}}</text>
   </view>
   <view class="hub-item" bindtap="openAbout">
     <view>

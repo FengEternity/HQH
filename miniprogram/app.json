@@ -10,6 +10,7 @@
     "pages/player/player",
     "pages/admin/login/login",
     "pages/admin/home/home",
+    "pages/admin/ingest/ingest",
     "pages/admin/catalog/catalog",
     "pages/admin/shop/shop",
     "pages/admin/shop-edit/shop-edit",

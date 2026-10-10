@@ -40,4 +40,13 @@ function createRunQueue({ runOnce }) {
   };
 }
 
-module.exports = { createRunQueue };
+async function keepClaiming(queue, sleep, intervalMs, rounds = Infinity) {
+  for (let round = 0; round < rounds; round += 1) {
+    await queue.run();
+    if (round + 1 < rounds) {
+      await sleep(intervalMs);
+    }
+  }
+}
+
+module.exports = { createRunQueue, keepClaiming };
