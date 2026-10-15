@@ -1,6 +1,10 @@
 const { catalog } = require('../../utils/api');
 const { withPosterUrls } = require('../../utils/videoMedia');
 const { whenCloudReady } = require('../../utils/cloudReady');
+const {
+  callWithVisitorRetry,
+  visitorCatalogMessage,
+} = require('../../utils/catalogVisitorError');
 
 Page({
   data: {
@@ -27,23 +31,42 @@ Page({
   load(options) {
     const showLoading = !options || options.showLoading !== false;
     const hasContent = (this.data.shelves && this.data.shelves.length) || this.data.brands.length;
+    const seq = (this._loadSeq || 0) + 1;
+    this._loadSeq = seq;
     if (showLoading || !hasContent) {
       this.setData({ loading: true, error: '' });
     } else {
       this.setData({ error: '' });
     }
-    // 一次云函数取齐品牌+视频，避免低并发环境两次 callFunction 排队
-    catalog({ action: 'listHome' })
+    // 一次云函数取齐品牌+视频，避免低并发环境两次 callFunction 排队。
+    // 短暂失败再静默请求一次；未部署或依赖缺失不会因为重试变好。
+    return callWithVisitorRetry(() => catalog({ action: 'listHome' }))
       .then((res) => {
+        if (seq !== this._loadSeq) {
+          return;
+        }
         const brands = res.brands || [];
         const allVideos = withPosterUrls(res.videos || []);
         this._loadedOnce = true;
-        this.setData({ brands, allVideos, loading: false });
+        this.setData({ brands, allVideos, loading: false, error: '' });
         this.paintShelves();
       })
       .catch((err) => {
-        this.setData({ loading: false, error: err.message || '加载失败' });
+        if (seq !== this._loadSeq) {
+          return;
+        }
+        console.error('listHome failed', err);
+        const message = visitorCatalogMessage('load');
+        if (!showLoading && hasContent) {
+          this.setData({ loading: false });
+          wx.showToast({ title: message, icon: 'none' });
+          return;
+        }
+        this.setData({ loading: false, error: message });
       });
+  },
+  onRetry() {
+    return this.load({ showLoading: true });
   },
   paintShelves() {
     const brandId = this.data.brandId;
@@ -68,9 +91,14 @@ Page({
       this.paintShelves();
       return;
     }
-    this.setData({ loading: true, searched: true });
-    catalog({ action: 'search', query })
+    const seq = (this._searchSeq || 0) + 1;
+    this._searchSeq = seq;
+    this.setData({ loading: true, error: '' });
+    return callWithVisitorRetry(() => catalog({ action: 'search', query }))
       .then((res) => {
+        if (seq !== this._searchSeq) {
+          return;
+        }
         let results = withPosterUrls(res.videos || []).map((item) =>
           Object.assign({}, item, {
             initial: String(item.brandName || '优').slice(0, 1),
@@ -79,11 +107,20 @@ Page({
         if (this.data.brandId) {
           results = results.filter((item) => item.brandId === this.data.brandId);
         }
-        this.setData({ results, loading: false });
+        this.setData({ results, loading: false, searched: true, error: '' });
       })
       .catch((err) => {
-        this.setData({ loading: false });
-        wx.showToast({ title: err.message || '搜索失败', icon: 'none' });
+        if (seq !== this._searchSeq) {
+          return;
+        }
+        console.error('search failed', err);
+        const stillEmpty =
+          !(this.data.shelves && this.data.shelves.length) && !this.data.brands.length;
+        this.setData({
+          loading: false,
+          error: stillEmpty ? visitorCatalogMessage('load') : '',
+        });
+        wx.showToast({ title: visitorCatalogMessage('search'), icon: 'none' });
       });
   },
   onBrandTap(e) {

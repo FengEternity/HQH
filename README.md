@@ -59,6 +59,7 @@ node --test \
   miniprogram/pages/admin/home/home.test.js \
   miniprogram/pages/admin/edit/edit.test.js \
   miniprogram/pages/admin/ticket/ticket.test.js \
+  miniprogram/pages/index/index.test.js \
   scripts/video-ingest/*.test.js \
   scripts/video-ingest/lib/*.test.js
 python3 -m unittest scripts/video-ingest/test_transcribe.py

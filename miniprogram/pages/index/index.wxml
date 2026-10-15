@@ -34,7 +34,10 @@
     >{{item.name}}</view>
   </scroll-view>
 
-  <view wx:if="{{error}}" class="empty">{{error}}</view>
+  <view wx:if="{{error}}" class="empty">
+    <view>{{error}}</view>
+    <view class="btn btn-ghost home-retry" bindtap="onRetry">重试</view>
+  </view>
   <view wx:elif="{{loading}}" class="home-loading">
     <view class="home-loading-label">正在加载讲解目录…</view>
     <view class="skel-row">
