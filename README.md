@@ -1,6 +1,6 @@
 # 测绘仪器讲解小程序
 
-当前线上/体验版能力对应 **0.2.2**：微信云开发目录（品牌/视频）、关键词搜索、运营入库、播放、客服工单；底栏为讲解、客服、「我的」。
+当前线上/体验版能力对应 **0.2.3**：微信云开发目录（品牌/视频）、关键词搜索、运营入库、播放、客服工单；底栏为讲解、客服、「我的」。
 
 下一期（商城、统一搜索、播放页文档问答、AI 客服）需求在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`，需求总表在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-req-board.md`，实现计划索引在 `docs/superpowers/plans/2026-09-09-00-ai-native-mall-index.md`。未合入 `main` 前，下文「打开与上云 / 运营 / 手测」仍以已发布版本为准。
 
