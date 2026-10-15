@@ -1,46 +1,140 @@
-.ticket-page {
-  padding-bottom: 48rpx;
+page {
+  height: 100%;
+  background: #f4f5f7;
 }
 
-.timeline {
+.chat-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 16rpx 24rpx;
+  background: #ffffff;
+  border-bottom: 1rpx solid #e4e4e7;
+}
+
+.chat-who {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.chat-name {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.chat-close {
+  flex-shrink: 0;
+  color: #b42318;
+  font-size: 26rpx;
+  padding: 8rpx 4rpx 8rpx 16rpx;
+}
+
+.thread {
+  flex: 1;
+  height: 0;
+  padding: 16rpx 24rpx 0;
+  box-sizing: border-box;
+}
+
+.msg {
+  display: flex;
   margin-bottom: 24rpx;
 }
 
-.ticket-message {
-  background: #fff;
+.msg-in {
+  justify-content: flex-start;
+}
+
+.msg-out {
+  justify-content: flex-end;
+}
+
+.msg-notice {
+  justify-content: center;
+}
+
+.bubble {
+  max-width: 78%;
+  padding: 18rpx 22rpx;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  line-height: 1.55;
+  background: #ffffff;
   border: 1rpx solid #e4e4e7;
-  border-radius: 14rpx;
-  padding: 20rpx 24rpx;
-  margin-bottom: 16rpx;
 }
 
-.ticket-message-user {
-  border-left: 6rpx solid #a1a1aa;
+.msg-out .bubble {
+  background: #4b6fdb;
+  color: #ffffff;
+  border-color: #4b6fdb;
 }
 
-.ticket-message-operator {
-  border-left: 6rpx solid #4b6fdb;
+.msg-notice .bubble {
+  max-width: 86%;
+  background: #ececef;
+  border-color: transparent;
+  color: #3f3f46;
+  font-size: 24rpx;
 }
 
-.ticket-text {
-  margin-top: 12rpx;
+.bubble-text {
   white-space: pre-wrap;
+  word-break: break-all;
 }
 
-.ticket-reply {
-  margin-bottom: 16rpx;
+.bubble-meta {
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  color: #71717a;
 }
 
-.ticket-actions {
-  display: flex;
-  gap: 16rpx;
+.msg-out .bubble-meta {
+  color: rgba(255, 255, 255, 0.78);
+  text-align: right;
 }
 
-.ticket-action {
-  flex: 1;
+.pad {
+  height: 16rpx;
 }
 
-.ticket-closed {
+.dock {
+  background: #ffffff;
+  border-top: 1rpx solid #e4e4e7;
+  padding: 12rpx 16rpx calc(16rpx + env(safe-area-inset-bottom));
+}
+
+.dock-closed {
   text-align: center;
-  padding: 24rpx;
+  color: #71717a;
+  font-size: 24rpx;
+}
+
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.composer-input {
+  flex: 1;
+  background: #f7f7f8;
+  border-radius: 10rpx;
+  padding: 16rpx 20rpx;
+  border: 1rpx solid #e4e4e7;
+}
+
+.send {
+  flex-shrink: 0;
+  padding: 16rpx 28rpx;
+  font-size: 26rpx;
 }

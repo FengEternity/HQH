@@ -53,7 +53,7 @@ function planSend(input) {
   }
   return {
     nextStatus,
-    notifyAdmins: input.status === 'open',
+    notifyAdmins: nextStatus === 'waiting_human' || nextStatus === 'human',
     messages,
   };
 }

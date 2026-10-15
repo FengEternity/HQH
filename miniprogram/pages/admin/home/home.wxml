@@ -21,6 +21,13 @@
     </view>
     <text class="chip">{{pendingLabel}}</text>
   </view>
+  <view class="hub-item" bindtap="bindNotify">
+    <view>
+      <view class="tile-title">接收新工单通知</view>
+      <view class="muted">绑定当前微信。每次点允许只能收一条，用完再点一次</view>
+    </view>
+    <text class="chip">{{notifyLabel}}</text>
+  </view>
   <view class="hub-item" bindtap="openIngest">
     <view>
       <view class="tile-title">重处理不合格视频</view>

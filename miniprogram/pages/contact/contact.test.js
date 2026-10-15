@@ -229,6 +229,76 @@ describe('contact page', () => {
     ]);
   });
 
+  it('shows the outgoing bubble before the server replies', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const { page } = loadPage({
+      ticketing: (data) =>
+        gate.then(() => ({
+          ok: true,
+          thread: { _id: 'thread-1', status: 'waiting_human' },
+          messages: [{ _id: 'server-1', role: 'user', text: data.text }],
+        })),
+    });
+    page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.messages = [{ _id: 'welcome', role: 'assistant', text: '欢迎' }];
+    page.data.draft = '测试';
+
+    const pending = page.send();
+
+    assert.equal(page.data.draft, '');
+    assert.equal(page.data.messages[1].text, '测试');
+    assert.equal(page.data.messages[1].role, 'user');
+    assert.equal(page.data.messages[1].local, true);
+    assert.equal(page.data.messages[1].failed, false);
+    assert.equal(page.data.anchor, 'm' + page.data.messages[1]._id);
+
+    release();
+    await pending;
+
+    assert.equal(page.data.messages.length, 1);
+    assert.equal(page.data.messages[0]._id, 'server-1');
+    assert.equal(page.data.messages[0].failed, undefined);
+  });
+
+  it('keeps a failed send in the thread with a retry mark', async () => {
+    const calls = [];
+    const { page } = loadPage({
+      ticketing: async (data) => {
+        calls.push(data);
+        if (calls.length === 1) {
+          throw new Error('网络不好');
+        }
+        return {
+          ok: true,
+          thread: { _id: 'thread-1', status: 'waiting_human' },
+          messages: [{ _id: 'server-1', role: 'user', text: data.text }],
+        };
+      },
+    });
+    page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.messages = [{ _id: 'welcome', role: 'assistant', text: '欢迎' }];
+    page.data.draft = '测试';
+
+    await page.send();
+
+    const failed = page.data.messages[1];
+    assert.equal(failed.text, '测试');
+    assert.equal(failed.failed, true);
+    assert.equal(page.data.messages[0]._id, 'welcome');
+
+    await page.retrySend({ currentTarget: { dataset: { id: failed._id } } });
+
+    assert.deepEqual(
+      calls.map((item) => item.text),
+      ['测试', '测试'],
+    );
+    assert.equal(page.data.messages.length, 1);
+    assert.equal(page.data.messages[0]._id, 'server-1');
+  });
+
   it('empty replyTplId does not request subscription', async () => {
     const { page, subscriptionRequests } = loadPage({
       ticketing: async () => ({

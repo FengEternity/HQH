@@ -1,0 +1,4 @@
+.home-retry {
+  margin: 28rpx auto 0;
+  width: 280rpx;
+}

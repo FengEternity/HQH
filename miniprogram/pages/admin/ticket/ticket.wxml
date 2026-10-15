@@ -1,44 +1,56 @@
-<view class="page ticket-page">
+<view class="chat-page">
   <view wx:if="{{loading}}" class="empty">加载中</view>
   <block wx:elif="{{thread}}">
-    <view class="card">
-      <view class="row">
-        <view class="tile-title">{{thread.userLabel}}</view>
+    <view class="chat-head">
+      <view class="chat-who">
+        <text class="chat-name">{{thread.userLabel}}</text>
         <text class="chip">{{thread.statusLabel}}</text>
       </view>
+      <view
+        wx:if="{{thread.status !== 'closed'}}"
+        class="chat-close"
+        bindtap="close"
+      >关闭</view>
     </view>
 
-    <view class="timeline">
+    <scroll-view
+      class="thread"
+      scroll-y
+      scroll-into-view="{{anchor}}"
+      scroll-with-animation
+    >
       <view
         wx:for="{{messages}}"
         wx:key="_id"
-        class="ticket-message ticket-message-{{item.role}}"
+        id="m{{item._id}}"
+        class="msg msg-{{item.side}}"
       >
-        <view class="row">
-          <text class="tile-title">{{item.roleLabel}}</text>
-          <text class="muted">{{item.timeLabel}}</text>
+        <view class="bubble">
+          <view class="bubble-text">{{item.text}}</view>
+          <view class="bubble-meta" wx:if="{{item.side === 'notice'}}">{{item.roleLabel}} · {{item.timeLabel}}</view>
+          <view class="bubble-meta" wx:else>{{item.timeLabel}}</view>
         </view>
-        <view class="ticket-text">{{item.text}}</view>
+      </view>
+      <view id="bottom" class="pad"></view>
+    </scroll-view>
+
+    <view class="dock" wx:if="{{thread.status !== 'closed'}}">
+      <view class="composer">
+        <input
+          class="composer-input"
+          placeholder="输入回复"
+          value="{{draft}}"
+          confirm-type="send"
+          maxlength="500"
+          cursor-spacing="16"
+          adjust-position="{{true}}"
+          bindinput="onDraft"
+          bindconfirm="reply"
+        />
+        <view class="btn send" bindtap="reply">{{submitting ? '发送中' : '发送'}}</view>
       </view>
     </view>
-
-    <block wx:if="{{thread.status !== 'closed'}}">
-      <textarea
-        class="field-input field-textarea ticket-reply"
-        auto-height
-        maxlength="500"
-        placeholder="输入回复"
-        value="{{draft}}"
-        bindinput="onDraft"
-      />
-      <view class="ticket-actions">
-        <view class="btn ticket-action" bindtap="reply">
-          {{submitting ? '处理中' : '回复'}}
-        </view>
-        <view class="btn btn-ghost btn-danger ticket-action" bindtap="close">关闭工单</view>
-      </view>
-    </block>
-    <view wx:else class="muted ticket-closed">工单已关闭</view>
+    <view wx:else class="dock dock-closed">会话已关闭，用户再次发消息会新开一条</view>
   </block>
   <view wx:else class="empty">工单不存在。</view>
 </view>
