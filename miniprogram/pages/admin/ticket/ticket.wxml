@@ -42,6 +42,8 @@
           value="{{draft}}"
           confirm-type="send"
           maxlength="500"
+          cursor-spacing="16"
+          adjust-position="{{true}}"
           bindinput="onDraft"
           bindconfirm="reply"
         />
