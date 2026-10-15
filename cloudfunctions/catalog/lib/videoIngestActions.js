@@ -416,6 +416,8 @@ function createVideoIngestActions({
         videoId: claimed.videoId,
         mediaRevision: claimed.mediaRevision,
         videoFileId: video.videoFileId || ingest.videoFileId,
+        title: typeof video.title === 'string' ? video.title : '',
+        brandName: typeof video.brandName === 'string' ? video.brandName : '',
       };
     });
   }

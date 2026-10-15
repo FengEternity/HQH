@@ -51,7 +51,9 @@ python3 -m venv .video-ingest/venv
 
 worker 在云函数外运行，轮询 `catalog` 领取任务，并在本机完成下载、`ffprobe`、必要的 H.264+AAC 转码及 faster-whisper 转写。它不会调用 `publishVideo`，也不会把视频、音频或帧发送给第三方服务。
 
-启动前需在进程环境中配置 `TCB_ENV_ID`、`TCB_SECRET_ID`、`TCB_SECRET_KEY`、`ADMIN_PIN`，值不要写入仓库或命令行。默认使用 `.video-ingest/venv/bin/python` 和 `medium` 模型；如需覆盖，可只设置环境变量名 `VIDEO_INGEST_PYTHON`、`VIDEO_INGEST_ASR_MODEL`，不要把本机模型文件路径提交到 git。
+启动前需在进程环境中配置 `TCB_ENV_ID`、`TCB_SECRET_ID`、`TCB_SECRET_KEY`、`ADMIN_PIN`，值不要写入仓库或命令行。本机默认使用 `.video-ingest/venv/bin/python` 和 `medium` 模型；云托管镜像内为 `/opt/asr/bin/python` 与 `small`。如需覆盖，可只设置环境变量名 `VIDEO_INGEST_PYTHON`、`VIDEO_INGEST_ASR_MODEL`，不要把模型文件路径提交到 git。
+
+生产转写、转码和简介共用云托管服务 `video-ingest`（仓库根目录 `Dockerfile`）：构建时安装 faster-whisper 并预拉 `small` 权重，同时装入 llama.cpp。Qwen3-4B-Instruct 的 Q4_K_M 约 2.5GB，不放进镜像；容器启动后在后台下载，下完才写简介。转写成功后由容器内模型写简介，口播不出容器。重新部署该服务后，有音轨的任务在转码成功后继续转写，不再依赖本机常开 worker。构建若拉不下 Hugging Face，可加 `--build-arg HF_ENDPOINT=https://hf-mirror.com`（镜像默认已用该镜像站）。带简介模型的版本按云托管 1:2 搭配使用 4 核 8GB；只转写的旧镜像仍可按不少于 2GB 运行。转写比转码更久，长片仍可能超过 30 分钟租约，最大实例保持 1。摘要限时 3 分钟，超时或验收不通过时保留字幕、简介仍为占位。权重还没下完时同样只保留字幕。本机未设置 `VIDEO_INGEST_SUMMARY_MODEL` 时不跑摘要。
 
 ```bash
 # 需本机已配置 TCB_* 与 ADMIN_PIN

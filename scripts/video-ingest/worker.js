@@ -12,7 +12,15 @@ const { pipeline } = require('node:stream/promises');
 
 const cloudbase = require('@cloudbase/node-sdk');
 
-const { PLACEHOLDER_INTRO, resolveAutoIntro } = require('./lib/autoIntro');
+const { PLACEHOLDER_INTRO } = require('./lib/autoIntro');
+const {
+  INTRO_SYSTEM_PROMPT,
+  SUMMARY_TIMEOUT_MS,
+  acceptIntro,
+  buildIntroUserPrompt,
+  joinTranscript,
+} = require('./lib/introAbstract');
+const { summaryModelPresent, waitForSummaryModel } = require('./ensureSummaryModel');
 const {
   assessPlaybackProfile,
   buildPlaybackFfmpegArgs,
@@ -103,6 +111,196 @@ function transcodeLocalMedia({
       }
       return { path: outputPath, uploadedFileId: uploaded.fileID };
     });
+}
+
+function resolvePythonCommand(env = process.env) {
+  const configured = String(env.VIDEO_INGEST_PYTHON || '').trim();
+  if (configured) {
+    return configured;
+  }
+  return path.resolve('.video-ingest/venv/bin/python');
+}
+
+function resolveLlamaCommand(env = process.env) {
+  const configured = String(env.VIDEO_INGEST_LLAMA || '').trim();
+  if (configured) {
+    return configured;
+  }
+  return 'llama-cli';
+}
+
+function resolveSummaryModel(env = process.env) {
+  return String(env.VIDEO_INGEST_SUMMARY_MODEL || '').trim();
+}
+
+function loadTermDocument() {
+  return JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'terms.zh-CN.json'), 'utf8'),
+  );
+}
+
+function extractModelIntro(stdout) {
+  return String(stdout || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return false;
+      }
+      if (/^(llama_|ggml_|build\s*:|loading model\b)/i.test(trimmed)) {
+        return false;
+      }
+      return !/print_info|chat template|system prompt|n_ctx|modalit|available commands/i.test(
+        trimmed,
+      );
+    })
+    .join('\n')
+    .trim();
+}
+
+function commandFailureLine(result) {
+  const raw = Buffer.isBuffer(result && result.stderr)
+    ? result.stderr.toString('utf8')
+    : String((result && result.stderr) || '');
+  const detail = raw.replace(/\s+/g, ' ').trim().slice(0, 240);
+  const status = result && result.error ? 'spawn' : String(result && result.status);
+  return detail
+    ? `summary process failed status ${status} ${detail}`
+    : `summary process failed status ${status}`;
+}
+
+function summarizeLocalTranscript({
+  title,
+  brandName,
+  transcript,
+  terms,
+  llamaCommand,
+  modelPath,
+  workspace,
+  runCommand = defaultCommandRunner,
+  log = () => {},
+}) {
+  const systemPath = path.join(workspace, 'intro-system.txt');
+  const userPath = path.join(workspace, 'intro-user.txt');
+  const outputPath = path.join(workspace, 'intro-out.txt');
+  fs.writeFileSync(systemPath, `${INTRO_SYSTEM_PROMPT}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+  fs.writeFileSync(
+    userPath,
+    `${buildIntroUserPrompt({ title, brandName, transcript, terms })}\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  );
+  const result = runCommand(
+    llamaCommand,
+    [
+      '-m',
+      modelPath,
+      '-sysf',
+      systemPath,
+      '-f',
+      userPath,
+      '-o',
+      outputPath,
+      '-st',
+      '--reasoning',
+      'off',
+      '--no-display-prompt',
+      '--no-show-timings',
+      '--simple-io',
+      '--log-disable',
+      '--color',
+      'off',
+      '-c',
+      '4096',
+      '-n',
+      '256',
+      '--temp',
+      '0.2',
+      '-ngl',
+      '0',
+      '-t',
+      '4',
+    ],
+    { timeout: SUMMARY_TIMEOUT_MS, killSignal: 'SIGKILL' },
+  );
+  if (result.error || result.status !== 0) {
+    log(commandFailureLine(result));
+    return { ok: false, intro: '' };
+  }
+  const fromFile = fs.existsSync(outputPath)
+    ? introFromLlamaOutputFile(fs.readFileSync(outputPath, 'utf8'))
+    : '';
+  const intro = fromFile || introFromLlamaStdout(result.stdout);
+  if (!intro.trim()) {
+    const raw = Buffer.isBuffer(result.stdout) ? result.stdout.toString('utf8') : String(result.stdout || '');
+    const tail = raw.replace(/\s+/g, ' ').trim().slice(-400);
+    if (tail) {
+      log(`summary raw tail: ${tail}`);
+    }
+    log('summary skipped: empty intro');
+    return { ok: false, intro: '' };
+  }
+  return { ok: true, intro };
+}
+
+function introFromLlamaOutputFile(text) {
+  const source = String(text || '');
+  const marker = 'Assistant:';
+  const at = source.lastIndexOf(marker);
+  if (at < 0) {
+    return '';
+  }
+  return source
+    .slice(at + marker.length)
+    .replace(/\[Start thinking\][\s\S]*?\[End thinking\]/g, '')
+    .trim();
+}
+
+function introFromLlamaStdout(stdout) {
+  const text = Buffer.isBuffer(stdout) ? stdout.toString('utf8') : String(stdout || '');
+  const marker = '(truncated)';
+  const markerAt = text.lastIndexOf(marker);
+  const body = markerAt >= 0 ? text.slice(markerAt + marker.length) : text;
+  return body
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return false;
+      }
+      if (/[▄▀█]/.test(trimmed) || /^loading model\b/i.test(trimmed)) {
+        return false;
+      }
+      if (/^(llama_|ggml_|build\s*:|main:|model\s*:|ftype\s*:|modalities\s*:)/i.test(trimmed)) {
+        return false;
+      }
+      if (/^(\/regen|\/clear|\/read|\/glob|using custom)\b/i.test(trimmed)) {
+        return false;
+      }
+      if (/^\[ Prompt:|^Exiting\.\.\./.test(trimmed)) {
+        return false;
+      }
+      if (trimmed.startsWith('>')) {
+        return false;
+      }
+      if (/using device CPU|available commands|chat template|ctrl\+c/i.test(trimmed)) {
+        return false;
+      }
+      return true;
+    })
+    .join('\n')
+    .trim();
+}
+
+function resolveAsrModel(env = process.env) {
+  const configured = String(env.VIDEO_INGEST_ASR_MODEL || '').trim();
+  if (configured) {
+    return configured;
+  }
+  return 'medium';
 }
 
 function transcribeLocalFile({
@@ -311,6 +509,7 @@ function createJobDependencies({
   runCommand = defaultCommandRunner,
 }) {
   let latestProbe;
+  const termDocument = loadTermDocument();
   return {
     catalog,
     workerId,
@@ -326,13 +525,60 @@ function createJobDependencies({
       transcribeLocalFile({
         mediaPath,
         durationSec: latestProbe.durationSec,
-        pythonCommand:
-          env.VIDEO_INGEST_PYTHON ||
-          path.resolve('.video-ingest/venv/bin/python'),
-        modelName: env.VIDEO_INGEST_ASR_MODEL || 'medium',
+        pythonCommand: resolvePythonCommand(env),
+        modelName: resolveAsrModel(env),
         runCommand,
       }),
-    resolveAutoIntro,
+    summarizeIntro: async ({ title, brandName, transcriptSegments, placeholderIntro }) => {
+      const log = (line) => stderr.write(`${line}\n`);
+      const transcript = joinTranscript(transcriptSegments);
+      const modelPath = resolveSummaryModel(env);
+      if (!modelPath) {
+        log('summary skipped: model path empty');
+        return { grounded: false, intro: placeholderIntro };
+      }
+      let ready = summaryModelPresent(modelPath);
+      if (!ready && String(env.VIDEO_INGEST_SUMMARY_WAIT || '') === '1') {
+        log('summary waiting for model');
+        ready = await waitForSummaryModel(modelPath);
+      }
+      if (!ready) {
+        log('summary skipped: model file missing');
+        return { grounded: false, intro: placeholderIntro };
+      }
+      const generated = summarizeLocalTranscript({
+        title,
+        brandName,
+        transcript,
+        terms: termDocument.terms,
+        llamaCommand: resolveLlamaCommand(env),
+        modelPath,
+        workspace,
+        runCommand,
+        log,
+      });
+      if (!generated.ok) {
+        log('summary skipped: process failed');
+        return { grounded: false, intro: placeholderIntro };
+      }
+      const verdict = acceptIntro({
+        intro: generated.intro,
+        title,
+        brandName,
+        transcript,
+        terms: termDocument.terms,
+        brandNames: termDocument.brandNames,
+        placeholderIntro,
+      });
+      const written = String(generated.intro || '').replace(/\s+/g, ' ').trim();
+      log(`summary intro: ${written}`);
+      if (!verdict.ok) {
+        log(`summary skipped: intro rejected ${verdict.reason || 'unknown'}`);
+        return { grounded: false, intro: placeholderIntro };
+      }
+      log('summary accepted');
+      return { grounded: true, intro: verdict.intro };
+    },
     placeholderIntro: PLACEHOLDER_INTRO,
     now: Date.now,
     deleteCloudFiles: (fileIds) => deleteCloudFiles(app, fileIds),
@@ -441,6 +687,11 @@ module.exports = {
   readCredentials,
   runCli,
   runInTemporaryWorkspace,
+  resolveAsrModel,
+  resolveLlamaCommand,
+  resolvePythonCommand,
+  resolveSummaryModel,
+  summarizeLocalTranscript,
   transcodeLocalMedia,
   transcribeLocalFile,
 };

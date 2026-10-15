@@ -53,7 +53,7 @@ async function runOnce({
   probeMedia,
   transcodeIfNeeded,
   transcribe,
-  resolveAutoIntro,
+  summarizeIntro,
   placeholderIntro,
   deleteCloudFiles = async () => {},
   warn = () => {},
@@ -177,14 +177,16 @@ async function runOnce({
     });
   }
 
-  let resolvedIntro;
+  let resolvedIntro = { grounded: false };
   try {
-    resolvedIntro = resolveAutoIntro({
+    resolvedIntro = await summarizeIntro({
+      title: typeof claimed.title === 'string' ? claimed.title : '',
+      brandName: typeof claimed.brandName === 'string' ? claimed.brandName : '',
       transcriptSegments: transcription.segments,
       placeholderIntro,
     });
   } catch {
-    return failPrepared('INTERNAL');
+    resolvedIntro = { grounded: false };
   }
 
   return completePrepared({

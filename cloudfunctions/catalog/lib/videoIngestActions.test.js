@@ -748,6 +748,8 @@ describe('createVideoIngestActions', () => {
     });
 
     assert.equal(result.job.claimedBy, 'new');
+    assert.equal(result.title, '视频');
+    assert.equal(result.brandName, '品牌');
   });
 
   it('rolls back completion when media revision mismatches', async () => {

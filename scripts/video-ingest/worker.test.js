@@ -14,6 +14,11 @@ const {
   probeLocalMedia,
   runCli,
   runInTemporaryWorkspace,
+  resolveAsrModel,
+  resolveLlamaCommand,
+  resolvePythonCommand,
+  resolveSummaryModel,
+  summarizeLocalTranscript,
   transcodeLocalMedia,
   transcribeLocalFile,
 } = require('./worker');
@@ -210,6 +215,185 @@ describe('worker 生产胶水', () => {
           }),
         /媒体信息不完整/,
       );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('未配置环境变量时沿用本机 venv 与 medium 模型', () => {
+    assert.equal(
+      resolvePythonCommand({}),
+      path.resolve('.video-ingest/venv/bin/python'),
+    );
+    assert.equal(resolveAsrModel({}), 'medium');
+  });
+
+  it('云托管可用环境变量指定 python 与较小的 ASR 模型', () => {
+    assert.equal(
+      resolvePythonCommand({ VIDEO_INGEST_PYTHON: '/opt/asr/bin/python' }),
+      '/opt/asr/bin/python',
+    );
+    assert.equal(resolveAsrModel({ VIDEO_INGEST_ASR_MODEL: 'small' }), 'small');
+  });
+
+  it('未配置摘要模型时命令名回落为 llama-cli，模型路径为空', () => {
+    assert.equal(resolveLlamaCommand({}), 'llama-cli');
+    assert.equal(resolveSummaryModel({}), '');
+    assert.equal(
+      resolveLlamaCommand({ VIDEO_INGEST_LLAMA: '/usr/local/bin/llama-cli' }),
+      '/usr/local/bin/llama-cli',
+    );
+    assert.equal(
+      resolveSummaryModel({ VIDEO_INGEST_SUMMARY_MODEL: '/opt/summary/model.gguf' }),
+      '/opt/summary/model.gguf',
+    );
+  });
+
+  it('摘要调用把提示写进工作目录并只取 stdout', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-summary-test-'));
+    try {
+      const result = summarizeLocalTranscript({
+        title: '千寻仪器数据导入',
+        brandName: '千寻',
+        transcript: '手部连接电脑',
+        terms: ['手簿'],
+        llamaCommand: '/usr/local/bin/llama-cli',
+        modelPath: '/opt/summary/model.gguf',
+        workspace: root,
+        runCommand: (command, args, options) => {
+          assert.equal(command, '/usr/local/bin/llama-cli');
+          assert.equal(args[args.indexOf('-m') + 1], '/opt/summary/model.gguf');
+          assert.equal(args.includes('--reasoning'), true);
+          assert.equal(args[args.indexOf('--reasoning') + 1], 'off');
+          assert.equal(args.includes('--no-display-prompt'), true);
+          assert.equal(args.includes('--no-show-timings'), true);
+          assert.equal(args.includes('--simple-io'), true);
+          assert.equal(args.includes('--log-disable'), true);
+          assert.equal(path.dirname(args[args.indexOf('-o') + 1]), root);
+          assert.equal(args.includes('--simple-io'), true);
+          assert.equal(options.timeout, 3 * 60 * 1000);
+          assert.equal(options.killSignal, 'SIGKILL');
+          const userPath = args[args.indexOf('-f') + 1];
+          const prompt = fs.readFileSync(userPath, 'utf8');
+          assert.equal(prompt.includes('品牌：千寻'), true);
+          assert.equal(prompt.includes('手部连接电脑'), true);
+          assert.equal(prompt.includes('手簿'), true);
+          return { status: 0, stdout: Buffer.from('简介：千寻仪器数据导入。\n'), stderr: Buffer.alloc(0) };
+        },
+      });
+      assert.deepEqual(result, { ok: true, intro: '简介：千寻仪器数据导入。' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('摘要进程失败时不抛错', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-summary-fail-'));
+    try {
+      const result = summarizeLocalTranscript({
+        title: '千寻',
+        brandName: '千寻',
+        transcript: '导入',
+        terms: [],
+        llamaCommand: 'llama-cli',
+        modelPath: '/opt/summary/model.gguf',
+        workspace: root,
+        runCommand: () => ({ status: 1, stdout: Buffer.alloc(0), stderr: Buffer.from('fail') }),
+        log(line) {
+          assert.equal(line.includes('summary process failed'), true);
+          assert.equal(line.includes('fail'), true);
+        },
+      });
+      assert.deepEqual(result, { ok: false, intro: '' });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('丢掉 llama 的启动日志，只留下简介正文', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-summary-noise-'));
+    try {
+      const result = summarizeLocalTranscript({
+        title: '千寻',
+        brandName: '千寻',
+        transcript: '导入',
+        terms: [],
+        llamaCommand: 'llama-cli',
+        modelPath: '/opt/summary/model.gguf',
+        workspace: root,
+        runCommand: () => ({
+          status: 0,
+          stdout: Buffer.from('Loading model...\nllama_model_load: CPU\n千寻手簿有线升级，用数据线连接电脑后安装。\n'),
+          stderr: Buffer.alloc(0),
+        }),
+      });
+      assert.deepEqual(result, {
+        ok: true,
+        intro: '千寻手簿有线升级，用数据线连接电脑后安装。',
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('丢掉启动画面和回显的提示，只留下截断标记后的正文', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-summary-banner-'));
+    try {
+      const result = summarizeLocalTranscript({
+        title: '千寻',
+        brandName: '千寻',
+        transcript: '导入',
+        terms: [],
+        llamaCommand: 'llama-cli',
+        modelPath: '/opt/summary/model.gguf',
+        workspace: root,
+        runCommand: () => ({
+          status: 0,
+          stdout: Buffer.from(
+            '▄▄ model : /opt/summary/x.gguf\n> 标题：千寻 ... (truncated)\n千寻手簿有线升级，用数据线连接电脑后安装。\n[ Prompt: 1.0 t/s | Generation: 2.0 t/s ]\nExiting...\n',
+          ),
+          stderr: Buffer.alloc(0),
+        }),
+      });
+      assert.deepEqual(result, {
+        ok: true,
+        intro: '千寻手簿有线升级，用数据线连接电脑后安装。',
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('只采用输出文件里 Assistant 之后的正文', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-summary-file-'));
+    try {
+      const result = summarizeLocalTranscript({
+        title: '千寻',
+        brandName: '千寻',
+        transcript: '导入',
+        terms: [],
+        llamaCommand: 'llama-cli',
+        modelPath: '/opt/summary/model.gguf',
+        workspace: root,
+        runCommand: (command, args) => {
+          const outputPath = args[args.indexOf('-o') + 1];
+          fs.writeFileSync(
+            outputPath,
+            'User:\n标题：千寻 术语表：中海达\n\nAssistant:\n[Start thinking]\n先想一下\n[End thinking]\n千寻手簿有线升级，用数据线连接电脑后安装。\n',
+          );
+          return {
+            status: 0,
+            stdout: Buffer.from(
+              '▄▄ model : /opt/summary/x.gguf ftype : Q4_K\n> 标题：千寻 ... (truncated)\n千寻手簿有线升级，用数据线连接电脑后安装。\n[ Prompt: 9.0 t/s | Generation: 8.0 t/s ]\nExiting...\n',
+            ),
+            stderr: Buffer.alloc(0),
+          };
+        },
+      });
+      assert.deepEqual(result, {
+        ok: true,
+        intro: '千寻手簿有线升级，用数据线连接电脑后安装。',
+      });
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
