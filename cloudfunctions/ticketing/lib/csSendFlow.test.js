@@ -38,7 +38,7 @@ describe('planSend', () => {
 
     const again = planSend({ status: 'waiting_human', text: '还有一句', hasEscalateSystem: true });
     assert.equal(again.nextStatus, 'waiting_human');
-    assert.equal(again.notifyAdmins, false);
+    assert.equal(again.notifyAdmins, true);
     assert.equal(again.messages.length, 1);
     assert.equal(again.messages[0].role, 'user');
   });

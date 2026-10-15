@@ -9,6 +9,12 @@
 
     <view wx:for="{{messages}}" wx:key="_id" id="m{{item._id}}" class="msg {{item.role}}">
       <view class="msg-main">
+        <view
+          wx:if="{{item.failed}}"
+          class="fail-mark"
+          data-id="{{item._id}}"
+          bindtap="retrySend"
+        >!</view>
         <view class="avatar" wx:if="{{item.role !== 'user'}}">优</view>
         <view class="bubble">
           <view class="bubble-text">{{item.text}}</view>
@@ -45,6 +51,8 @@
         placeholder="描述没找到的问题或型号"
         value="{{draft}}"
         confirm-type="send"
+        cursor-spacing="16"
+        adjust-position="{{true}}"
         bindinput="onDraft"
         bindconfirm="send"
       />

@@ -2,9 +2,14 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { notifyNewTicket, notifyReplied } = require('./notify');
+const { notifyNewTicket, notifyReplied, readNewTicketTemplateId } = require('./notify');
 
 describe('notify', () => {
+  it('reads the new-ticket template id from the cloud env', () => {
+    assert.equal(readNewTicketTemplateId({ CS_NEW_TICKET_TPL: ' tpl-new ' }), 'tpl-new');
+    assert.equal(readNewTicketTemplateId({}), '');
+  });
+
   it('skips when template id is missing', async () => {
     let calls = 0;
     const send = async () => {
@@ -20,6 +25,38 @@ describe('notify', () => {
     assert.equal(calls, 0);
     assert.equal(res.ok, true);
     assert.equal(res.skipped, 1);
+  });
+
+  it('sends the work-order template fields instead of thing3 and time2', async () => {
+    const sent = [];
+    const now = Date.parse('2026-09-20T12:34:00+08:00');
+    await notifyNewTicket({
+      send: async (payload) => sent.push(payload),
+      templateId: 'tpl',
+      tousers: ['admin-1'],
+      page: 'pages/admin/inbox/inbox',
+      now,
+    });
+    await notifyReplied({
+      send: async (payload) => sent.push(payload),
+      templateId: 'tpl',
+      touser: 'user-1',
+      page: 'pages/contact/contact',
+      now,
+    });
+
+    const time = sent[0].data.time16.value;
+    assert.equal(time, '2026年9月20日 12:34');
+    assert.deepEqual(sent[0].data, {
+      time16: { value: time },
+      phrase17: { value: '待处理' },
+      time3: { value: time },
+      time13: { value: time },
+      time10: { value: time },
+    });
+    assert.equal(sent[1].data.phrase17.value, '已回复');
+    assert.equal(sent[1].data.time16.value, time);
+    assert.equal(sent[1].data.time3.value, time);
   });
 
   it('keeps ok when send throws', async () => {

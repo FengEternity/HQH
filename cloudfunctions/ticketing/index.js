@@ -11,7 +11,7 @@ const {
   csAdminClose,
   csRegisterNotify,
 } = require('./lib/csStore');
-const { notifyNewTicket, notifyReplied } = require('./lib/notify');
+const { notifyNewTicket, notifyReplied, readNewTicketTemplateId } = require('./lib/notify');
 const { verifyTicket } = require('./lib/ticket');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
@@ -141,6 +141,9 @@ async function dispatch(event) {
     case 'csRegisterNotify':
       requireAdmin(event.ticket);
       return csRegisterNotify(db, { openid, now });
+    case 'csNotifyConfig':
+      requireAdmin(event.ticket);
+      return { ok: true, newTicketTplId: readNewTicketTemplateId(process.env) };
     default:
       throw codedError('UNKNOWN_ACTION');
   }

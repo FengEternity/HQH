@@ -11,7 +11,7 @@ const {
   csSend,
 } = require('./csStore');
 
-function makeMemoryDb({ failFirstConditionalUpdate = false } = {}) {
+function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = false } = {}) {
   const tables = new Map();
   let nextId = 1;
   let conditionalUpdateFailed = false;
@@ -32,22 +32,55 @@ function makeMemoryDb({ failFirstConditionalUpdate = false } = {}) {
     });
   }
 
-  function query(name, where = {}, order, max) {
+  function query(name, where = {}, order, max, skipCount = 0) {
     return {
       where(extra) {
-        return query(name, Object.assign({}, where, extra), order, max);
+        return query(name, Object.assign({}, where, extra), order, max, skipCount);
       },
       orderBy(field, direction) {
-        return query(name, where, { field, direction }, max);
+        if (rejectOrderBy && Object.keys(where).length > 0) {
+          const failed = {
+            where() {
+              return failed;
+            },
+            orderBy() {
+              return failed;
+            },
+            limit() {
+              return failed;
+            },
+            skip() {
+              return failed;
+            },
+            async get() {
+              const error = new Error('缺少组合索引');
+              error.code = 'INDEX_REQUIRED';
+              throw error;
+            },
+            async update() {
+              const error = new Error('缺少组合索引');
+              error.code = 'INDEX_REQUIRED';
+              throw error;
+            },
+          };
+          return failed;
+        }
+        return query(name, where, { field, direction }, max, skipCount);
       },
       limit(value) {
-        return query(name, where, order, value);
+        return query(name, where, order, value, skipCount);
+      },
+      skip(value) {
+        return query(name, where, order, max, value);
       },
       async get() {
         let data = rows(name).filter((item) => matches(item, where));
         if (order) {
           const sign = order.direction === 'desc' ? -1 : 1;
           data = data.slice().sort((a, b) => sign * (a[order.field] - b[order.field]));
+        }
+        if (skipCount) {
+          data = data.slice(skipCount);
         }
         if (max !== undefined) {
           data = data.slice(0, max);
@@ -308,6 +341,30 @@ test('工单消息只返回最近 500 条并保持时间升序', async () => {
   assert.equal(result.messages.length, 500);
   assert.equal(result.messages[0].text, '11');
   assert.equal(result.messages.at(-1).text, '510');
+});
+
+test('自由输入在缺少组合索引时仍按更新时间出现在待处理列表', async () => {
+  const db = makeMemoryDb({ rejectOrderBy: true });
+
+  await csSend(db, {
+    openid: 'user-1',
+    text: '先发',
+    now: 100,
+    notifyAdminsFn: async () => {},
+  });
+  await csSend(db, {
+    openid: 'user-2',
+    text: '测试',
+    now: 300,
+    notifyAdminsFn: async () => {},
+  });
+
+  const result = await csAdminList(db, {});
+
+  assert.deepEqual(
+    result.threads.map((item) => item.preview),
+    ['测试', '先发'],
+  );
 });
 
 test('用户不能向其他 openid 的线程发送消息', async () => {

@@ -54,8 +54,12 @@ Page({
       .then((result) => this.applyResult(result))
       .catch((err) => this.showError(err));
   },
-  applyResult(result) {
-    const messages = (result.messages || []).map(mapMessage);
+  applyResult(result, doneLocalId) {
+    const server = (result.messages || []).map(mapMessage);
+    const pending = (this.data.messages || []).filter(
+      (item) => item.local && item._id !== doneLocalId,
+    );
+    const messages = server.concat(pending);
     const last = messages[messages.length - 1];
     this.setData({
       thread: result.thread,
@@ -64,6 +68,31 @@ Page({
       anchor: last ? 'm' + last._id : '',
     });
   },
+  pushLocal(text) {
+    const message = {
+      _id: 'local-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      role: 'user',
+      text,
+      local: true,
+      failed: false,
+    };
+    const messages = (this.data.messages || []).concat(message);
+    this.setData({
+      messages,
+      draft: '',
+      anchor: 'm' + message._id,
+    });
+    return message._id;
+  },
+  markFailed(localId) {
+    if (!localId) {
+      return;
+    }
+    const messages = (this.data.messages || []).map((item) =>
+      item._id === localId ? Object.assign({}, item, { failed: true }) : item,
+    );
+    this.setData({ messages });
+  },
   showError(err) {
     wx.showToast({ title: err.message || '请求失败', icon: 'none' });
   },
@@ -71,10 +100,17 @@ Page({
     const threadId = this.data.thread && this.data.thread._id;
     return threadId ? Object.assign({}, data, { threadId }) : data;
   },
-  submit(data) {
+  submit(data, localId) {
     return ticketing(this.withThread(data))
-      .then((result) => this.applyResult(result))
-      .catch((err) => this.showError(err));
+      .then((result) => {
+        this.applyResult(result, localId);
+        return true;
+      })
+      .catch((err) => {
+        this.markFailed(localId);
+        this.showError(err);
+        return false;
+      });
   },
   requestReplySubscription() {
     const tmplId = contactCfg().replyTplId;
@@ -145,12 +181,37 @@ Page({
     if (!text) {
       return;
     }
-    this.setData({ draft: '' });
+    const localId = this.pushLocal(text);
     return this.requestReplySubscription().then(() =>
-      this.submit({
-        action: 'csSend',
-        text,
-      }),
+      this.submit(
+        {
+          action: 'csSend',
+          text,
+        },
+        localId,
+      ),
+    );
+  },
+  retrySend(e) {
+    const localId = e.currentTarget.dataset.id;
+    const message = (this.data.messages || []).find((item) => item._id === localId);
+    if (!message || !message.failed) {
+      return;
+    }
+    this.setData({
+      messages: this.data.messages.map((item) =>
+        item._id === localId ? Object.assign({}, item, { failed: false }) : item,
+      ),
+      anchor: 'm' + localId,
+    });
+    return this.requestReplySubscription().then(() =>
+      this.submit(
+        {
+          action: 'csSend',
+          text: message.text,
+        },
+        localId,
+      ),
     );
   },
   escalate() {

@@ -30,16 +30,31 @@ async function getThread(db, threadId) {
   return result.data;
 }
 
+async function listWhere(collection, where) {
+  const pageSize = 100;
+  const rows = [];
+  let skip = 0;
+  while (rows.length < 1000) {
+    const result = await collection.where(where).skip(skip).limit(pageSize).get();
+    const batch = result.data || [];
+    rows.push(...batch);
+    if (batch.length < pageSize) {
+      return rows;
+    }
+    skip += batch.length;
+  }
+  return rows;
+}
+
+function byTime(field, direction) {
+  const sign = direction === 'desc' ? -1 : 1;
+  return (left, right) =>
+    sign * ((Number(left[field]) || 0) - (Number(right[field]) || 0));
+}
+
 async function getMessages(db, threadId) {
-  const result = await db
-    .collection(MESSAGES)
-    .where({ threadId })
-    .orderBy('createdAt', 'desc')
-    .limit(500)
-    .get();
-  return (result.data || [])
-    .slice()
-    .sort((left, right) => Number(left.createdAt || 0) - Number(right.createdAt || 0));
+  const rows = await listWhere(db.collection(MESSAGES), { threadId });
+  return rows.sort(byTime('createdAt', 'asc')).slice(-500);
 }
 
 async function getOpenThread(db, openid) {
@@ -52,13 +67,9 @@ async function getOpenThread(db, openid) {
 }
 
 async function getLatestClosedThread(db, openid) {
-  const result = await db
-    .collection(THREADS)
-    .where({ openid, status: 'closed' })
-    .orderBy('updatedAt', 'desc')
-    .limit(1)
-    .get();
-  return (result.data && result.data[0]) || null;
+  const rows = await listWhere(db.collection(THREADS), { openid, status: 'closed' });
+  rows.sort(byTime('updatedAt', 'desc'));
+  return rows[0] || null;
 }
 
 async function getConversationMessages(db, thread) {
@@ -188,13 +199,20 @@ function csEscalate(db, input) {
 }
 
 async function csAdminList(db, { status = 'waiting_human' }) {
-  const result = await db
-    .collection(THREADS)
-    .where({ status })
-    .orderBy('updatedAt', 'desc')
-    .limit(100)
-    .get();
-  return { ok: true, threads: result.data || [] };
+  // 只按状态取出再在内存排序。where 加 orderBy 需要组合索引，缺索引时云数据库直接失败，工作台会显示成没有工单。
+  const rows = await listWhere(db.collection(THREADS), { status });
+  rows.sort(byTime('updatedAt', 'desc'));
+  const threads = [];
+  for (const thread of rows.slice(0, 100)) {
+    const messages = await getMessages(db, thread._id);
+    const lastUser = messages
+      .slice()
+      .reverse()
+      .find((message) => message.role === 'user');
+    const last = lastUser || messages[messages.length - 1];
+    threads.push(Object.assign({}, thread, { preview: last ? String(last.text || '') : '' }));
+  }
+  return { ok: true, threads };
 }
 
 async function csAdminGet(db, { threadId }) {

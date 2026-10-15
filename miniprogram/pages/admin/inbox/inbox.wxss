@@ -1,0 +1,10 @@
+.inbox-preview {
+  margin-top: 8rpx;
+  color: #18181b;
+  font-size: 28rpx;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}

@@ -32,6 +32,16 @@ function roleLabel(role) {
   return '客服';
 }
 
+function bubbleSide(role) {
+  if (role === 'user') {
+    return 'in';
+  }
+  if (role === 'operator') {
+    return 'out';
+  }
+  return 'notice';
+}
+
 function statusLabel(status) {
   const labels = {
     open: '自动应答',
@@ -59,6 +69,7 @@ Page({
     thread: null,
     messages: [],
     draft: '',
+    anchor: '',
     loading: true,
     submitting: false,
   },
@@ -85,11 +96,14 @@ Page({
       Object.assign({}, item, {
         roleLabel: roleLabel(item.role),
         timeLabel: formatTime(item.createdAt),
+        side: bubbleSide(item.role),
       }),
     );
+    const last = messages[messages.length - 1];
     this.setData({
       thread: mapThread(result.thread),
       messages,
+      anchor: last ? 'm' + last._id : '',
       loading: false,
       submitting: false,
     });
