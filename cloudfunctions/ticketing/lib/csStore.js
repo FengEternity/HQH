@@ -253,68 +253,62 @@ async function findSubscriber(db, openid) {
   return (existing.data && existing.data[0]) || null;
 }
 
-function duplicateOpenidError() {
-  const error = new Error('同一微信已存在通知订阅记录');
-  error.code = 'DUPLICATE_OPENID';
-  return error;
+function isMissingSubscriber(error) {
+  const code = error && (error.errCode || error.code);
+  const message = String((error && (error.errMsg || error.message)) || '');
+  return (
+    code === 'DATABASE_DOCUMENT_NOT_EXIST' ||
+    code === 'DOCUMENT_NOT_FOUND' ||
+    /document(?:\s+\w+)*\s+(?:not|does not)\s+exist/i.test(message)
+  );
 }
 
-async function updateRegisterNotify(db, current, { templateId, now }) {
-  const sameTemplate = current.templateId === templateId;
-  await db.collection(SUBSCRIBERS).doc(current._id).update({
-    data: {
-      enabled: true,
-      quota: sameTemplate ? db.command.inc(1) : 1,
-      templateId,
-      lastResult: '',
-      lastErrorCode: '',
-      updatedAt: now,
-    },
-  });
-  const saved = await db.collection(SUBSCRIBERS).doc(current._id).get();
-  return { ok: true, enabled: true, quota: Number(saved.data.quota) || 0 };
-}
-
-async function createRegisterNotify(db, { openid, templateId, now }) {
-  const data = {
-    openid,
-    enabled: true,
-    quota: 1,
-    templateId,
-    lastResult: '',
-    lastErrorCode: '',
-    createdAt: now,
-    updatedAt: now,
-  };
-  if (typeof db._awaitBeforeSubscriberAdd === 'function') {
-    await db._awaitBeforeSubscriberAdd();
+async function readSubscriberDoc(transaction, openid) {
+  try {
+    const result = await transaction.collection(SUBSCRIBERS).doc(openid).get();
+    return (result && result.data) || null;
+  } catch (error) {
+    if (isMissingSubscriber(error)) {
+      return null;
+    }
+    throw error;
   }
-  const docRef = db.collection(SUBSCRIBERS).doc(openid);
-  if (typeof docRef.set === 'function') {
-    await docRef.set({ data });
-    return { ok: true, enabled: true, quota: 1 };
-  }
-  await db.collection(SUBSCRIBERS).add({ data });
-  return { ok: true, enabled: true, quota: 1 };
 }
 
 async function csRegisterNotify(db, { openid, templateId, now }) {
   assertIdentity(openid, templateId);
-  let current = await findSubscriber(db, openid);
-  if (!current) {
-    try {
-      return await createRegisterNotify(db, { openid, templateId, now });
-    } catch (error) {
-      if (error.code !== 'DUPLICATE_OPENID') {
-        throw error;
-      }
-      current = await findSubscriber(db, openid);
-      if (!current) {
-        throw error;
-      }
+  const quota = await db.runTransaction(async (transaction) => {
+    const current = await readSubscriberDoc(transaction, openid);
+    const ref = transaction.collection(SUBSCRIBERS).doc(openid);
+    if (!current) {
+      await ref.set({
+        data: {
+          openid,
+          enabled: true,
+          quota: 1,
+          templateId,
+          lastResult: '',
+          lastErrorCode: '',
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      return 1;
     }
-  }
-  return updateRegisterNotify(db, current, { templateId, now });
+    const nextQuota = current.templateId === templateId ? (Number(current.quota) || 0) + 1 : 1;
+    await ref.update({
+      data: {
+        enabled: true,
+        quota: nextQuota,
+        templateId,
+        lastResult: '',
+        lastErrorCode: '',
+        updatedAt: now,
+      },
+    });
+    return nextQuota;
+  });
+  return { ok: true, enabled: true, quota };
 }
 
 async function csUnregisterNotify(db, { openid, now }) {

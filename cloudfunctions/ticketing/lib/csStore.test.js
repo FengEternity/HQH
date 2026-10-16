@@ -22,27 +22,20 @@ function makeMemoryDb({
   failFirstConditionalUpdate = false,
   rejectOrderBy = false,
   failNotifySettleOnce = false,
+  afterFirstTransaction = null,
 } = {}) {
   const tables = new Map();
   let nextId = 1;
   let conditionalUpdateFailed = false;
   let notifySettleFailed = false;
+  let transactionTail = Promise.resolve();
+  let firstTransactionPaused = false;
 
   function rows(name) {
     if (!tables.has(name)) {
       tables.set(name, []);
     }
     return tables.get(name);
-  }
-
-  function subscriberOpenidTaken(openid) {
-    return rows('admin_notify_subscribers').some((item) => item.openid === openid);
-  }
-
-  function duplicateOpenidError() {
-    const error = new Error('同一微信已存在通知订阅记录');
-    error.code = 'DUPLICATE_OPENID';
-    return error;
   }
 
   function applyPatch(item, data) {
@@ -143,7 +136,7 @@ function makeMemoryDb({
     };
   }
 
-  return {
+  const db = {
     command: {
       neq(value) {
         return { __op: 'neq', value };
@@ -158,9 +151,6 @@ function makeMemoryDb({
     collection(name) {
       return Object.assign(query(name), {
         async add({ data }) {
-          if (name === 'admin_notify_subscribers' && data.openid && subscriberOpenidTaken(data.openid)) {
-            throw duplicateOpenidError();
-          }
           const _id = `id-${nextId++}`;
           rows(name).push(Object.assign({ _id }, data));
           return { _id };
@@ -172,19 +162,14 @@ function makeMemoryDb({
               return { data: data ? Object.assign({}, data) : null };
             },
             async set({ data }) {
-              if (name === 'admin_notify_subscribers') {
-                const openid = data.openid || id;
-                if (
-                  rows(name).some((item) => item._id === id) ||
-                  subscriberOpenidTaken(openid)
-                ) {
-                  throw duplicateOpenidError();
-                }
-              } else if (rows(name).some((item) => item._id === id)) {
-                throw duplicateOpenidError();
+              const next = Object.assign({ _id: id }, data);
+              const index = rows(name).findIndex((item) => item._id === id);
+              if (index >= 0) {
+                rows(name)[index] = next;
+              } else {
+                rows(name).push(next);
               }
-              rows(name).push(Object.assign({ _id: id }, data));
-              return { stats: { updated: 1 } };
+              return { _id: id, stats: { updated: index >= 0 ? 1 : 0, created: index >= 0 ? 0 : 1 } };
             },
             async update({ data }) {
               if (
@@ -206,7 +191,26 @@ function makeMemoryDb({
         },
       });
     },
+    async runTransaction(callback) {
+      const previous = transactionTail;
+      let release;
+      transactionTail = new Promise((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        const result = await callback(db);
+        if (afterFirstTransaction && !firstTransactionPaused) {
+          firstTransactionPaused = true;
+          await afterFirstTransaction();
+        }
+        return result;
+      } finally {
+        release();
+      }
+    },
   };
+  return db;
 }
 
 test('csHistory 重复读取只创建一条欢迎消息', async () => {
@@ -451,44 +455,65 @@ test('用户不能向其他 openid 的线程发送消息', async () => {
 });
 
 test('并发首次登记同一微信只保留一条记录且额度与库内一致', async () => {
-  const db = makeMemoryDb();
   let releaseFirst;
-  const gate = new Promise((resolve) => {
+  const hold = new Promise((resolve) => {
     releaseFirst = resolve;
   });
-  let gateEnteredResolve;
-  const gateEntered = new Promise((resolve) => {
-    gateEnteredResolve = resolve;
+  let enteredResolve;
+  const entered = new Promise((resolve) => {
+    enteredResolve = resolve;
   });
-  let firstPaused = false;
-  db._awaitBeforeSubscriberAdd = async () => {
-    if (!firstPaused) {
-      firstPaused = true;
-      gateEnteredResolve();
-      await gate;
-    }
-  };
+  const db = makeMemoryDb({
+    async afterFirstTransaction() {
+      enteredResolve();
+      await hold;
+    },
+  });
 
   const firstCall = csRegisterNotify(db, {
     openid: 'wx-race',
     templateId: 'tpl',
     now: 1,
   });
-  await gateEntered;
-
-  const second = await csRegisterNotify(db, {
+  let secondSettled = false;
+  const secondCall = csRegisterNotify(db, {
     openid: 'wx-race',
     templateId: 'tpl',
     now: 2,
+  }).then((result) => {
+    secondSettled = true;
+    return result;
   });
+  let timeout;
+  try {
+    await Promise.race([
+      entered,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('首笔事务在提交前没有拦住第二笔')), 1000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(secondSettled, false);
+
+  const whileHeld = await db.collection('admin_notify_subscribers').where({ openid: 'wx-race' }).get();
+  assert.equal(whileHeld.data.length, 1);
+  assert.equal(whileHeld.data[0]._id, 'wx-race');
+  assert.equal(whileHeld.data[0].quota, 1);
+
   releaseFirst();
   const first = await firstCall;
+  assert.equal(first.quota, whileHeld.data[0].quota);
 
+  const second = await secondCall;
   const stored = await db.collection('admin_notify_subscribers').where({ openid: 'wx-race' }).get();
   assert.equal(stored.data.length, 1);
+  assert.equal(stored.data[0]._id, 'wx-race');
   assert.equal(stored.data[0].quota, 2);
-  assert.equal(second.quota, 1);
-  assert.equal(first.quota, stored.data[0].quota);
+  assert.equal(second.quota, stored.data[0].quota);
+  assert.equal((await listNotifyCandidates(db, { templateId: 'tpl' })).length, 1);
   assert.deepEqual(await readNotifyStatus(db, { openid: 'wx-race' }), {
     enabled: true,
     quota: 2,
