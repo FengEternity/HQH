@@ -18,10 +18,15 @@ const {
   deliverAdminNotifications,
 } = require('./csStore');
 
-function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = false } = {}) {
+function makeMemoryDb({
+  failFirstConditionalUpdate = false,
+  rejectOrderBy = false,
+  failNotifySettleOnce = false,
+} = {}) {
   const tables = new Map();
   let nextId = 1;
   let conditionalUpdateFailed = false;
+  let notifySettleFailed = false;
 
   function rows(name) {
     if (!tables.has(name)) {
@@ -182,6 +187,14 @@ function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = fals
               return { stats: { updated: 1 } };
             },
             async update({ data }) {
+              if (
+                name === 'admin_notify_subscribers' &&
+                failNotifySettleOnce &&
+                !notifySettleFailed
+              ) {
+                notifySettleFailed = true;
+                throw new Error('settle write failed');
+              }
               const item = rows(name).find((entry) => entry._id === id);
               if (!item) {
                 return { stats: { updated: 0 } };
@@ -626,6 +639,20 @@ test('只向有额度的当前模板发送，并按结果结算', async () => {
   assert.deepEqual(sent, ['ready']);
   assert.deepEqual(result, { ok: true, sent: 1, skipped: 0 });
   assert.equal((await readNotifyStatus(db, { openid: 'ready' })).quota, 1);
+});
+
+test('发送成功但结算写入失败时仍计为已发送且不退回额度', async () => {
+  const db = makeMemoryDb({ failNotifySettleOnce: true });
+  await csRegisterNotify(db, { openid: 'wx-1', templateId: 'tpl', now: 1 });
+  const result = await deliverAdminNotifications(db, {
+    templateId: 'tpl',
+    now: 2,
+    page: 'pages/admin/inbox/inbox',
+    send: async () => ({}),
+  });
+
+  assert.deepEqual(result, { ok: true, sent: 1, skipped: 0 });
+  assert.equal((await readNotifyStatus(db, { openid: 'wx-1' })).quota, 0);
 });
 
 test('43101 归零，其他失败退回额度', async () => {

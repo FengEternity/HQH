@@ -423,6 +423,8 @@ async function deliverAdminNotifications(db, { templateId, now, page, send }) {
       skipped += 1;
       continue;
     }
+    let outcome = 'sent';
+    let errorCode = 0;
     try {
       const result = await send({
         touser: candidate.openid,
@@ -432,33 +434,30 @@ async function deliverAdminNotifications(db, { templateId, now, page, send }) {
       });
       const code = subscribeErrorCode(result);
       if (code === 43101) {
-        await finishNotifySend(db, {
-          id: candidate._id,
-          outcome: 'unsubscribed',
-          errorCode: 43101,
-          now,
-        });
-        skipped += 1;
+        outcome = 'unsubscribed';
+        errorCode = 43101;
       } else if (code) {
-        await finishNotifySend(db, {
-          id: candidate._id,
-          outcome: 'failed',
-          errorCode: code,
-          now,
-        });
-        skipped += 1;
-      } else {
-        await finishNotifySend(db, { id: candidate._id, outcome: 'sent', now });
-        sent += 1;
+        outcome = 'failed';
+        errorCode = code;
       }
     } catch (error) {
       const code = subscribeErrorCode(error);
+      outcome = code === 43101 ? 'unsubscribed' : 'failed';
+      errorCode = code;
+    }
+    try {
       await finishNotifySend(db, {
         id: candidate._id,
-        outcome: code === 43101 ? 'unsubscribed' : 'failed',
-        errorCode: code,
+        outcome,
+        errorCode,
         now,
       });
+    } catch (error) {
+      console.error('cs notify settle failed', error);
+    }
+    if (outcome === 'sent') {
+      sent += 1;
+    } else {
       skipped += 1;
     }
   }
