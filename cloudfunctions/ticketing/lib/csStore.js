@@ -252,23 +252,13 @@ async function findSubscriber(db, openid) {
   return (existing.data && existing.data[0]) || null;
 }
 
-async function csRegisterNotify(db, { openid, templateId, now }) {
-  assertIdentity(openid, templateId);
-  const current = await findSubscriber(db, openid);
-  if (!current) {
-    const data = {
-      openid,
-      enabled: true,
-      quota: 1,
-      templateId,
-      lastResult: '',
-      lastErrorCode: '',
-      createdAt: now,
-      updatedAt: now,
-    };
-    await db.collection(SUBSCRIBERS).add({ data });
-    return { ok: true, enabled: true, quota: 1 };
-  }
+function duplicateOpenidError() {
+  const error = new Error('同一微信已存在通知订阅记录');
+  error.code = 'DUPLICATE_OPENID';
+  return error;
+}
+
+async function updateRegisterNotify(db, current, { templateId, now }) {
   const sameTemplate = current.templateId === templateId;
   await db.collection(SUBSCRIBERS).doc(current._id).update({
     data: {
@@ -282,6 +272,48 @@ async function csRegisterNotify(db, { openid, templateId, now }) {
   });
   const saved = await db.collection(SUBSCRIBERS).doc(current._id).get();
   return { ok: true, enabled: true, quota: Number(saved.data.quota) || 0 };
+}
+
+async function createRegisterNotify(db, { openid, templateId, now }) {
+  const data = {
+    openid,
+    enabled: true,
+    quota: 1,
+    templateId,
+    lastResult: '',
+    lastErrorCode: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+  if (typeof db._awaitBeforeSubscriberAdd === 'function') {
+    await db._awaitBeforeSubscriberAdd();
+  }
+  const docRef = db.collection(SUBSCRIBERS).doc(openid);
+  if (typeof docRef.set === 'function') {
+    await docRef.set({ data });
+    return { ok: true, enabled: true, quota: 1 };
+  }
+  await db.collection(SUBSCRIBERS).add({ data });
+  return { ok: true, enabled: true, quota: 1 };
+}
+
+async function csRegisterNotify(db, { openid, templateId, now }) {
+  assertIdentity(openid, templateId);
+  let current = await findSubscriber(db, openid);
+  if (!current) {
+    try {
+      return await createRegisterNotify(db, { openid, templateId, now });
+    } catch (error) {
+      if (error.code !== 'DUPLICATE_OPENID') {
+        throw error;
+      }
+      current = await findSubscriber(db, openid);
+      if (!current) {
+        throw error;
+      }
+    }
+  }
+  return updateRegisterNotify(db, current, { templateId, now });
 }
 
 async function csUnregisterNotify(db, { openid, now }) {

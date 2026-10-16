@@ -29,6 +29,16 @@ function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = fals
     return tables.get(name);
   }
 
+  function subscriberOpenidTaken(openid) {
+    return rows('admin_notify_subscribers').some((item) => item.openid === openid);
+  }
+
+  function duplicateOpenidError() {
+    const error = new Error('同一微信已存在通知订阅记录');
+    error.code = 'DUPLICATE_OPENID';
+    return error;
+  }
+
   function applyPatch(item, data) {
     Object.entries(data || {}).forEach(([key, value]) => {
       if (value && value.__op === 'inc') {
@@ -142,6 +152,9 @@ function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = fals
     collection(name) {
       return Object.assign(query(name), {
         async add({ data }) {
+          if (name === 'admin_notify_subscribers' && data.openid && subscriberOpenidTaken(data.openid)) {
+            throw duplicateOpenidError();
+          }
           const _id = `id-${nextId++}`;
           rows(name).push(Object.assign({ _id }, data));
           return { _id };
@@ -151,6 +164,21 @@ function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = fals
             async get() {
               const data = rows(name).find((item) => item._id === id);
               return { data: data ? Object.assign({}, data) : null };
+            },
+            async set({ data }) {
+              if (name === 'admin_notify_subscribers') {
+                const openid = data.openid || id;
+                if (
+                  rows(name).some((item) => item._id === id) ||
+                  subscriberOpenidTaken(openid)
+                ) {
+                  throw duplicateOpenidError();
+                }
+              } else if (rows(name).some((item) => item._id === id)) {
+                throw duplicateOpenidError();
+              }
+              rows(name).push(Object.assign({ _id: id }, data));
+              return { stats: { updated: 1 } };
             },
             async update({ data }) {
               const item = rows(name).find((entry) => entry._id === id);
@@ -406,6 +434,51 @@ test('用户不能向其他 openid 的线程发送消息', async () => {
     }),
     { code: 'FORBIDDEN', message: '无权访问该会话' },
   );
+});
+
+test('并发首次登记同一微信只保留一条记录且额度与库内一致', async () => {
+  const db = makeMemoryDb();
+  let releaseFirst;
+  const gate = new Promise((resolve) => {
+    releaseFirst = resolve;
+  });
+  let gateEnteredResolve;
+  const gateEntered = new Promise((resolve) => {
+    gateEnteredResolve = resolve;
+  });
+  let firstPaused = false;
+  db._awaitBeforeSubscriberAdd = async () => {
+    if (!firstPaused) {
+      firstPaused = true;
+      gateEnteredResolve();
+      await gate;
+    }
+  };
+
+  const firstCall = csRegisterNotify(db, {
+    openid: 'wx-race',
+    templateId: 'tpl',
+    now: 1,
+  });
+  await gateEntered;
+
+  const second = await csRegisterNotify(db, {
+    openid: 'wx-race',
+    templateId: 'tpl',
+    now: 2,
+  });
+  releaseFirst();
+  const first = await firstCall;
+
+  const stored = await db.collection('admin_notify_subscribers').where({ openid: 'wx-race' }).get();
+  assert.equal(stored.data.length, 1);
+  assert.equal(stored.data[0].quota, 2);
+  assert.equal(second.quota, 1);
+  assert.equal(first.quota, stored.data[0].quota);
+  assert.deepEqual(await readNotifyStatus(db, { openid: 'wx-race' }), {
+    enabled: true,
+    quota: 2,
+  });
 });
 
 test('空身份或空模板不能登记通知', async () => {
