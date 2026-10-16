@@ -9,6 +9,12 @@ const {
   csAdminClose,
   csHistory,
   csSend,
+  csRegisterNotify,
+  csUnregisterNotify,
+  readNotifyStatus,
+  listNotifyCandidates,
+  reserveNotifySend,
+  finishNotifySend,
 } = require('./csStore');
 
 function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = false } = {}) {
@@ -23,10 +29,23 @@ function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = fals
     return tables.get(name);
   }
 
+  function applyPatch(item, data) {
+    Object.entries(data || {}).forEach(([key, value]) => {
+      if (value && value.__op === 'inc') {
+        item[key] = (Number(item[key]) || 0) + value.value;
+        return;
+      }
+      item[key] = value;
+    });
+  }
+
   function matches(doc, where) {
     return Object.entries(where || {}).every(([key, expected]) => {
       if (expected && expected.__op === 'neq') {
         return doc[key] !== expected.value;
+      }
+      if (expected && expected.__op === 'gt') {
+        return Number(doc[key]) > expected.value;
       }
       return doc[key] === expected;
     });
@@ -99,7 +118,7 @@ function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = fals
         let updated = 0;
         for (const item of rows(name)) {
           if (matches(item, where)) {
-            Object.assign(item, data);
+            applyPatch(item, data);
             updated += 1;
           }
         }
@@ -112,6 +131,12 @@ function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = fals
     command: {
       neq(value) {
         return { __op: 'neq', value };
+      },
+      gt(value) {
+        return { __op: 'gt', value };
+      },
+      inc(value) {
+        return { __op: 'inc', value };
       },
     },
     collection(name) {
@@ -132,7 +157,7 @@ function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = fals
               if (!item) {
                 return { stats: { updated: 0 } };
               }
-              Object.assign(item, data);
+              applyPatch(item, data);
               return { stats: { updated: 1 } };
             },
           };
@@ -381,6 +406,110 @@ test('用户不能向其他 openid 的线程发送消息', async () => {
     }),
     { code: 'FORBIDDEN', message: '无权访问该会话' },
   );
+});
+
+test('空身份或空模板不能登记通知', async () => {
+  const db = makeMemoryDb();
+  await assert.rejects(
+    csRegisterNotify(db, { openid: '', templateId: 'tpl', now: 1 }),
+    { code: 'BAD_INPUT' },
+  );
+  await assert.rejects(
+    csRegisterNotify(db, { openid: 'wx-1', templateId: '', now: 1 }),
+    { code: 'BAD_INPUT' },
+  );
+});
+
+test('同一模板重复允许会累加额度，换模板后额度重新从 1 开始', async () => {
+  const db = makeMemoryDb();
+  const first = await csRegisterNotify(db, {
+    openid: 'wx-1',
+    templateId: 'tpl-a',
+    now: 1,
+  });
+  const second = await csRegisterNotify(db, {
+    openid: 'wx-1',
+    templateId: 'tpl-a',
+    now: 2,
+  });
+  const replaced = await csRegisterNotify(db, {
+    openid: 'wx-1',
+    templateId: 'tpl-b',
+    now: 3,
+  });
+
+  assert.equal(first.quota, 1);
+  assert.equal(second.quota, 2);
+  assert.deepEqual(replaced, { ok: true, enabled: true, quota: 1 });
+  assert.deepEqual(await listNotifyCandidates(db, { templateId: 'tpl-a' }), []);
+  const [current] = await listNotifyCandidates(db, { templateId: 'tpl-b' });
+  assert.equal(current.lastResult, '');
+  assert.equal(current.lastErrorCode, '');
+});
+
+test('停止接收后保留额度，历史记录不会成为候选', async () => {
+  const db = makeMemoryDb();
+  await db.collection('admin_notify_subscribers').add({
+    data: { openid: 'legacy', createdAt: 1, updatedAt: 1 },
+  });
+  await csRegisterNotify(db, { openid: 'wx-1', templateId: 'tpl', now: 2 });
+  await csRegisterNotify(db, { openid: 'wx-1', templateId: 'tpl', now: 3 });
+  const stopped = await csUnregisterNotify(db, { openid: 'wx-1', now: 4 });
+
+  assert.deepEqual(stopped, { ok: true, enabled: false, quota: 2 });
+  assert.deepEqual(await listNotifyCandidates(db, { templateId: 'tpl' }), []);
+  assert.deepEqual(await readNotifyStatus(db, { openid: 'wx-1' }), {
+    enabled: false,
+    quota: 2,
+  });
+  assert.deepEqual(await csUnregisterNotify(db, { openid: 'missing', now: 5 }), {
+    ok: true,
+    enabled: false,
+    quota: 0,
+  });
+});
+
+test('同一条额度只能预扣一次，并按发送结果结算', async () => {
+  const db = makeMemoryDb();
+  await csRegisterNotify(db, { openid: 'wx-1', templateId: 'tpl', now: 1 });
+  const [candidate] = await listNotifyCandidates(db, { templateId: 'tpl' });
+
+  assert.equal(
+    await reserveNotifySend(db, { id: candidate._id, templateId: 'tpl', now: 2 }),
+    true,
+  );
+  assert.equal(
+    await reserveNotifySend(db, { id: candidate._id, templateId: 'tpl', now: 3 }),
+    false,
+  );
+  await finishNotifySend(db, {
+    id: candidate._id,
+    outcome: 'failed',
+    errorCode: 40037,
+    now: 4,
+  });
+  assert.equal((await readNotifyStatus(db, { openid: 'wx-1' })).quota, 1);
+
+  await reserveNotifySend(db, { id: candidate._id, templateId: 'tpl', now: 5 });
+  await finishNotifySend(db, {
+    id: candidate._id,
+    outcome: 'unsubscribed',
+    errorCode: 43101,
+    now: 6,
+  });
+  assert.deepEqual(await readNotifyStatus(db, { openid: 'wx-1' }), {
+    enabled: true,
+    quota: 0,
+  });
+
+  await csRegisterNotify(db, { openid: 'wx-1', templateId: 'tpl', now: 7 });
+  await reserveNotifySend(db, { id: candidate._id, templateId: 'tpl', now: 8 });
+  await finishNotifySend(db, { id: candidate._id, outcome: 'sent', now: 9 });
+  const saved = await db.collection('admin_notify_subscribers').doc(candidate._id).get();
+  assert.equal(saved.data.quota, 0);
+  assert.equal(saved.data.enabled, true);
+  assert.equal(saved.data.lastResult, 'sent');
+  assert.equal(saved.data.lastErrorCode, '');
 });
 
 module.exports = { makeMemoryDb };

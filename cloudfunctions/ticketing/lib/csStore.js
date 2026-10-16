@@ -241,14 +241,139 @@ async function csAdminClose(db, { threadId, now }) {
   return { ok: true, thread };
 }
 
-async function csRegisterNotify(db, { openid, now }) {
-  const existing = await db.collection(SUBSCRIBERS).where({ openid }).limit(1).get();
-  if (existing.data && existing.data.length) {
-    return { ok: true, subscriber: existing.data[0] };
+function assertIdentity(openid, templateId) {
+  if (!openid || !templateId) {
+    throw codedError('BAD_INPUT');
   }
-  const data = { openid, createdAt: now, updatedAt: now };
-  const added = await db.collection(SUBSCRIBERS).add({ data });
-  return { ok: true, subscriber: Object.assign({ _id: added._id }, data) };
+}
+
+async function findSubscriber(db, openid) {
+  const existing = await db.collection(SUBSCRIBERS).where({ openid }).limit(1).get();
+  return (existing.data && existing.data[0]) || null;
+}
+
+async function csRegisterNotify(db, { openid, templateId, now }) {
+  assertIdentity(openid, templateId);
+  const current = await findSubscriber(db, openid);
+  if (!current) {
+    const data = {
+      openid,
+      enabled: true,
+      quota: 1,
+      templateId,
+      lastResult: '',
+      lastErrorCode: '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.collection(SUBSCRIBERS).add({ data });
+    return { ok: true, enabled: true, quota: 1 };
+  }
+  const sameTemplate = current.templateId === templateId;
+  await db.collection(SUBSCRIBERS).doc(current._id).update({
+    data: {
+      enabled: true,
+      quota: sameTemplate ? db.command.inc(1) : 1,
+      templateId,
+      lastResult: '',
+      lastErrorCode: '',
+      updatedAt: now,
+    },
+  });
+  const saved = await db.collection(SUBSCRIBERS).doc(current._id).get();
+  return { ok: true, enabled: true, quota: Number(saved.data.quota) || 0 };
+}
+
+async function csUnregisterNotify(db, { openid, now }) {
+  if (!openid) {
+    throw codedError('BAD_INPUT');
+  }
+  const current = await findSubscriber(db, openid);
+  if (!current) {
+    return { ok: true, enabled: false, quota: 0 };
+  }
+  await db.collection(SUBSCRIBERS).doc(current._id).update({
+    data: {
+      enabled: false,
+      lastResult: 'stopped',
+      lastErrorCode: '',
+      updatedAt: now,
+    },
+  });
+  return { ok: true, enabled: false, quota: Number(current.quota) || 0 };
+}
+
+async function readNotifyStatus(db, { openid }) {
+  if (!openid) {
+    throw codedError('BAD_INPUT');
+  }
+  const current = await findSubscriber(db, openid);
+  if (!current) {
+    return { enabled: false, quota: 0 };
+  }
+  return {
+    enabled: current.enabled === true,
+    quota: Number(current.quota) || 0,
+  };
+}
+
+async function listNotifyCandidates(db, { templateId }) {
+  if (!templateId) {
+    return [];
+  }
+  return listWhere(db.collection(SUBSCRIBERS), {
+    enabled: true,
+    quota: db.command.gt(0),
+    templateId,
+  });
+}
+
+async function reserveNotifySend(db, { id, templateId, now }) {
+  const result = await db.collection(SUBSCRIBERS).where({
+    _id: id,
+    enabled: true,
+    quota: db.command.gt(0),
+    templateId,
+  }).update({
+    data: {
+      quota: db.command.inc(-1),
+      updatedAt: now,
+    },
+  });
+  return Boolean(result.stats && result.stats.updated > 0);
+}
+
+async function finishNotifySend(db, { id, outcome, errorCode, now }) {
+  if (outcome === 'sent') {
+    await db.collection(SUBSCRIBERS).doc(id).update({
+      data: { lastResult: 'sent', lastErrorCode: '', updatedAt: now },
+    });
+    return;
+  }
+  if (outcome === 'unsubscribed') {
+    await db.collection(SUBSCRIBERS).doc(id).update({
+      data: {
+        quota: 0,
+        enabled: true,
+        lastResult: 'unsubscribed',
+        lastErrorCode: 43101,
+        updatedAt: now,
+      },
+    });
+    return;
+  }
+  if (outcome === 'failed') {
+    await db.collection(SUBSCRIBERS).doc(id).update({
+      data: {
+        quota: db.command.inc(1),
+        lastResult: 'failed',
+        lastErrorCode: errorCode || '',
+        updatedAt: now,
+      },
+    });
+    return;
+  }
+  throw codedError('BAD_INPUT');
 }
 
 module.exports = {
@@ -260,4 +385,9 @@ module.exports = {
   csAdminReply,
   csAdminClose,
   csRegisterNotify,
+  csUnregisterNotify,
+  readNotifyStatus,
+  listNotifyCandidates,
+  reserveNotifySend,
+  finishNotifySend,
 };
