@@ -3,37 +3,7 @@ const {
   setTicket,
   getTicket,
   admin,
-  ticketingAdmin,
 } = require('../../../utils/api');
-const { contact } = require('../../../config.js');
-
-function requestNewTicketSubscription() {
-  const tmplId = contact && contact.newTicketTplId;
-  if (!tmplId) {
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = () => {
-      if (!settled) {
-        settled = true;
-        resolve();
-      }
-    };
-    try {
-      const request = wx.requestSubscribeMessage({
-        tmplIds: [tmplId],
-        success: done,
-        fail: done,
-      });
-      if (request && typeof request.then === 'function') {
-        request.then(done, done);
-      }
-    } catch (err) {
-      done();
-    }
-  });
-}
 
 Page({
   data: { pin: '' },
@@ -60,13 +30,7 @@ Page({
     return catalog({ action: 'adminLogin', pin })
       .then((res) => {
         setTicket(res.ticket);
-        return requestNewTicketSubscription()
-          .then(() =>
-            ticketingAdmin({ action: 'csRegisterNotify' }).catch(() => {}),
-          )
-          .then(() => {
-            wx.redirectTo({ url: '/pages/admin/home/home' });
-          });
+        wx.redirectTo({ url: '/pages/admin/home/home' });
       })
       .catch((err) => {
         wx.showToast({ title: err.message || '登录失败', icon: 'none' });

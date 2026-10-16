@@ -49,12 +49,12 @@ afterEach(() => {
   global.wx = originalWx;
 });
 
-it('registers admin notifications after denied subscription, then redirects', async () => {
+it('logs in without requesting or registering notifications', async () => {
   const events = [];
   global.wx = {
-    requestSubscribeMessage({ tmplIds }) {
-      events.push(['subscribe', tmplIds]);
-      return Promise.reject(new Error('denied'));
+    requestSubscribeMessage() {
+      events.push(['subscribe']);
+      return Promise.resolve({ 'new-ticket-template': 'accept' });
     },
     redirectTo({ url }) {
       events.push(['redirect', url]);
@@ -65,7 +65,7 @@ it('registers admin notifications after denied subscription, then redirects', as
     templateId: 'new-ticket-template',
     catalog: async () => ({ ok: true, ticket: 'ticket-1' }),
     ticketingAdmin: async (data) => {
-      events.push(['register', data]);
+      events.push(['register', data.action]);
       return { ok: true };
     },
   });
@@ -74,11 +74,7 @@ it('registers admin notifications after denied subscription, then redirects', as
   await page.onLogin();
 
   assert.deepEqual(tickets, ['ticket-1']);
-  assert.deepEqual(events, [
-    ['subscribe', ['new-ticket-template']],
-    ['register', { action: 'csRegisterNotify' }],
-    ['redirect', '/pages/admin/home/home'],
-  ]);
+  assert.deepEqual(events, [['redirect', '/pages/admin/home/home']]);
 });
 
 it('redirects after notification registration fails without showing login failure', async () => {
