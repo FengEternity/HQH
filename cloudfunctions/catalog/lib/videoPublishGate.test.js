@@ -145,6 +145,7 @@ describe('videoPublishGate', () => {
       false,
     );
     assert.equal(isReadyToPublish({ ...base, intro: '对中讲解' }), true);
+    assert.equal(isReadyToPublish({ ...base, title: '  ' }), false);
   });
 
   it('keeps the placeholder saveable as a draft', () => {

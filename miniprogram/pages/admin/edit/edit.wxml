@@ -7,24 +7,57 @@
   <view class="form-card">
     <view class="form-section-title">基本信息</view>
     <view class="field">
-      <view class="field-label">标题 <text class="field-req">必填</text></view>
+      <view class="field-label">自动标题</view>
       <textarea
         class="field-input field-textarea"
-        placeholder="例如：主机对中讲解"
-        value="{{title}}"
-        bindinput="onTitle"
+        placeholder="上传视频后从文件名填入"
+        value="{{autoTitle}}"
+        maxlength="120"
+        auto-height
+        disabled
+        show-confirm-bar="{{false}}"
+      ></textarea>
+    </view>
+    <view class="field">
+      <view class="field-label">人工标题</view>
+      <textarea
+        class="field-input field-textarea"
+        placeholder="填写后优先用于展示和搜索"
+        value="{{humanTitle}}"
+        bindinput="onHumanTitle"
         maxlength="120"
         auto-height
         show-confirm-bar="{{false}}"
       ></textarea>
     </view>
     <view class="field">
-      <view class="field-label">简介 <text class="field-req">必填</text></view>
+      <view class="field-label">自动简介</view>
       <textarea
         class="field-input field-textarea"
-        placeholder="{{introSource === 'placeholder' ? '处理完成后将自动填写，也可先手写' : '这段讲解讲什么、适用机型'}}"
-        value="{{intro}}"
-        bindinput="onIntro"
+        placeholder="处理完成后显示在这里"
+        value="{{autoIntro}}"
+        maxlength="500"
+        auto-height
+        disabled
+        show-confirm-bar="{{false}}"
+      ></textarea>
+      <view class="auto-intro-actions">
+        <text wx:if="{{ingestHint}}" class="muted auto-intro-hint">{{ingestHint}}</text>
+        <view
+          wx:if="{{showRetryIngest}}"
+          class="btn btn-ghost auto-intro-retry"
+          style="opacity: {{canRetryIngest ? 1 : 0.45}}; pointer-events: {{canRetryIngest ? 'auto' : 'none'}}"
+          bindtap="retryIngest"
+        >重新处理</view>
+      </view>
+    </view>
+    <view class="field">
+      <view class="field-label">人工简介</view>
+      <textarea
+        class="field-input field-textarea"
+        placeholder="填写后优先用于展示和搜索"
+        value="{{humanIntro}}"
+        bindinput="onHumanIntro"
         maxlength="500"
         auto-height
         show-confirm-bar="{{false}}"
@@ -63,30 +96,24 @@
         <image wx:if="{{posterUrl}}" class="cover-frame-img" src="{{posterUrl}}" mode="aspectFill" />
         <view wx:else class="cover-frame-empty">
           <text class="cover-frame-empty-title">添加封面</text>
-          <text class="muted">点此从相册选择</text>
+          <text class="muted">点此选择视频并裁剪</text>
         </view>
         <view wx:if="{{posterUrl}}" class="cover-frame-badge">更换封面</view>
       </view>
       <view wx:if="{{coverHint}}" class="muted" style="margin-top: 12rpx">{{coverHint}}</view>
-      <view class="muted" style="margin-top: 12rpx">未选封面时，上传视频会进入 16:9 裁剪（与首页卡片相同）。可拖动缩放后再确认。</view>
+      <view class="muted" style="margin-top: 12rpx">点封面后选择一条视频，用它的画面做 16:9 裁剪，可拖动缩放后再确认。</view>
     </view>
     <view class="media-row" bindtap="uploadVideo">
       <view>
         <view class="tile-title">视频文件</view>
-        <view class="muted">{{videoFileId ? '已上传到云存储，可点此更换' : '点此从相册或拍摄上传'}}</view>
+        <view class="muted">{{videoFileId ? '已上传到云存储，可点此更换' : '点此选择视频文件，文件名会填入自动标题'}}</view>
       </view>
       <text class="chip {{videoFileId ? 'chip-ok' : ''}}">{{videoFileId ? '已传' : '未传'}}</text>
     </view>
-    <view wx:if="{{ingestHint}}" class="muted" style="padding: 0 0 16rpx">{{ingestHint}}</view>
-    <view
-      wx:if="{{showRetryIngest}}"
-      class="btn btn-ghost"
-      style="margin-bottom: 24rpx; opacity: {{canRetryIngest ? 1 : 0.45}}; pointer-events: {{canRetryIngest ? 'auto' : 'none'}}"
-      bindtap="retryIngest"
-    >重新处理</view>
   </view>
 
   <view class="form-footer">
     <view class="btn" bindtap="save">保存</view>
   </view>
+  <canvas type="2d" id="video-poster-canvas" style="position:fixed;left:-9999px;top:0;width:10px;height:10px;"></canvas>
 </view>

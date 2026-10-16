@@ -643,4 +643,65 @@ describe('runOnce', () => {
     assert.equal(completes[0].errorCode, 'INTERNAL');
     assert.equal(completes[0].errorMessage, '处理失败');
   });
+
+  it('百炼简介在转码前写回，并且不再走本地转写', async () => {
+    const notes = [];
+    let transcribed = false;
+    let transcoded = false;
+    let notedBeforeTranscode = false;
+    let probes = 0;
+    const { deps, completes } = createDeps({
+      catalog: {
+        claim: async () => claimedJob(),
+        noteIntro: async (payload) => {
+          notedBeforeTranscode = transcoded === false;
+          notes.push(payload);
+        },
+        complete: async (payload) => {
+          completes.push(payload);
+        },
+      },
+      probeMedia: async () => {
+        probes += 1;
+        if (probes === 1) {
+          return {
+            hasAudio: true,
+            videoCodec: 'hevc',
+            audioCodec: 'aac',
+            durationSec: 3,
+            needsTranscode: true,
+            playback: playback({ videoCodec: 'hevc', compliant: false }),
+          };
+        }
+        return {
+          hasAudio: true,
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          durationSec: 3,
+          needsTranscode: false,
+          playback: playback(),
+        };
+      },
+      transcodeIfNeeded: async (localPath) => {
+        transcoded = true;
+        return { path: localPath, uploadedFileId: 'cloud://processed' };
+      },
+      transcribe: async () => {
+        transcribed = true;
+        return { ok: true, segments: [], skipped: false };
+      },
+      recognizeSpeech: async () => ({
+        grounded: true,
+        intro: '千寻本期讲解如何打开项目。',
+        segments: [{ startSec: 0, endSec: 1, text: '打开项目。' }],
+      }),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(notes[0].intro, '千寻本期讲解如何打开项目。');
+    assert.equal(notedBeforeTranscode, true);
+    assert.equal(transcoded, true);
+    assert.equal(transcribed, false);
+    assert.equal(completes[0].intro, '千寻本期讲解如何打开项目。');
+  });
 });

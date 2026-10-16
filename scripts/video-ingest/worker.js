@@ -12,6 +12,7 @@ const { pipeline } = require('node:stream/promises');
 
 const cloudbase = require('@cloudbase/node-sdk');
 
+const { transcribeSpeech, writeIntroText, resolveBailianConfig } = require('./lib/bailian');
 const { PLACEHOLDER_INTRO } = require('./lib/autoIntro');
 const {
   INTRO_SYSTEM_PROMPT,
@@ -84,6 +85,26 @@ function probeLocalMedia(mediaPath, runCommand = defaultCommandRunner) {
     needsTranscode: !assessment.compliant,
     playback: toPlaybackMetadata(probe),
   };
+}
+
+function extractSpeechAudio({
+  mediaPath,
+  workspace,
+  runCommand = defaultCommandRunner,
+}) {
+  const outputPath = path.join(workspace, 'speech.m4a');
+  const result = runCommand(
+    'ffmpeg',
+    [
+      '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
+      '-i', mediaPath,
+      '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'aac', '-b:a', '64k',
+      outputPath,
+    ],
+    { timeout: 3 * 60 * 1000, killSignal: 'SIGKILL' },
+  );
+  assertCommandSuccess(result, 'ffmpeg');
+  return outputPath;
 }
 
 function transcodeLocalMedia({
@@ -392,6 +413,8 @@ function createCatalog(app, initialTicket, adminPin) {
       authenticatedCall({ action: 'claimVideoIngest', workerId }),
     complete: (payload) =>
       authenticatedCall({ action: 'completeVideoIngest', ...payload }),
+    noteIntro: (payload) =>
+      authenticatedCall({ action: 'noteVideoIntro', ...payload }),
   };
 }
 
@@ -521,6 +544,42 @@ function createJobDependencies({
     },
     transcodeIfNeeded: (mediaPath, probe) =>
       transcodeLocalMedia({ app, mediaPath, workspace, probe, runCommand }),
+    recognizeSpeech: resolveBailianConfig(env)
+      ? async ({ localPath, title, brandName, durationSec }) => {
+        const log = (line) => stderr.write(`${line}\n`);
+        const audioPath = extractSpeechAudio({ mediaPath: localPath, workspace, runCommand });
+        log(`bailian asr: start ${resolveBailianConfig(env).apiBase}`);
+        const segments = await transcribeSpeech({
+          env,
+          audioBytes: fs.readFileSync(audioPath),
+          durationSec,
+          terms: termDocument.terms,
+        });
+        log('bailian asr: ready');
+        const intro = await writeIntroText({
+          env,
+          systemPrompt: INTRO_SYSTEM_PROMPT,
+          userPrompt: buildIntroUserPrompt({
+            title,
+            brandName,
+            transcript: joinTranscript(segments),
+            terms: termDocument.terms,
+          }),
+        });
+        const verdict = acceptIntro({
+          intro,
+          title,
+          brandName,
+          transcript: joinTranscript(segments),
+          terms: termDocument.terms,
+          brandNames: termDocument.brandNames,
+          placeholderIntro: PLACEHOLDER_INTRO,
+        });
+        log(`bailian intro: ${intro}`);
+        log(verdict.ok ? 'bailian intro accepted' : `bailian intro rejected ${verdict.reason || 'unknown'}`);
+        return { segments, intro: verdict.intro, grounded: verdict.ok === true };
+      }
+      : undefined,
     transcribe: (mediaPath) =>
       transcribeLocalFile({
         mediaPath,
@@ -582,8 +641,8 @@ function createJobDependencies({
     placeholderIntro: PLACEHOLDER_INTRO,
     now: Date.now,
     deleteCloudFiles: (fileIds) => deleteCloudFiles(app, fileIds),
-    warn: () => {
-      stderr.write('云文件清理失败\n');
+    warn: (message) => {
+      stderr.write(`${message || '云文件清理失败'}\n`);
     },
   };
 }

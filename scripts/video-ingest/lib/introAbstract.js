@@ -3,7 +3,7 @@
 const { hanSyllables, syllableSetsMatch } = require('./hanSyllables');
 
 const SUMMARY_TIMEOUT_MS = 3 * 60 * 1000;
-const MIN_INTRO_LENGTH = 40;
+const MIN_INTRO_LENGTH = 10;
 const MAX_INTRO_LENGTH = 160;
 const FORMAT_TOKENS = ['csv', 'dat', 'txt', 'xls', 'dxf'];
 const CAPABILITY_WORDS = ['有线', '无线', '一键', '蓝牙'];
@@ -17,7 +17,7 @@ const INTRO_SYSTEM_PROMPT = [
   '术语表只用来把口播里听错的词改成正确写法。',
   '术语表里有、但这期标题和口播都没提到的词不要写。',
   '不要补充这期没提到的文件格式、有线、无线、蓝牙或一键。',
-  '整段 40 到 160 字，1 到 4 句。',
+  '整段尽量不超过 100 字，不少于 10 字，1 到 4 句。',
   '不要输出标题、解释或引号。',
 ].join('');
 
@@ -185,7 +185,7 @@ function acceptIntro({
       return false;
     }
     const trimmed = term.trim();
-    if (!containsTerm(normalized, trimmed)) {
+    if (isAsciiTerm(trimmed) || !containsTerm(normalized, trimmed)) {
       return false;
     }
     if (containsTerm(source, trimmed)) {

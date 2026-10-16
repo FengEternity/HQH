@@ -1,5 +1,6 @@
 const { admin } = require('../../../utils/api');
-const { withPosterUrl, planVideoCoverUpload, cloudUploadOptions } = require('../../../utils/videoMedia');
+const { withPosterUrl, displayedPoster, planVideoCoverUpload, cloudUploadOptions } = require('../../../utils/videoMedia');
+const { captureVideoPoster } = require('../../../utils/videoPoster');
 
 function openCoverCrop(src) {
   return new Promise((resolve) => {
@@ -25,15 +26,53 @@ function openCoverCrop(src) {
 
 const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
 
-function fileExt(filePath, fallback) {
-  const match = String(filePath || '').match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
-  return (match && match[1]) || fallback;
+function cleanText(value) {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
-function formatLocalTimestamp() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+function withoutPlaceholder(value) {
+  const text = cleanText(value);
+  return text === PLACEHOLDER_INTRO ? '' : text;
+}
+
+function splitVideoCopies(video) {
+  const source = video && typeof video === 'object' ? video : {};
+  const ingest = source.ingest && typeof source.ingest === 'object' ? source.ingest : {};
+  const introSource = ingest.introSource || 'placeholder';
+  const hasTitleCopies = typeof source.humanTitle === 'string' || typeof source.autoTitle === 'string';
+  const hasIntroCopies = typeof source.humanIntro === 'string' || typeof source.autoIntro === 'string';
+  const autoTitle = typeof source.autoTitle === 'string' ? source.autoTitle.trim() : '';
+  const humanTitle = typeof source.humanTitle === 'string'
+    ? source.humanTitle.trim()
+    : (hasTitleCopies ? '' : cleanText(source.title));
+  let autoIntro = '';
+  let humanIntro = '';
+  if (hasIntroCopies) {
+    autoIntro = withoutPlaceholder(source.autoIntro);
+    humanIntro = withoutPlaceholder(source.humanIntro);
+  } else if (introSource === 'auto') {
+    autoIntro = withoutPlaceholder(source.intro);
+  } else {
+    humanIntro = withoutPlaceholder(source.intro);
+  }
+  return { autoTitle, humanTitle, autoIntro, humanIntro };
+}
+
+function effectiveTitle(humanTitle, autoTitle) {
+  return cleanText(humanTitle) || cleanText(autoTitle);
+}
+
+function effectiveIntro(humanIntro, autoIntro) {
+  return cleanText(humanIntro) || cleanText(autoIntro) || PLACEHOLDER_INTRO;
+}
+
+function titleFromVideoFile(file) {
+  const named = String((file && (file.name || file.fileName)) || '').trim();
+  if (!named) {
+    return '';
+  }
+  const base = named.split(/[/\\]/).pop();
+  return base.replace(/\.[^.]+$/, '').trim();
 }
 
 function deriveVideoUi(video) {
@@ -49,7 +88,10 @@ function deriveVideoUi(video) {
   const canPublish = phase === 'ready' && processedFile && playbackCompliant;
   let ingestHint = '';
 
-  if (phase === 'queued' || phase === 'running') {
+  const autoIntro = typeof source.autoIntro === 'string' ? source.autoIntro.trim() : '';
+  if ((phase === 'queued' || phase === 'running') && autoIntro && autoIntro !== PLACEHOLDER_INTRO) {
+    ingestHint = '简介已出，播放文件仍在处理';
+  } else if (phase === 'queued' || phase === 'running') {
     ingestHint = '等待视频处理';
   } else if (phase === 'failed') {
     ingestHint = '视频处理失败，请重试';
@@ -63,7 +105,7 @@ function deriveVideoUi(video) {
     } else if (asr === 'skipped') {
       ingestHint = '无音轨，已跳过转写';
     } else if (asr === 'ready' && introSource === 'placeholder') {
-      ingestHint = '字幕已出，简介需手写';
+      ingestHint = '自动简介未通过，请手写简介';
     } else {
       ingestHint = '待核对后上架';
     }
@@ -88,8 +130,10 @@ Page({
     id: '',
     brandId: '',
     brandName: '',
-    title: '',
-    intro: '',
+    autoTitle: '',
+    humanTitle: '',
+    autoIntro: '',
+    humanIntro: '',
     modelName: '',
     tags: '',
     coverFileId: '',
@@ -125,40 +169,70 @@ Page({
       })
       .catch((err) => wx.showToast({ title: err.message || '加载失败', icon: 'none' }));
   },
-  applyVideo(found, brandId) {
+  applyVideo(found, brandId, options) {
     const video = withPosterUrl(found);
+    const copies = splitVideoCopies(video);
+    const keepEdits = Boolean(options && options.keepEdits);
+    const poster = displayedPoster({
+      currentCoverFileId: this.data.coverFileId,
+      currentPosterUrl: this.data.posterUrl,
+      nextCoverFileId: video.coverFileId,
+      nextPosterUrl: video.posterUrl,
+    });
     this.setData(
       Object.assign(
+        keepEdits
+          ? {
+              autoTitle: copies.autoTitle,
+              autoIntro: copies.autoIntro,
+              humanTitle: this.data.humanTitle,
+              humanIntro: this.data.humanIntro,
+            }
+          : copies,
         {
-          title: video.title,
-          intro: video.intro,
-          modelName: video.modelName,
-          tags: (video.tags || []).join(','),
-          coverFileId: video.coverFileId,
+          modelName: keepEdits ? this.data.modelName : video.modelName,
+          tags: keepEdits ? this.data.tags : (video.tags || []).join(','),
+          coverFileId: poster.coverFileId,
           videoFileId: video.videoFileId,
-          posterUrl: video.posterUrl || '',
+          posterUrl: poster.posterUrl,
           brandId: video.brandId || brandId,
           id: video._id || this.data.id,
         },
         deriveVideoUi(video),
       ),
+      () => this.watchIngest(),
     );
+    if (poster.resolve) {
+      this.resolveCoverPoster(poster.coverFileId);
+    }
   },
-  reloadVideo() {
+  resolveCoverPoster(coverFileId) {
+    if (!coverFileId || typeof wx === 'undefined' || !wx.cloud || !wx.cloud.getTempFileURL) {
+      return;
+    }
+    wx.cloud.getTempFileURL({ fileList: [coverFileId] }).then((res) => {
+      const row = res && res.fileList && res.fileList[0];
+      const url = row && row.status === 0 ? String(row.tempFileURL || '').trim() : '';
+      if (url && this.data.coverFileId === coverFileId) {
+        this.setData({ posterUrl: url });
+      }
+    }).catch(() => {});
+  },
+  reloadVideo(keepEdits) {
     if (!this.data.id) {
       return Promise.resolve();
     }
     return admin({ action: 'adminGetVideo', id: this.data.id }).then((payload) => {
       if (payload && payload.video) {
-        this.applyVideo(payload.video, this.data.brandId);
+        this.applyVideo(payload.video, this.data.brandId, { keepEdits: keepEdits === true });
       }
     });
   },
-  onTitle(e) {
-    this.setData({ title: e.detail.value });
+  onHumanTitle(e) {
+    this.setData({ humanTitle: e.detail.value });
   },
-  onIntro(e) {
-    this.setData({ intro: e.detail.value });
+  onHumanIntro(e) {
+    this.setData({ humanIntro: e.detail.value });
   },
   onModel(e) {
     this.setData({ modelName: e.detail.value });
@@ -166,38 +240,24 @@ Page({
   onTags(e) {
     this.setData({ tags: e.detail.value });
   },
-  applyUploadShell() {
-    const patch = {};
-    if (!String(this.data.title || '').trim()) {
-      patch.title = `讲解${formatLocalTimestamp()}`;
-    }
-    if (!String(this.data.intro || '').trim()) {
-      patch.intro = PLACEHOLDER_INTRO;
-    }
-    if (!Object.keys(patch).length) {
-      return Promise.resolve(false);
-    }
-    return new Promise((resolve) => {
-      this.setData(patch, () => resolve(true));
-    });
-  },
   ensureSaved() {
-    return this.applyUploadShell().then((patched) => {
-      if (!this.data.id) {
-        return this.persist(true);
-      }
-      if (patched) {
-        return this.persist(true).then(() => this.data.id);
-      }
-      return this.data.id;
-    });
+    if (!this.data.id) {
+      return this.persist(true);
+    }
+    return Promise.resolve(this.data.id);
   },
   pickCoverPhoto() {
     wx.chooseMedia({
       count: 1,
-      mediaType: ['image'],
+      mediaType: ['video'],
+      sourceType: ['album'],
       success: (res) => {
-        const filePath = res.tempFiles[0].tempFilePath;
+        const picked = res.tempFiles && res.tempFiles[0];
+        const filePath = picked && picked.thumbTempFilePath;
+        if (!filePath) {
+          wx.showToast({ title: '未获取到视频缩略图', icon: 'none' });
+          return;
+        }
         openCoverCrop(filePath)
           .then((croppedPath) => {
             if (!croppedPath) {
@@ -205,13 +265,15 @@ Page({
             }
             return this.ensureSaved()
               .then(() => this.uploadCloudFile('cover', croppedPath, 'jpg'))
-              .then((fileID) => {
+              .then((fileID) => new Promise((resolve, reject) => {
                 this.setData({
                   coverFileId: fileID,
                   posterUrl: croppedPath,
                   coverHint: '',
+                }, () => {
+                  this.persist(true).then(resolve).catch(reject);
                 });
-              });
+              }));
           })
           .catch((err) => wx.showToast({ title: err.message || '封面失败', icon: 'none' }));
       },
@@ -231,20 +293,83 @@ Page({
         throw new Error('上传失败');
       });
   },
-  uploadVideo() {
-    wx.chooseMedia({
-      count: 1,
-      mediaType: ['video'],
-      success: (res) => {
-        const file = res.tempFiles[0];
-        const plan = planVideoCoverUpload({
-          coverFileId: this.data.coverFileId,
-          thumbTempFilePath: file.thumbTempFilePath,
+  onShow() {
+    this.watchIngest();
+  },
+  onHide() {
+    this.stopWatchIngest();
+  },
+  onUnload() {
+    this.stopWatchIngest();
+  },
+  watchIngest() {
+    if (!this.data.id || !this.data.ingestBusy) {
+      this.stopWatchIngest();
+      return;
+    }
+    if (this.ingestTimer) {
+      return;
+    }
+    this.ingestTimer = setInterval(() => {
+      this.reloadVideo(true);
+    }, 5000);
+  },
+  stopWatchIngest() {
+    if (this.ingestTimer) {
+      clearInterval(this.ingestTimer);
+      this.ingestTimer = null;
+    }
+  },
+  loadPosterCanvas() {
+    return new Promise((resolve) => {
+      wx.createSelectorQuery()
+        .in(this)
+        .select('#video-poster-canvas')
+        .fields({ node: true, size: true })
+        .exec((res) => resolve(res && res[0] && res[0].node));
+    });
+  },
+  readVideoPoster(filePath) {
+    return captureVideoPoster({
+      filePath,
+      createDecoder: () => (
+        typeof wx.createVideoDecoder === 'function' ? wx.createVideoDecoder() : null
+      ),
+      loadCanvas: () => this.loadPosterCanvas(),
+      exportCanvas: (canvas) => new Promise((resolve) => {
+        wx.canvasToTempFilePath({
+          canvas,
+          fileType: 'jpg',
+          quality: 0.92,
+          success: (result) => resolve((result && result.tempFilePath) || ''),
+          fail: () => resolve(''),
         });
-        this.ensureSaved()
+      }),
+    });
+  },
+  uploadVideo() {
+    wx.chooseMessageFile({
+      count: 1,
+      type: 'video',
+      success: (res) => {
+        const picked = res.tempFiles[0];
+        const file = {
+          tempFilePath: picked.path,
+          name: picked.name,
+        };
+        const posterTask = this.data.coverFileId
+          ? Promise.resolve('')
+          : this.readVideoPoster(file.tempFilePath);
+        this.setData({ autoTitle: titleFromVideoFile(file) }, () => {
+          this.ensureSaved()
           .then(() => this.uploadCloudFile('video', file.tempFilePath, 'mp4'))
-          .then((fileID) => {
+          .then((fileID) => posterTask.then((thumb) => ({ fileID, thumb })))
+          .then(({ fileID, thumb }) => {
             this.setData({ videoFileId: fileID });
+            const plan = planVideoCoverUpload({
+              coverFileId: this.data.coverFileId,
+              thumbTempFilePath: thumb,
+            });
             if (plan.action === 'keep') {
               return this.persistUploadedVideo().then(() => 'video');
             }
@@ -255,14 +380,15 @@ Page({
               if (!croppedPath) {
                 return this.persist(true).then(() => 'crop_cancelled');
               }
-              return this.uploadCloudFile('cover', croppedPath, 'jpg').then((coverId) => {
+              return this.uploadCloudFile('cover', croppedPath, 'jpg').then((coverId) => new Promise((resolve, reject) => {
                 this.setData({
                   coverFileId: coverId,
                   posterUrl: croppedPath,
                   coverHint: '未选手动封面，已用视频首帧裁剪',
+                }, () => {
+                  this.persist(true).then(() => resolve('cover')).catch(reject);
                 });
-                return this.persist(true).then(() => 'cover');
-              });
+              }));
             });
           })
           .then((kind) => this.reloadVideo().then(() => kind))
@@ -282,6 +408,7 @@ Page({
             wx.showToast({ title: '视频已保存' });
           })
           .catch((err) => wx.showToast({ title: err.message || '上传失败', icon: 'none' }));
+        });
       },
     });
   },
@@ -314,8 +441,11 @@ Page({
     return admin({
       action: 'upsertVideo',
       id: this.data.id || undefined,
-      title: this.data.title,
-      intro: this.data.intro,
+      title: effectiveTitle(this.data.humanTitle, this.data.autoTitle),
+      intro: effectiveIntro(this.data.humanIntro, this.data.autoIntro),
+      autoTitle: this.data.autoTitle,
+      humanTitle: this.data.humanTitle,
+      humanIntro: this.data.humanIntro,
       brandId: this.data.brandId,
       modelName: this.data.modelName,
       tags: this.data.tags,

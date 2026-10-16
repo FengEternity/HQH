@@ -2,11 +2,16 @@
 
 const {
   CLAIM_TIMEOUT_MS,
-  isOperatorIntroEdit,
+  effectiveIntro,
+  effectiveTitle,
+  introSourceFromCopies,
   normalizeIngest,
   planAdminSave,
+  planRunningIntro,
   planWorkerComplete,
   resolveNextVideoFileId,
+  resolveStoredCopies,
+  splitVideoCopies,
 } = require('./videoIngest');
 const {
   canEnqueue,
@@ -79,10 +84,13 @@ function hasControlledTranscript(event) {
 function applyCompleteToVideo({ prevData, complete, now }) {
   const previous = prevData || {};
   const prevIngest = normalizeIngest(previous.ingest);
+  const copies = splitVideoCopies(previous);
   const planned = planWorkerComplete({
     prevIngest,
     prevIntro: typeof previous.intro === 'string' ? previous.intro : '',
     prevIntroSource: prevIngest.introSource,
+    prevHumanIntro: copies.humanIntro,
+    prevAutoIntro: copies.autoIntro,
     complete,
     now,
   });
@@ -124,6 +132,8 @@ function applyCompleteToVideo({ prevData, complete, now }) {
   return {
     ingest,
     intro: planned.intro,
+    autoIntro: planned.autoIntro,
+    humanIntro: planned.humanIntro,
     transcriptSegments: knowledge.transcriptSegments,
     transcript: knowledge.transcript,
     durationSec: mediaMeta.durationSec,
@@ -191,29 +201,30 @@ function createVideoIngestActions({
   }
 
   async function saveVideo({ event, basePayload }) {
-    let operatorChangedIntro;
     const saved = await repository.runTransaction(async (transaction) => {
       const prevData = event.id ? await transaction.getVideo(event.id) : null;
       if (event.id && !prevData) {
         throw notFound();
       }
-      const submittedIntro = String(event.intro || '').trim();
-      if (operatorChangedIntro === undefined) {
-        operatorChangedIntro = isOperatorIntroEdit({
-          prevIntro: prevData ? String(prevData.intro || '') : '',
-          submittedIntro,
-        });
-      }
-      const intro =
-        prevData && !operatorChangedIntro
-          ? String(prevData.intro || '')
-          : submittedIntro;
       const nextVideoFileId = resolveNextVideoFileId({
         prevVideoFileId: (prevData && prevData.videoFileId) || '',
         submittedVideoFileId: String(event.videoFileId || ''),
         replaceVideo: event.replaceVideo === true,
       });
       const timestamp = now();
+      const copies = resolveStoredCopies({
+        prevData,
+        event,
+        baseTitle: basePayload && basePayload.title,
+      });
+      if (
+        prevData &&
+        nextVideoFileId &&
+        nextVideoFileId !== (prevData.videoFileId || '')
+      ) {
+        copies.autoIntro = '';
+      }
+      const intro = effectiveIntro(copies.humanIntro, copies.autoIntro);
       const planned = buildUpsertIngestPatch({
         prevData,
         nextVideoFileId,
@@ -221,6 +232,7 @@ function createVideoIngestActions({
         controlledTranscript: hasControlledTranscript(event),
         now: timestamp,
       });
+      planned.ingest.introSource = introSourceFromCopies(copies.humanIntro, copies.autoIntro);
       const previousForMedia = planned.clearPlayback
         ? {
             ...prevData,
@@ -255,6 +267,11 @@ function createVideoIngestActions({
       });
       const payload = {
         ...basePayload,
+        title: effectiveTitle(copies.humanTitle, copies.autoTitle),
+        autoTitle: copies.autoTitle,
+        humanTitle: copies.humanTitle,
+        autoIntro: copies.autoIntro,
+        humanIntro: copies.humanIntro,
         intro,
         coverFileId:
           event.coverFileId || (prevData && prevData.coverFileId) || '',
@@ -422,6 +439,51 @@ function createVideoIngestActions({
     });
   }
 
+  async function noteRunningIntro({ videoId, mediaRevision, intro }) {
+    if (!videoId) {
+      throw badInput('videoId 必填');
+    }
+    const candidate = await repository.findRunningJob(videoId, mediaRevision);
+    if (!candidate) {
+      throw badInput('运行中的任务不存在');
+    }
+    await repository.runTransaction(async (transaction) => {
+      const video = await transaction.getVideo(videoId);
+      if (!video) {
+        throw notFound();
+      }
+      const ingest = normalizeIngest(video.ingest);
+      if (ingest.phase !== 'running' || ingest.mediaRevision !== Number(mediaRevision)) {
+        throw badInput('任务不在处理中');
+      }
+      const copies = splitVideoCopies(video);
+      const planned = planRunningIntro({
+        prevIngest: ingest,
+        prevIntro: typeof video.intro === 'string' ? video.intro : '',
+        prevIntroSource: ingest.introSource,
+        prevHumanIntro: copies.humanIntro,
+        prevAutoIntro: copies.autoIntro,
+        intro,
+      });
+      if (!planned) {
+        throw badInput('简介为空');
+      }
+      const timestamp = now();
+      const patch = {
+        intro: planned.intro,
+        autoIntro: planned.autoIntro,
+        humanIntro: planned.humanIntro,
+        ingest: planned.ingest,
+      };
+      await transaction.updateVideo(videoId, {
+        ...patch,
+        searchBlob: buildSearchBlob({ ...video, ...patch }),
+        updatedAt: timestamp,
+      });
+    });
+    return { ok: true, videoId };
+  }
+
   async function completeVideo(complete) {
     if (!complete.videoId) {
       throw badInput('videoId 必填');
@@ -486,6 +548,7 @@ function createVideoIngestActions({
   return {
     claimVideo,
     completeVideo,
+    noteRunningIntro,
     deleteVideo,
     enqueueVideo,
     enqueueNoncompliantVideos,

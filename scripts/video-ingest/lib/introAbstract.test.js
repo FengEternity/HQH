@@ -53,6 +53,14 @@ describe('acceptIntro', () => {
     assert.equal(hasHomophone('获取到当地中央子务线点击确认', '中央子午线'), true);
   });
 
+  it('短于十字拒绝，一句十字以上仍接受', () => {
+    const example = examples[0];
+    assert.equal(acceptExample(example, '千寻导入。').ok, false);
+    const verdict = acceptExample(example, '本期讲解千寻数据导入。');
+    assert.equal(verdict.ok, true);
+    assert.equal(verdict.reason, undefined);
+  });
+
   it('超过四句但未超过一百六十字时仍接受', () => {
     const example = examples[2];
     const intro = example.intro.replace(/，/g, '。');
@@ -72,6 +80,35 @@ describe('acceptIntro', () => {
     ]) {
       assert.equal(acceptExample(example, intro).ok, false, intro);
     }
+  });
+
+  it('英文术语不因口播和标题里没有原词而拒收', () => {
+    const transcript = '今天学习使用中海达二 tk 进行点放样，选择放样点，固定解下查看杆高与手部是否一致，然后实景放样。';
+    const intro = '中海达RTK演示如何添加放样点并完成点放样。固定解下确认杆高与手簿一致。';
+    const verdict = acceptIntro({
+      intro,
+      title: '点放样',
+      brandName: '中海达',
+      transcript,
+      terms: termsDocument.terms,
+      brandNames: termsDocument.brandNames,
+      placeholderIntro: PLACEHOLDER_INTRO,
+    });
+    assert.equal(verdict.ok, true, verdict.reason);
+  });
+
+  it('中文术语仍须在标题、品牌或口播里有依据', () => {
+    const verdict = acceptIntro({
+      intro: '中海达本期讲解如何使用手簿完成点放样。',
+      title: '点放样',
+      brandName: '中海达',
+      transcript: '今天讲解点放样，先选择放样点。',
+      terms: termsDocument.terms,
+      brandNames: termsDocument.brandNames,
+      placeholderIntro: PLACEHOLDER_INTRO,
+    });
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.reason, 'term 手簿');
   });
 
   it('去掉模型加上的前缀后仍可验收', () => {
@@ -96,5 +133,6 @@ describe('buildIntroUserPrompt', () => {
     assert.equal(prompt.includes(example.transcript), true);
     assert.equal(prompt.includes(PLACEHOLDER_INTRO), false);
     assert.equal(INTRO_SYSTEM_PROMPT.includes('主要操作'), true);
+    assert.equal(INTRO_SYSTEM_PROMPT.includes('尽量不超过 100 字'), true);
   });
 });

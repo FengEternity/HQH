@@ -9,6 +9,7 @@ const {
   isOperatorIntroEdit,
   planAdminSave,
   planWorkerComplete,
+  planRunningIntro,
   resolveNextVideoFileId,
 } = require('./videoIngest');
 
@@ -457,6 +458,37 @@ describe('isIngestBusy', () => {
   });
 });
 
+describe('planRunningIntro', () => {
+  it('keeps the job running and stores the generated intro', () => {
+    const out = planRunningIntro({
+      prevIngest: { phase: 'running', mediaRevision: 2, introSource: 'placeholder' },
+      prevIntro: PLACEHOLDER_INTRO,
+      prevIntroSource: 'placeholder',
+      prevHumanIntro: '',
+      prevAutoIntro: '',
+      intro: '千寻本期讲解如何打开项目。',
+    });
+    assert.equal(out.ingest.phase, 'running');
+    assert.equal(out.autoIntro, '千寻本期讲解如何打开项目。');
+    assert.equal(out.intro, '千寻本期讲解如何打开项目。');
+    assert.equal(out.ingest.introSource, 'auto');
+  });
+
+  it('keeps a handwritten intro in front of the generated copy', () => {
+    const out = planRunningIntro({
+      prevIngest: { phase: 'running', introSource: 'human' },
+      prevIntro: '手写简介。',
+      prevIntroSource: 'human',
+      prevHumanIntro: '手写简介。',
+      prevAutoIntro: '',
+      intro: '千寻本期讲解如何打开项目。',
+    });
+    assert.equal(out.intro, '手写简介。');
+    assert.equal(out.autoIntro, '千寻本期讲解如何打开项目。');
+    assert.equal(out.humanIntro, '手写简介。');
+  });
+});
+
 describe('planWorkerComplete', () => {
   const base = {
     phase: 'running',
@@ -501,6 +533,8 @@ describe('planWorkerComplete', () => {
     });
     assert.equal(out.applyIntro, false);
     assert.equal(out.intro, '人手写。');
+    assert.equal(out.autoIntro, '自动生成应被忽略。');
+    assert.equal(out.humanIntro, '人手写。');
     assert.equal(out.ingest.introSource, 'human');
     assert.equal(out.ingest.phase, 'ready');
     assert.equal(out.ingest.asr, 'ready');
