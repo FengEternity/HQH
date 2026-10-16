@@ -10,8 +10,11 @@ const {
   csAdminReply,
   csAdminClose,
   csRegisterNotify,
+  csUnregisterNotify,
+  readNotifyStatus,
+  deliverAdminNotifications,
 } = require('./lib/csStore');
-const { notifyNewTicket, notifyReplied, readNewTicketTemplateId } = require('./lib/notify');
+const { notifyReplied, readNewTicketTemplateId } = require('./lib/notify');
 const { verifyTicket } = require('./lib/ticket');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
@@ -66,14 +69,12 @@ function sendSubscribeMessage(payload) {
   return cloud.openapi.subscribeMessage.send(payload);
 }
 
-async function notifyAdmins(now) {
-  const result = await db.collection('admin_notify_subscribers').limit(100).get();
-  return notifyNewTicket({
-    send: sendSubscribeMessage,
-    templateId: process.env.CS_NEW_TICKET_TPL,
-    tousers: (result.data || []).map((item) => item.openid).filter(Boolean),
-    page: 'pages/admin/inbox/inbox',
+function notifyAdmins(now) {
+  return deliverAdminNotifications(db, {
+    templateId: readNewTicketTemplateId(process.env),
     now,
+    page: 'pages/admin/inbox/inbox',
+    send: sendSubscribeMessage,
   });
 }
 
@@ -140,10 +141,20 @@ async function dispatch(event) {
       return csAdminClose(db, { threadId: event.threadId, now });
     case 'csRegisterNotify':
       requireAdmin(event.ticket);
-      return csRegisterNotify(db, { openid, now });
+      return csRegisterNotify(db, {
+        openid,
+        templateId: readNewTicketTemplateId(process.env),
+        now,
+      });
+    case 'csUnregisterNotify':
+      requireAdmin(event.ticket);
+      return csUnregisterNotify(db, { openid, now });
     case 'csNotifyConfig':
       requireAdmin(event.ticket);
-      return { ok: true, newTicketTplId: readNewTicketTemplateId(process.env) };
+      return Object.assign(
+        { ok: true, newTicketTplId: readNewTicketTemplateId(process.env) },
+        await readNotifyStatus(db, { openid }),
+      );
     default:
       throw codedError('UNKNOWN_ACTION');
   }
