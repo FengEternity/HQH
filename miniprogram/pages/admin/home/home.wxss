@@ -1,0 +1,16 @@
+.hub-item-notify {
+  display: block;
+}
+
+.notify-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.notify-stop {
+  margin-top: 12rpx;
+  color: #3f3f46;
+  font-size: 26rpx;
+}

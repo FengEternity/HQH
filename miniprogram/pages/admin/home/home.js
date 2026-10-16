@@ -3,13 +3,27 @@ const { contact } = require('../../../config.js');
 const release = require('../../../data/appRelease');
 const { normalizeDoc, envLabel } = require('../../../utils/appRelease');
 
+function notifyLabelText(templateId, enabled, quota) {
+  if (!templateId) {
+    return '未配置';
+  }
+  if (!enabled) {
+    return '未开启';
+  }
+  if (Number(quota) > 0) {
+    return '还可接收 ' + quota + ' 条';
+  }
+  return '额度已用完';
+}
+
 Page({
   data: {
     pendingLabel: '暂无待处理',
     aboutHint: '',
     ingestChip: '查看进度',
     newTicketTplId: (contact && contact.newTicketTplId) || '',
-    notifyLabel: '去绑定',
+    notifyLabel: '未开启',
+    notifyEnabled: false,
   },
   onShow() {
     const doc = normalizeDoc(release);
@@ -22,12 +36,18 @@ Page({
     this.loadNotifyTemplate();
     this.loadProgress();
   },
+  applyNotify(templateId, enabled, quota) {
+    this.setData({
+      newTicketTplId: templateId || '',
+      notifyEnabled: Boolean(enabled),
+      notifyLabel: notifyLabelText(templateId, enabled, quota),
+    });
+  },
   loadNotifyTemplate() {
     return ticketingAdmin({ action: 'csNotifyConfig' })
       .then((result) => {
-        const templateId = result && result.newTicketTplId;
-        if (templateId) {
-          this.setData({ newTicketTplId: templateId });
+        if (result) {
+          this.applyNotify(result.newTicketTplId, result.enabled, result.quota);
         }
       })
       .catch(() => {});
@@ -70,13 +90,21 @@ Page({
         return;
       }
       settled = true;
-      const accepted = result && result[templateId] === 'accept';
-      this.setData({ notifyLabel: accepted ? '已允许' : '未允许' });
-      wx.showToast({
-        title: accepted ? '已绑定，可接收一条新工单通知' : '未允许，这个微信收不到通知',
-        icon: 'none',
-      });
-      return ticketingAdmin({ action: 'csRegisterNotify' }).catch(() => {});
+      if (!result || result[templateId] !== 'accept') {
+        wx.showToast({ title: '未允许，这个微信收不到通知', icon: 'none' });
+        return;
+      }
+      return ticketingAdmin({ action: 'csRegisterNotify' })
+        .then((registered) => {
+          this.applyNotify(templateId, registered.enabled, registered.quota);
+          wx.showToast({
+            title: '已开启，还可接收 ' + registered.quota + ' 条',
+            icon: 'none',
+          });
+        })
+        .catch(() => {
+          wx.showToast({ title: '通知状态更新失败', icon: 'none' });
+        });
     };
     try {
       let pending;
@@ -90,15 +118,21 @@ Page({
         },
       });
       if (request && typeof request.then === 'function') {
-        return request.then(
-          (result) => finish(result),
-          () => finish(null),
-        );
+        return request.then((result) => finish(result), () => finish(null));
       }
       return pending;
     } catch (err) {
       return finish(null);
     }
+  },
+  stopNotify() {
+    return ticketingAdmin({ action: 'csUnregisterNotify' })
+      .then((result) => {
+        this.applyNotify(this.data.newTicketTplId, result.enabled, result.quota);
+      })
+      .catch(() => {
+        wx.showToast({ title: '停止失败', icon: 'none' });
+      });
   },
   openAbout() {
     wx.navigateTo({ url: '/pages/about/about?staff=1' });
@@ -129,3 +163,5 @@ Page({
       });
   },
 });
+
+module.exports = { notifyLabelText };
