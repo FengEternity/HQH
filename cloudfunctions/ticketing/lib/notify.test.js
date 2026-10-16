@@ -2,7 +2,13 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { notifyNewTicket, notifyReplied, readNewTicketTemplateId } = require('./notify');
+const {
+  notifyNewTicket,
+  notifyReplied,
+  readNewTicketTemplateId,
+  subscribeErrorCode,
+  newTicketData,
+} = require('./notify');
 
 describe('notify', () => {
   it('reads the new-ticket template id from the cloud env', () => {
@@ -57,6 +63,20 @@ describe('notify', () => {
     assert.equal(sent[1].data.phrase17.value, '已回复');
     assert.equal(sent[1].data.time16.value, time);
     assert.equal(sent[1].data.time3.value, time);
+  });
+
+  it('recognizes 43101 from either errCode or errMsg', () => {
+    assert.equal(subscribeErrorCode({ errCode: 43101 }), 43101);
+    assert.equal(subscribeErrorCode({ errCode: '43101' }), 43101);
+    assert.equal(subscribeErrorCode(new Error('errCode: 43101')), 43101);
+    assert.equal(subscribeErrorCode({ errCode: 40037 }), 40037);
+    assert.equal(subscribeErrorCode(new Error('quota')), 0);
+  });
+
+  it('builds the same new-ticket card used by notifyNewTicket', () => {
+    const now = Date.parse('2026-09-20T12:34:00+08:00');
+    assert.equal(newTicketData(now).phrase17.value, '待处理');
+    assert.equal(newTicketData(now).time16.value, '2026年9月20日 12:34');
   });
 
   it('keeps ok when send throws', async () => {

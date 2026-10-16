@@ -10,6 +10,33 @@ function formatLocalTime(ms) {
   return `${y}年${mo}月${day}日 ${h}:${mi}`;
 }
 
+function normalizeCode(value) {
+  if (value === undefined || value === null || value === '' || value === 0 || value === '0') {
+    return 0;
+  }
+  const code = Number(value);
+  return Number.isFinite(code) ? code : 0;
+}
+
+function subscribeErrorCode(error) {
+  if (!error || typeof error !== 'object') {
+    return 0;
+  }
+  const direct = error.errCode !== undefined ? error.errCode : error.errcode;
+  if (normalizeCode(direct) === 43101) {
+    return 43101;
+  }
+  const text = String(error.errMsg || error.message || '');
+  if (/(?:^|\D)43101(?:\D|$)/.test(text)) {
+    return 43101;
+  }
+  return normalizeCode(direct);
+}
+
+function newTicketData(now) {
+  return ticketCard('待处理', now);
+}
+
 function ticketCard(status, now) {
   const time = formatLocalTime(now);
   return {
@@ -67,4 +94,10 @@ async function notifyReplied({ send, templateId, touser, page, now }) {
   });
 }
 
-module.exports = { notifyNewTicket, notifyReplied, readNewTicketTemplateId };
+module.exports = {
+  notifyNewTicket,
+  notifyReplied,
+  readNewTicketTemplateId,
+  subscribeErrorCode,
+  newTicketData,
+};

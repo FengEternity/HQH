@@ -15,6 +15,7 @@ const {
   listNotifyCandidates,
   reserveNotifySend,
   finishNotifySend,
+  deliverAdminNotifications,
 } = require('./csStore');
 
 function makeMemoryDb({ failFirstConditionalUpdate = false, rejectOrderBy = false } = {}) {
@@ -583,6 +584,78 @@ test('同一条额度只能预扣一次，并按发送结果结算', async () =>
   assert.equal(saved.data.enabled, true);
   assert.equal(saved.data.lastResult, 'sent');
   assert.equal(saved.data.lastErrorCode, '');
+});
+
+test('没有模板时不发送', async () => {
+  const db = makeMemoryDb();
+  let calls = 0;
+  const result = await deliverAdminNotifications(db, {
+    templateId: '',
+    now: 1,
+    page: 'pages/admin/inbox/inbox',
+    send: async () => {
+      calls += 1;
+    },
+  });
+  assert.equal(calls, 0);
+  assert.deepEqual(result, { ok: true, sent: 0, skipped: 0 });
+});
+
+test('只向有额度的当前模板发送，并按结果结算', async () => {
+  const db = makeMemoryDb();
+  await csRegisterNotify(db, { openid: 'ready', templateId: 'tpl', now: 1 });
+  await csRegisterNotify(db, { openid: 'ready', templateId: 'tpl', now: 2 });
+  await csRegisterNotify(db, { openid: 'stopped', templateId: 'tpl', now: 3 });
+  await csUnregisterNotify(db, { openid: 'stopped', now: 4 });
+  await db.collection('admin_notify_subscribers').add({
+    data: { openid: 'legacy', createdAt: 1, updatedAt: 1 },
+  });
+  const sent = [];
+  const result = await deliverAdminNotifications(db, {
+    templateId: 'tpl',
+    now: 5,
+    page: 'pages/admin/inbox/inbox',
+    send: async (payload) => {
+      sent.push(payload.touser);
+      if (payload.touser === 'ready') {
+        return {};
+      }
+    },
+  });
+
+  assert.deepEqual(sent, ['ready']);
+  assert.deepEqual(result, { ok: true, sent: 1, skipped: 0 });
+  assert.equal((await readNotifyStatus(db, { openid: 'ready' })).quota, 1);
+});
+
+test('43101 归零，其他失败退回额度', async () => {
+  const db = makeMemoryDb();
+  await csRegisterNotify(db, { openid: 'gone', templateId: 'tpl', now: 1 });
+  await csRegisterNotify(db, { openid: 'retry', templateId: 'tpl', now: 2 });
+  await deliverAdminNotifications(db, {
+    templateId: 'tpl',
+    now: 3,
+    page: 'pages/admin/inbox/inbox',
+    send: async (payload) => {
+      if (payload.touser === 'gone') {
+        const error = new Error('user refuse');
+        error.errCode = 43101;
+        throw error;
+      }
+      const error = new Error('bad template');
+      error.errCode = 40037;
+      throw error;
+    },
+  });
+
+  assert.deepEqual(await readNotifyStatus(db, { openid: 'gone' }), {
+    enabled: true,
+    quota: 0,
+  });
+  assert.deepEqual(await readNotifyStatus(db, { openid: 'retry' }), {
+    enabled: true,
+    quota: 1,
+  });
 });
 
 module.exports = { makeMemoryDb };

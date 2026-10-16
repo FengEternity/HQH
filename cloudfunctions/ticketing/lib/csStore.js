@@ -1,5 +1,6 @@
 'use strict';
 
+const { newTicketData, subscribeErrorCode } = require('./notify');
 const { welcome, welcomeActions } = require('./contactCopy');
 const { assertUserText } = require('./csFaq');
 const { planSend } = require('./csSendFlow');
@@ -408,6 +409,62 @@ async function finishNotifySend(db, { id, outcome, errorCode, now }) {
   throw codedError('BAD_INPUT');
 }
 
+async function deliverAdminNotifications(db, { templateId, now, page, send }) {
+  const candidates = await listNotifyCandidates(db, { templateId });
+  let sent = 0;
+  let skipped = 0;
+  for (const candidate of candidates) {
+    const reserved = await reserveNotifySend(db, {
+      id: candidate._id,
+      templateId,
+      now,
+    });
+    if (!reserved) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const result = await send({
+        touser: candidate.openid,
+        templateId,
+        page,
+        data: newTicketData(now),
+      });
+      const code = subscribeErrorCode(result);
+      if (code === 43101) {
+        await finishNotifySend(db, {
+          id: candidate._id,
+          outcome: 'unsubscribed',
+          errorCode: 43101,
+          now,
+        });
+        skipped += 1;
+      } else if (code) {
+        await finishNotifySend(db, {
+          id: candidate._id,
+          outcome: 'failed',
+          errorCode: code,
+          now,
+        });
+        skipped += 1;
+      } else {
+        await finishNotifySend(db, { id: candidate._id, outcome: 'sent', now });
+        sent += 1;
+      }
+    } catch (error) {
+      const code = subscribeErrorCode(error);
+      await finishNotifySend(db, {
+        id: candidate._id,
+        outcome: code === 43101 ? 'unsubscribed' : 'failed',
+        errorCode: code,
+        now,
+      });
+      skipped += 1;
+    }
+  }
+  return { ok: true, sent, skipped };
+}
+
 module.exports = {
   csHistory,
   csSend,
@@ -422,4 +479,5 @@ module.exports = {
   listNotifyCandidates,
   reserveNotifySend,
   finishNotifySend,
+  deliverAdminNotifications,
 };
