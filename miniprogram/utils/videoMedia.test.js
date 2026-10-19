@@ -8,7 +8,6 @@ const {
   withPosterUrl,
   withPosterUrls,
   displayedPoster,
-  planVideoCoverUpload,
   cloudUploadOptions,
   VIDEO_UPLOAD_TIMEOUT_MS,
 } = require('./videoMedia');
@@ -94,29 +93,6 @@ describe('displayedPoster', () => {
       posterUrl: '',
       resolve: true,
     });
-  });
-});
-
-describe('planVideoCoverUpload', () => {
-  it('keeps existing cover and skips thumb upload', () => {
-    assert.deepEqual(
-      planVideoCoverUpload({ coverFileId: 'cloud://c', thumbTempFilePath: '/tmp/t.jpg' }),
-      { action: 'keep' },
-    );
-  });
-
-  it('uploads thumb when no cover yet', () => {
-    assert.deepEqual(
-      planVideoCoverUpload({ coverFileId: '', thumbTempFilePath: '/tmp/t.jpg' }),
-      { action: 'upload_thumb', path: '/tmp/t.jpg' },
-    );
-  });
-
-  it('reports missing thumb when WeChat did not provide one', () => {
-    assert.deepEqual(
-      planVideoCoverUpload({ coverFileId: '', thumbTempFilePath: '' }),
-      { action: 'missing_thumb' },
-    );
   });
 });
 

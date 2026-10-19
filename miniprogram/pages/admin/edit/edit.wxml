@@ -101,7 +101,7 @@
         <view wx:if="{{posterUrl}}" class="cover-frame-badge">更换封面</view>
       </view>
       <view wx:if="{{coverHint}}" class="muted" style="margin-top: 12rpx">{{coverHint}}</view>
-      <view class="muted" style="margin-top: 12rpx">点封面后选择一条视频，用它的画面做 16:9 裁剪，可拖动缩放后再确认。</view>
+      <view class="muted" style="margin-top: 12rpx">上传视频后会在后台生成 16:9 封面；也可点封面选择画面并手动裁剪，人工封面不会被覆盖。</view>
     </view>
     <view class="media-row" bindtap="uploadVideo">
       <view>
@@ -115,5 +115,4 @@
   <view class="form-footer">
     <view class="btn" bindtap="save">保存</view>
   </view>
-  <canvas type="2d" id="video-poster-canvas" style="position:fixed;left:-9999px;top:0;width:10px;height:10px;"></canvas>
 </view>

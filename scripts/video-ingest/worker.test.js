@@ -9,6 +9,8 @@ const { PassThrough } = require('node:stream');
 const { describe, it } = require('node:test');
 
 const {
+  createJobDependencies,
+  createVideoCover,
   deleteCloudFiles,
   downloadVideoFile,
   probeLocalMedia,
@@ -41,6 +43,18 @@ function writePlaybackMp4(filePath) {
 }
 
 describe('worker 生产胶水', () => {
+  it('生产任务依赖包含基于最终播放文件的自动封面生成器', () => {
+    const deps = createJobDependencies({
+      app: {},
+      catalog: {},
+      workerId: 'worker',
+      workspace: '/tmp/workspace',
+      env: {},
+    });
+
+    assert.equal(typeof deps.createCover, 'function');
+  });
+
   it('云文件逐项删除失败时抛出不含 fileID 的固定错误', async () => {
     const privateFileId = 'cloud://private-old-video';
     await assert.rejects(
@@ -703,6 +717,48 @@ describe('worker 生产胶水', () => {
           return { status: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
         },
       });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('自动封面按 16:9 抽帧，首帧失败时改试第 3 秒并上传', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-cover-test-'));
+    const seeks = [];
+    try {
+      const mediaPath = path.join(root, 'input.mp4');
+      fs.writeFileSync(mediaPath, 'video');
+      const fileId = await createVideoCover({
+        app: {
+          uploadFile: async ({ cloudPath, fileContent }) => {
+            assert.match(cloudPath, /^cover\/auto\/.+\.jpg$/);
+            const completed = once(fileContent, 'end');
+            fileContent.resume();
+            await completed;
+            return { fileID: 'cloud://auto-cover' };
+          },
+        },
+        mediaPath,
+        workspace: root,
+        durationSec: 10,
+        runCommand: (command, args, options) => {
+          assert.equal(command, 'ffmpeg');
+          seeks.push(Number(args[args.indexOf('-ss') + 1]));
+          assert.equal(
+            args[args.indexOf('-vf') + 1],
+            'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720',
+          );
+          assert.equal(options.timeout > 0, true);
+          if (seeks.length === 1) {
+            return { status: 1, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+          }
+          fs.writeFileSync(path.join(root, 'auto-cover.jpg'), 'cover');
+          return { status: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+        },
+      });
+
+      assert.equal(fileId, 'cloud://auto-cover');
+      assert.deepEqual(seeks, [1, 3]);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

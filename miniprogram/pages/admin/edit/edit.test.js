@@ -145,3 +145,55 @@ describe('deriveVideoUi', () => {
     assert.equal(data.humanIntro, '人工简介');
   });
 });
+
+describe('uploadVideo', () => {
+  it('只用会话文件名填自动标题，不在客户端解码视频', async () => {
+    const originalWx = global.wx;
+    let resolveSaved;
+    const saved = new Promise((resolve) => {
+      resolveSaved = resolve;
+    });
+    global.wx = {
+      chooseMessageFile({ success }) {
+        success({
+          tempFiles: [{ path: 'wxfile://video.mp4', name: '千寻数据导入.mp4' }],
+        });
+      },
+      createVideoDecoder() {
+        throw new Error('客户端不应解码视频');
+      },
+      showToast({ title }) {
+        if (/视频已保存/.test(title)) {
+          resolveSaved();
+        }
+      },
+    };
+    const context = {
+      data: {
+        autoTitle: '',
+        coverFileId: '',
+        videoFileId: '',
+      },
+      setData(patch, callback) {
+        this.data = { ...this.data, ...patch };
+        if (callback) {
+          callback();
+        }
+      },
+      ensureSaved: async () => 'v1',
+      uploadCloudFile: async () => 'cloud://video',
+      persistUploadedVideo: async () => 'v1',
+      reloadVideo: async () => {},
+      readVideoPoster: pageConfig.readVideoPoster,
+    };
+
+    try {
+      pageConfig.uploadVideo.call(context);
+      await saved;
+      assert.equal(context.data.autoTitle, '千寻数据导入');
+      assert.equal(context.data.videoFileId, 'cloud://video');
+    } finally {
+      global.wx = originalWx;
+    }
+  });
+});

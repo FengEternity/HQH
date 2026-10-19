@@ -1,6 +1,5 @@
 const { admin } = require('../../../utils/api');
-const { withPosterUrl, displayedPoster, planVideoCoverUpload, cloudUploadOptions } = require('../../../utils/videoMedia');
-const { captureVideoPoster } = require('../../../utils/videoPoster');
+const { withPosterUrl, displayedPoster, cloudUploadOptions } = require('../../../utils/videoMedia');
 
 function openCoverCrop(src) {
   return new Promise((resolve) => {
@@ -320,33 +319,6 @@ Page({
       this.ingestTimer = null;
     }
   },
-  loadPosterCanvas() {
-    return new Promise((resolve) => {
-      wx.createSelectorQuery()
-        .in(this)
-        .select('#video-poster-canvas')
-        .fields({ node: true, size: true })
-        .exec((res) => resolve(res && res[0] && res[0].node));
-    });
-  },
-  readVideoPoster(filePath) {
-    return captureVideoPoster({
-      filePath,
-      createDecoder: () => (
-        typeof wx.createVideoDecoder === 'function' ? wx.createVideoDecoder() : null
-      ),
-      loadCanvas: () => this.loadPosterCanvas(),
-      exportCanvas: (canvas) => new Promise((resolve) => {
-        wx.canvasToTempFilePath({
-          canvas,
-          fileType: 'jpg',
-          quality: 0.92,
-          success: (result) => resolve((result && result.tempFilePath) || ''),
-          fail: () => resolve(''),
-        });
-      }),
-    });
-  },
   uploadVideo() {
     wx.chooseMessageFile({
       count: 1,
@@ -357,56 +329,18 @@ Page({
           tempFilePath: picked.path,
           name: picked.name,
         };
-        const posterTask = this.data.coverFileId
-          ? Promise.resolve('')
-          : this.readVideoPoster(file.tempFilePath);
         this.setData({ autoTitle: titleFromVideoFile(file) }, () => {
           this.ensureSaved()
-          .then(() => this.uploadCloudFile('video', file.tempFilePath, 'mp4'))
-          .then((fileID) => posterTask.then((thumb) => ({ fileID, thumb })))
-          .then(({ fileID, thumb }) => {
-            this.setData({ videoFileId: fileID });
-            const plan = planVideoCoverUpload({
-              coverFileId: this.data.coverFileId,
-              thumbTempFilePath: thumb,
-            });
-            if (plan.action === 'keep') {
-              return this.persistUploadedVideo().then(() => 'video');
-            }
-            if (plan.action === 'missing_thumb') {
-              return this.persistUploadedVideo().then(() => 'missing_thumb');
-            }
-            return openCoverCrop(plan.path).then((croppedPath) => {
-              if (!croppedPath) {
-                return this.persist(true).then(() => 'crop_cancelled');
-              }
-              return this.uploadCloudFile('cover', croppedPath, 'jpg').then((coverId) => new Promise((resolve, reject) => {
-                this.setData({
-                  coverFileId: coverId,
-                  posterUrl: croppedPath,
-                  coverHint: '未选手动封面，已用视频首帧裁剪',
-                }, () => {
-                  this.persist(true).then(() => resolve('cover')).catch(reject);
-                });
-              }));
-            });
-          })
-          .then((kind) => this.reloadVideo().then(() => kind))
-          .then((kind) => {
-            if (kind === 'missing_thumb') {
-              wx.showToast({ title: '未获取到视频缩略图，请手动选封面', icon: 'none' });
-              return;
-            }
-            if (kind === 'crop_cancelled') {
-              wx.showToast({ title: '视频已保存，请手动选择封面', icon: 'none' });
-              return;
-            }
-            if (kind === 'cover') {
-              wx.showToast({ title: '视频与封面已保存' });
-              return;
-            }
-            wx.showToast({ title: '视频已保存' });
-          })
+            .then(() => this.uploadCloudFile('video', file.tempFilePath, 'mp4'))
+            .then((fileID) => new Promise((resolve, reject) => {
+              this.setData({ videoFileId: fileID }, () => {
+                this.persistUploadedVideo().then(resolve).catch(reject);
+              });
+            }))
+            .then(() => this.reloadVideo())
+            .then(() => {
+              wx.showToast({ title: '视频已保存，封面将在后台补齐', icon: 'none' });
+            })
           .catch((err) => wx.showToast({ title: err.message || '上传失败', icon: 'none' }));
         });
       },

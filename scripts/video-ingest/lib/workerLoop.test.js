@@ -166,6 +166,58 @@ describe('runOnce', () => {
     ]);
   });
 
+  it('没有封面时从最终播放文件生成封面并随 ready 回写', async () => {
+    const generatedFrom = [];
+    const { deps, completes } = createDeps({
+      probeMedia: async () => ({
+        hasAudio: false,
+        videoCodec: 'h264',
+        audioCodec: '',
+        durationSec: 3,
+        needsTranscode: false,
+        playback: playback({ hasAudio: false, audioCodec: '' }),
+      }),
+      createCover: async (mediaPath, probe) => {
+        generatedFrom.push([mediaPath, probe.durationSec]);
+        return 'cloud://auto-cover';
+      },
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.deepEqual(generatedFrom, [['/tmp/a.mp4', 3]]);
+    assert.equal(completes[0].coverFileId, 'cloud://auto-cover');
+  });
+
+  it('已有封面时不再生成自动封面', async () => {
+    const { deps, completes } = createDeps({
+      catalog: {
+        claim: async () => ({ ...claimedJob(), coverFileId: 'cloud://human-cover' }),
+        complete: async (payload) => completes.push(payload),
+      },
+      createCover: async () => {
+        throw new Error('已有封面时不应调用');
+      },
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes[0].coverFileId, undefined);
+  });
+
+  it('自动封面失败不阻断转写和任务完成', async () => {
+    const warnings = [];
+    const { deps, completes } = createDeps({
+      createCover: async () => {
+        throw new Error('ffmpeg cover failed /tmp/private.mp4');
+      },
+      warn: (message) => warnings.push(message),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes[0].asr, 'ready');
+    assert.equal(completes[0].coverFileId, undefined);
+    assert.deepEqual(warnings, ['自动封面生成失败']);
+  });
+
   it('HEVC 无音轨先转码再 skipped 且不运行 ASR', async () => {
     const probes = [];
     const { deps, completes } = createDeps({
@@ -460,7 +512,7 @@ describe('runOnce', () => {
     assert.deepEqual(deletedFileIds, ['cloud://v']);
   });
 
-  it('转码后 ready 回写失败时删除新产物并保留原始文件', async () => {
+  it('转码后 ready 回写失败时删除新视频和自动封面并保留原始文件', async () => {
     const completes = [];
     const deletedFileIds = [];
     const { deps } = createDeps({
@@ -495,12 +547,13 @@ describe('runOnce', () => {
         path: '/tmp/a-transcoded.mp4',
         uploadedFileId: 'cloud://transcoded',
       }),
+      createCover: async () => 'cloud://auto-cover',
       deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
     });
 
     assert.equal(await runOnce(deps), 'failed');
     assert.equal(completes.at(-1).errorCode, 'INTERNAL');
-    assert.deepEqual(deletedFileIds, ['cloud://transcoded']);
+    assert.deepEqual(deletedFileIds, ['cloud://transcoded', 'cloud://auto-cover']);
   });
 
   it('Python 转写超时时回写 ASR_FAILED 且不生成简介', async () => {
