@@ -561,6 +561,54 @@ describe('createVideoIngestActions', () => {
     assert.equal(repository.snapshot().videos.v1.status, 'published');
   });
 
+  it('replacing a video clears an automatic cover so the worker can regenerate it', async () => {
+    const repository = createMemoryRepository({
+      videos: {
+        v1: editableVideo({
+          coverFileId: 'cloud://old-auto-cover',
+          coverSource: 'auto',
+          ingest: readyVideo().ingest,
+        }),
+      },
+    });
+
+    await createActions(repository).saveVideo(
+      saveInput({
+        coverFileId: 'cloud://old-auto-cover',
+        videoFileId: 'cloud://replacement',
+        replaceVideo: true,
+      }),
+    );
+
+    const saved = repository.snapshot().videos.v1;
+    assert.equal(saved.coverFileId, '');
+    assert.equal(saved.coverSource, 'placeholder');
+  });
+
+  it('replacing a video preserves an operator-selected cover', async () => {
+    const repository = createMemoryRepository({
+      videos: {
+        v1: editableVideo({
+          coverFileId: 'cloud://human-cover',
+          coverSource: 'human',
+          ingest: readyVideo().ingest,
+        }),
+      },
+    });
+
+    await createActions(repository).saveVideo(
+      saveInput({
+        coverFileId: 'cloud://human-cover',
+        videoFileId: 'cloud://replacement',
+        replaceVideo: true,
+      }),
+    );
+
+    const saved = repository.snapshot().videos.v1;
+    assert.equal(saved.coverFileId, 'cloud://human-cover');
+    assert.equal(saved.coverSource, 'human');
+  });
+
   it('ignores a stale form fileId that was never re-uploaded', async () => {
     const repository = createMemoryRepository({
       videos: {
@@ -740,7 +788,7 @@ describe('createVideoIngestActions', () => {
 
   it('reclaims an expired running job', async () => {
     const repository = createMemoryRepository({
-      videos: { v1: editableVideo() },
+      videos: { v1: editableVideo({ coverFileId: 'cloud://existing-cover' }) },
       jobs: { j1: job({ phase: 'running', claimedAt: 1, claimedBy: 'old' }) },
     });
     const result = await createActions(repository, 30 * 60 * 1000 + 1).claimVideo({
@@ -750,6 +798,7 @@ describe('createVideoIngestActions', () => {
     assert.equal(result.job.claimedBy, 'new');
     assert.equal(result.title, '视频');
     assert.equal(result.brandName, '品牌');
+    assert.equal(result.coverFileId, 'cloud://existing-cover');
   });
 
   it('rolls back completion when media revision mismatches', async () => {
@@ -898,6 +947,7 @@ describe('applyCompleteToVideo', () => {
       playback: playback(),
     });
     assert.equal(patch.coverFileId, 'cloud://cover');
+    assert.equal(patch.coverSource, 'auto');
   });
 
   it('preserves human content and ignores fake segments when ASR is skipped', () => {
@@ -927,6 +977,7 @@ describe('applyCompleteToVideo', () => {
     assert.deepEqual(patch.transcriptSegments, previous.transcriptSegments);
     assert.equal(patch.transcript, '旧词');
     assert.equal(patch.coverFileId, 'cloud://human-cover');
+    assert.equal(patch.coverSource, 'human');
     assert.equal(patch.ingest.asr, 'skipped');
   });
 

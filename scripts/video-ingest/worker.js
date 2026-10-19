@@ -134,6 +134,61 @@ function transcodeLocalMedia({
     });
 }
 
+async function createVideoCover({
+  app,
+  mediaPath,
+  workspace,
+  durationSec,
+  runCommand = defaultCommandRunner,
+}) {
+  const outputPath = path.join(workspace, 'auto-cover.jpg');
+  const duration = Number(durationSec);
+  const firstSeek = Number.isFinite(duration) && duration > 0
+    ? Math.min(1, duration / 2)
+    : 1;
+  const fallbackSeek = Number.isFinite(duration) && duration > 0
+    ? (duration >= 3 ? 3 : duration / 2)
+    : 3;
+  const seekPoints = firstSeek === fallbackSeek
+    ? [firstSeek]
+    : [firstSeek, fallbackSeek];
+
+  let created = false;
+  for (const seekSec of seekPoints) {
+    fs.rmSync(outputPath, { force: true });
+    const result = runCommand(
+      'ffmpeg',
+      [
+        '-nostdin', '-hide_banner', '-loglevel', 'error', '-y',
+        '-ss', String(seekSec),
+        '-i', mediaPath,
+        '-frames:v', '1',
+        '-vf', 'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720',
+        '-q:v', '2',
+        outputPath,
+      ],
+      { timeout: 3 * 60 * 1000, killSignal: 'SIGKILL' },
+    );
+    const stat = fs.existsSync(outputPath) ? fs.statSync(outputPath) : null;
+    if (!result.error && result.status === 0 && stat?.isFile() && stat.size > 0) {
+      created = true;
+      break;
+    }
+  }
+  if (!created) {
+    throw new Error('自动封面生成失败');
+  }
+
+  const uploaded = await app.uploadFile({
+    cloudPath: `cover/auto/${crypto.randomUUID()}.jpg`,
+    fileContent: fs.createReadStream(outputPath),
+  });
+  if (!uploaded?.fileID) {
+    throw new Error('自动封面上传失败');
+  }
+  return uploaded.fileID;
+}
+
 function resolvePythonCommand(env = process.env) {
   const configured = String(env.VIDEO_INGEST_PYTHON || '').trim();
   if (configured) {
@@ -544,6 +599,14 @@ function createJobDependencies({
     },
     transcodeIfNeeded: (mediaPath, probe) =>
       transcodeLocalMedia({ app, mediaPath, workspace, probe, runCommand }),
+    createCover: (mediaPath, probe) =>
+      createVideoCover({
+        app,
+        mediaPath,
+        workspace,
+        durationSec: probe.durationSec,
+        runCommand,
+      }),
     recognizeSpeech: resolveBailianConfig(env)
       ? async ({ localPath, title, brandName, durationSec }) => {
         const log = (line) => stderr.write(`${line}\n`);
@@ -739,6 +802,7 @@ module.exports = {
   callCatalog,
   createCatalog,
   createJobDependencies,
+  createVideoCover,
   deleteCloudFiles,
   downloadVideoFile,
   hasAllCredentials,

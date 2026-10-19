@@ -49,23 +49,10 @@ function displayedPoster({
   return { coverFileId: nextId, posterUrl: '', resolve: Boolean(nextId) };
 }
 
-function planVideoCoverUpload(input) {
-  const coverFileId = String((input && input.coverFileId) || '').trim();
-  const thumbTempFilePath = String((input && input.thumbTempFilePath) || '').trim();
-  if (coverFileId) {
-    return { action: 'keep' };
-  }
-  if (!thumbTempFilePath) {
-    return { action: 'missing_thumb' };
-  }
-  return { action: 'upload_thumb', path: thumbTempFilePath };
-}
-
 module.exports = {
   VIDEO_UPLOAD_TIMEOUT_MS,
   cloudUploadOptions,
   withPosterUrl,
   withPosterUrls,
   displayedPoster,
-  planVideoCoverUpload,
 };

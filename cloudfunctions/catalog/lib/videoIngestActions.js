@@ -9,8 +9,10 @@ const {
   planAdminSave,
   planRunningIntro,
   planWorkerComplete,
+  resolveAdminCover,
   resolveNextVideoFileId,
   resolveStoredCopies,
+  resolveWorkerCover,
   splitVideoCopies,
 } = require('./videoIngest');
 const {
@@ -128,6 +130,7 @@ function applyCompleteToVideo({ prevData, complete, now }) {
     ...planned.ingest,
     videoFileId,
   };
+  const cover = resolveWorkerCover(previous, complete);
 
   return {
     ingest,
@@ -138,9 +141,7 @@ function applyCompleteToVideo({ prevData, complete, now }) {
     transcript: knowledge.transcript,
     durationSec: mediaMeta.durationSec,
     media: mediaMeta.media,
-    coverFileId:
-      previous.coverFileId ||
-      (typeof complete.coverFileId === 'string' ? complete.coverFileId : ''),
+    ...cover,
     videoFileId,
   };
 }
@@ -211,6 +212,11 @@ function createVideoIngestActions({
         submittedVideoFileId: String(event.videoFileId || ''),
         replaceVideo: event.replaceVideo === true,
       });
+      const replacingVideo = Boolean(
+        prevData &&
+        nextVideoFileId &&
+        nextVideoFileId !== (prevData.videoFileId || ''),
+      );
       const timestamp = now();
       const copies = resolveStoredCopies({
         prevData,
@@ -265,6 +271,11 @@ function createVideoIngestActions({
         prevData,
         durationSec: mediaMeta.durationSec,
       });
+      const cover = resolveAdminCover({
+        prevData,
+        event,
+        replacingVideo,
+      });
       const payload = {
         ...basePayload,
         title: effectiveTitle(copies.humanTitle, copies.autoTitle),
@@ -273,8 +284,7 @@ function createVideoIngestActions({
         autoIntro: copies.autoIntro,
         humanIntro: copies.humanIntro,
         intro,
-        coverFileId:
-          event.coverFileId || (prevData && prevData.coverFileId) || '',
+        ...cover,
         videoFileId: nextVideoFileId,
         transcript: knowledge.transcript,
         transcriptSegments: knowledge.transcriptSegments,
@@ -435,6 +445,7 @@ function createVideoIngestActions({
         videoFileId: video.videoFileId || ingest.videoFileId,
         title: typeof video.title === 'string' ? video.title : '',
         brandName: typeof video.brandName === 'string' ? video.brandName : '',
+        coverFileId: typeof video.coverFileId === 'string' ? video.coverFileId : '',
       };
     });
   }

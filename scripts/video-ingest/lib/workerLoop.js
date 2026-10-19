@@ -52,6 +52,7 @@ async function runOnce({
   downloadVideo,
   probeMedia,
   transcodeIfNeeded,
+  createCover,
   transcribe,
   summarizeIntro,
   recognizeSpeech,
@@ -137,14 +138,22 @@ async function runOnce({
     }
   }
 
+  let generatedCoverFileId = '';
   const cleanupAfterResult = async (result) => {
-    if (!prepared.uploadedFileId) {
+    const fileIds = [];
+    if (prepared.uploadedFileId) {
+      fileIds.push(
+        result === 'processed' ? claimed.videoFileId : prepared.uploadedFileId,
+      );
+    }
+    if (result !== 'processed' && generatedCoverFileId) {
+      fileIds.push(generatedCoverFileId);
+    }
+    if (fileIds.length === 0) {
       return result;
     }
-    const fileId =
-      result === 'processed' ? claimed.videoFileId : prepared.uploadedFileId;
     try {
-      await deleteCloudFiles([fileId]);
+      await deleteCloudFiles(fileIds);
     } catch {
       warn('云文件清理失败');
     }
@@ -159,6 +168,18 @@ async function runOnce({
     typeof prepared.uploadedFileId === 'string' && prepared.uploadedFileId
       ? { transcodedVideoFileId: prepared.uploadedFileId }
       : {};
+  let cover = {};
+  if (!claimed.coverFileId && typeof createCover === 'function') {
+    try {
+      const coverFileId = await createCover(prepared.path, probe);
+      if (coverFileId) {
+        generatedCoverFileId = coverFileId;
+        cover = { coverFileId };
+      }
+    } catch {
+      warn('自动封面生成失败');
+    }
+  }
   if (!probe.hasAudio) {
     return completePrepared({
       ...jobIdentity(claimed),
@@ -166,6 +187,7 @@ async function runOnce({
       asr: 'skipped',
       ...mediaPayload(probe),
       ...transcoded,
+      ...cover,
     });
   }
 
@@ -182,6 +204,7 @@ async function runOnce({
       errorMessage: '转写失败，播放文件已更新',
       ...mediaPayload(probe),
       ...transcoded,
+      ...cover,
     });
   }
   if (!transcription || transcription.ok !== true) {
@@ -192,6 +215,7 @@ async function runOnce({
       errorMessage: '转写失败，播放文件已更新',
       ...mediaPayload(probe),
       ...transcoded,
+      ...cover,
     });
   }
 
@@ -202,6 +226,7 @@ async function runOnce({
       asr: 'skipped',
       ...mediaPayload(probe),
       ...transcoded,
+      ...cover,
     });
   }
 
@@ -226,6 +251,7 @@ async function runOnce({
     transcriptSegments: transcription.segments,
     ...mediaPayload(probe),
     ...transcoded,
+    ...cover,
     ...(resolvedIntro.grounded ? { intro: resolvedIntro.intro } : {}),
   });
 }

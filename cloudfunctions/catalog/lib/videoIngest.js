@@ -52,6 +52,46 @@ function resolveNextVideoFileId({ prevVideoFileId, submittedVideoFileId, replace
   return previous;
 }
 
+function storedCoverSource(video) {
+  const coverFileId = cleanText(video && video.coverFileId);
+  const source = cleanText(video && video.coverSource);
+  if (source === 'auto' || source === 'human') {
+    return source;
+  }
+  return coverFileId ? 'human' : 'placeholder';
+}
+
+function resolveAdminCover({ prevData, event, replacingVideo }) {
+  const previousFileId = cleanText(prevData && prevData.coverFileId);
+  const previousSource = storedCoverSource(prevData);
+  const submittedFileId = cleanText(event && event.coverFileId);
+  if (submittedFileId && submittedFileId !== previousFileId) {
+    return { coverFileId: submittedFileId, coverSource: 'human' };
+  }
+  if (replacingVideo && previousSource === 'auto') {
+    return { coverFileId: '', coverSource: 'placeholder' };
+  }
+  return {
+    coverFileId: previousFileId || submittedFileId,
+    coverSource: previousFileId || submittedFileId ? previousSource : 'placeholder',
+  };
+}
+
+function resolveWorkerCover(prevData, complete) {
+  const previousFileId = cleanText(prevData && prevData.coverFileId);
+  if (previousFileId) {
+    return {
+      coverFileId: previousFileId,
+      coverSource: storedCoverSource(prevData),
+    };
+  }
+  const generatedFileId = cleanText(complete && complete.coverFileId);
+  return {
+    coverFileId: generatedFileId,
+    coverSource: generatedFileId ? 'auto' : 'placeholder',
+  };
+}
+
 // 管理端表单会把占位句原样回传，此时库里可能已经有 worker 写好的简介，不能被盖掉。
 function cleanText(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -343,4 +383,7 @@ module.exports = {
   effectiveTitle,
   effectiveIntro,
   introSourceFromCopies,
+  resolveAdminCover,
+  resolveWorkerCover,
+  storedCoverSource,
 };
