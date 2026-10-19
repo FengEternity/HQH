@@ -1,17 +1,45 @@
 const { admin } = require('../../../utils/api');
+const { ingestEntryLabel } = require('../../../utils/ingestEntryLabel');
 
 Page({
   data: {
     brands: [],
     loading: true,
+    ingestLabel: '进入',
   },
   onLoad() {
     this.load({ showLoading: true });
   },
   onShow() {
+    const jobs = [this.loadIngest()];
     if (this._loadedOnce) {
-      this.load({ showLoading: false });
+      jobs.push(this.load({ showLoading: false }));
     }
+    return Promise.all(jobs);
+  },
+  loadIngest() {
+    return admin({ action: 'getIngestProgress' })
+      .then((result) => {
+        this.setData({
+          ingestLabel: ingestEntryLabel({
+            running: result.running,
+            queued: result.queued,
+            failed: result.failed,
+          }),
+        });
+      })
+      .catch((err) => {
+        if (err && err.code === 'UNAUTHORIZED') {
+          wx.redirectTo({ url: '/pages/admin/login/login' });
+          return;
+        }
+        this.setData({
+          ingestLabel: ingestEntryLabel({ failedToLoad: true }),
+        });
+      });
+  },
+  openIngest() {
+    wx.navigateTo({ url: '/pages/admin/ingest/ingest' });
   },
   load(options) {
     const showLoading = !options || options.showLoading !== false;
@@ -19,7 +47,7 @@ Page({
     if (showLoading || !hasContent) {
       this.setData({ loading: true });
     }
-    admin({ action: 'adminListBrands' })
+    return admin({ action: 'adminListBrands' })
       .then((brandRes) => {
         const brands = (brandRes.brands || []).map((item) =>
           Object.assign({}, item, {

@@ -11,4 +11,11 @@
       <text class="list-action" data-id="{{item._id}}" bindtap="editBrand">编辑</text>
     </view>
   </view>
+  <view class="hub-item" bindtap="openIngest">
+    <view>
+      <view class="tile-title">重处理不合格视频</view>
+      <view class="muted">检查已上传视频，不合格的转成可播放格式</view>
+    </view>
+    <text class="{{ingestLabel === '进入' ? 'muted' : 'chip'}}">{{ingestLabel}}</text>
+  </view>
 </view>

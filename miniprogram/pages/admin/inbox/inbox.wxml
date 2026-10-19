@@ -1,4 +1,14 @@
 <view class="page">
+  <view class="hub-item hub-item-notify">
+    <view class="notify-main" bindtap="bindNotify">
+      <view>
+        <view class="tile-title">接收新工单通知</view>
+        <view class="muted">每次允许只能收一条。停止后不再推送。</view>
+        <view wx:if="{{notifyEnabled}}" class="notify-stop" catchtap="stopNotify">停止接收</view>
+      </view>
+      <text class="chip">{{notifyLabel}}</text>
+    </view>
+  </view>
   <view style="white-space: nowrap">
     <view
       wx:for="{{statuses}}"
