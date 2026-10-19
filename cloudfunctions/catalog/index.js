@@ -459,7 +459,8 @@ async function adminGetVideo(event) {
     err.code = 'NOT_FOUND';
     throw err;
   }
-  return { ok: true, video: doc };
+  const [video] = await withCoverPosters([doc]);
+  return { ok: true, video };
 }
 
 async function upsertBrand(event) {
@@ -470,8 +471,13 @@ async function upsertBrand(event) {
     err.code = 'BAD_INPUT';
     throw err;
   }
-  const sort = Number(event.sort);
-  const data = { name, sort: Number.isFinite(sort) ? sort : 99 };
+  const data = { name };
+  if (event.sort !== undefined && event.sort !== '') {
+    const sort = Number(event.sort);
+    data.sort = Number.isFinite(sort) ? sort : 99;
+  } else if (!event.id) {
+    data.sort = 99;
+  }
   if (event.id) {
     const snap = await db.collection('brands').doc(event.id).get();
     if (!snap.data) {

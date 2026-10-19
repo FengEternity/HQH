@@ -28,6 +28,13 @@ function withPosterUrls(list) {
   return (list || []).map(withPosterUrl);
 }
 
+function posterUrlFromList(videos, videoId) {
+  const id = String(videoId || '').trim();
+  const found = (videos || []).find((item) => item && item._id === id);
+  const url = String((found && found.posterUrl) || '').trim();
+  return isHttpPosterUrl(url) ? url : '';
+}
+
 function displayedPoster({
   currentCoverFileId,
   currentPosterUrl,
@@ -55,4 +62,5 @@ module.exports = {
   withPosterUrl,
   withPosterUrls,
   displayedPoster,
+  posterUrlFromList,
 };

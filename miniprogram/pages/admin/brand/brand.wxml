@@ -1,7 +1,7 @@
 <view class="page form-page">
   <view class="form-card">
     <view class="form-section-title">品牌信息</view>
-    <view class="field">
+    <view class="field field-last">
       <view class="field-label">品牌名 <text class="field-req">必填</text></view>
       <textarea
         class="field-input field-textarea"
@@ -12,16 +12,6 @@
         auto-height
         show-confirm-bar="{{false}}"
       ></textarea>
-    </view>
-    <view class="field field-last">
-      <view class="field-label">排序</view>
-      <input
-        class="field-input"
-        type="number"
-        placeholder="数字越小越靠前，默认 99"
-        value="{{sort}}"
-        bindinput="onSort"
-      />
     </view>
   </view>
 

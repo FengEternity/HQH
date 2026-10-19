@@ -7,42 +7,39 @@
   <view class="form-card">
     <view class="form-section-title">基本信息</view>
     <view class="field">
-      <view class="field-label">自动标题</view>
+      <view class="field-label">标题</view>
       <textarea
         class="field-input field-textarea"
         placeholder="上传视频后从文件名填入"
-        value="{{autoTitle}}"
-        maxlength="120"
-        auto-height
-        disabled
-        show-confirm-bar="{{false}}"
-      ></textarea>
-    </view>
-    <view class="field">
-      <view class="field-label">人工标题</view>
-      <textarea
-        class="field-input field-textarea"
-        placeholder="填写后优先用于展示和搜索"
-        value="{{humanTitle}}"
-        bindinput="onHumanTitle"
+        value="{{titleText}}"
+        bindinput="onTitle"
         maxlength="120"
         auto-height
         show-confirm-bar="{{false}}"
       ></textarea>
+      <view wx:if="{{canReplaceTitle}}" class="auto-intro-actions">
+        <text class="muted auto-intro-hint">文件名和当前标题不同</text>
+        <view class="btn btn-ghost auto-intro-retry" bindtap="replaceTitle">用这次结果替换</view>
+      </view>
     </view>
     <view class="field">
-      <view class="field-label">自动简介</view>
+      <view class="field-label">简介</view>
       <textarea
         class="field-input field-textarea"
         placeholder="处理完成后显示在这里"
-        value="{{autoIntro}}"
+        value="{{introText}}"
+        bindinput="onIntro"
         maxlength="500"
         auto-height
-        disabled
         show-confirm-bar="{{false}}"
       ></textarea>
-      <view class="auto-intro-actions">
+      <view wx:if="{{canReplaceIntro || ingestHint || showRetryIngest}}" class="auto-intro-actions">
         <text wx:if="{{ingestHint}}" class="muted auto-intro-hint">{{ingestHint}}</text>
+        <view
+          wx:if="{{canReplaceIntro}}"
+          class="btn btn-ghost auto-intro-retry"
+          bindtap="replaceIntro"
+        >用这次结果替换</view>
         <view
           wx:if="{{showRetryIngest}}"
           class="btn btn-ghost auto-intro-retry"
@@ -50,18 +47,6 @@
           bindtap="retryIngest"
         >重新处理</view>
       </view>
-    </view>
-    <view class="field">
-      <view class="field-label">人工简介</view>
-      <textarea
-        class="field-input field-textarea"
-        placeholder="填写后优先用于展示和搜索"
-        value="{{humanIntro}}"
-        bindinput="onHumanIntro"
-        maxlength="500"
-        auto-height
-        show-confirm-bar="{{false}}"
-      ></textarea>
     </view>
     <view class="field">
       <view class="field-label">型号 / 系列</view>
@@ -92,23 +77,17 @@
   <view class="form-card">
     <view class="form-section-title">封面与视频</view>
     <view class="media-block">
-      <view class="cover-frame" bindtap="pickCoverPhoto">
-        <image wx:if="{{posterUrl}}" class="cover-frame-img" src="{{posterUrl}}" mode="aspectFill" />
-        <view wx:else class="cover-frame-empty">
-          <text class="cover-frame-empty-title">添加封面</text>
-          <text class="muted">点此选择视频并裁剪</text>
-        </view>
-        <view wx:if="{{posterUrl}}" class="cover-frame-badge">更换封面</view>
+      <view class="cover edit-cover">
+        <image wx:if="{{posterUrl}}" class="cover-img" src="{{posterUrl}}" mode="aspectFill" />
+        <text wx:else>{{brandName}}</text>
       </view>
-      <view wx:if="{{coverHint}}" class="muted" style="margin-top: 12rpx">{{coverHint}}</view>
-      <view class="muted" style="margin-top: 12rpx">上传视频后会在后台生成 16:9 封面；也可点封面选择画面并手动裁剪，人工封面不会被覆盖。</view>
     </view>
-    <view class="media-row" bindtap="uploadVideo">
-      <view>
+    <view class="media-row">
+      <view class="media-row-main">
         <view class="tile-title">视频文件</view>
-        <view class="muted">{{videoFileId ? '已上传到云存储，可点此更换' : '点此选择视频文件，文件名会填入自动标题'}}</view>
+        <view class="muted">{{videoFileId ? '已上传到云存储' : '还没有视频'}}</view>
       </view>
-      <text class="chip {{videoFileId ? 'chip-ok' : ''}}">{{videoFileId ? '已传' : '未传'}}</text>
+      <view class="btn btn-ghost media-upload-btn" bindtap="uploadVideo">{{videoFileId ? '更换视频' : '上传视频'}}</view>
     </view>
   </view>
 

@@ -1,27 +1,5 @@
 const { admin } = require('../../../utils/api');
-const { withPosterUrl, displayedPoster, cloudUploadOptions } = require('../../../utils/videoMedia');
-
-function openCoverCrop(src) {
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve(value);
-    };
-    wx.navigateTo({
-      url: `/pages/admin/cover-crop/cover-crop?src=${encodeURIComponent(src)}`,
-      events: {
-        done: (payload) => finish((payload && payload.path) || null),
-        cancel: () => finish(null),
-      },
-      success: (result) => result.eventChannel.emit('init', { src }),
-      fail: () => finish(null),
-    });
-  });
-}
+const { withPosterUrl, displayedPoster, posterUrlFromList, cloudUploadOptions } = require('../../../utils/videoMedia');
 
 const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
 
@@ -65,6 +43,31 @@ function effectiveIntro(humanIntro, autoIntro) {
   return cleanText(humanIntro) || cleanText(autoIntro) || PLACEHOLDER_INTRO;
 }
 
+function draftFieldState(copies, typed) {
+  const source = copies && typeof copies === 'object' ? copies : {};
+  const humanTitle = cleanText(source.humanTitle);
+  const autoTitle = cleanText(source.autoTitle);
+  const humanIntro = withoutPlaceholder(source.humanIntro);
+  const autoIntro = withoutPlaceholder(source.autoIntro);
+  const hasTypedTitle = typed && Object.prototype.hasOwnProperty.call(typed, 'titleText');
+  const hasTypedIntro = typed && Object.prototype.hasOwnProperty.call(typed, 'introText');
+  return {
+    autoTitle,
+    humanTitle,
+    autoIntro,
+    humanIntro,
+    titleText: hasTypedTitle ? typed.titleText : (humanTitle || autoTitle),
+    introText: hasTypedIntro ? typed.introText : (humanIntro || autoIntro),
+    canReplaceTitle: Boolean(humanTitle && autoTitle && humanTitle !== autoTitle),
+    canReplaceIntro: Boolean(humanIntro && autoIntro && humanIntro !== autoIntro),
+  };
+}
+
+function humanCopyFromInput(value, autoValue) {
+  const text = cleanText(value);
+  return text === cleanText(autoValue) ? '' : text;
+}
+
 function titleFromVideoFile(file) {
   const named = String((file && (file.name || file.fileName)) || '').trim();
   if (!named) {
@@ -72,6 +75,19 @@ function titleFromVideoFile(file) {
   }
   const base = named.split(/[/\\]/).pop();
   return base.replace(/\.[^.]+$/, '').trim();
+}
+
+function videoSourceLabels(platform) {
+  const local = platform === 'windows' || platform === 'mac' ? '从电脑文件夹' : '从手机相册';
+  return [local, '从聊天记录'];
+}
+
+function currentPlatform() {
+  if (typeof wx.getSystemInfoSync !== 'function') {
+    return '';
+  }
+  const info = wx.getSystemInfoSync() || {};
+  return info.platform || '';
 }
 
 function deriveVideoUi(video) {
@@ -133,12 +149,15 @@ Page({
     humanTitle: '',
     autoIntro: '',
     humanIntro: '',
+    titleText: '',
+    introText: '',
+    canReplaceTitle: false,
+    canReplaceIntro: false,
     modelName: '',
     tags: '',
     coverFileId: '',
     videoFileId: '',
     posterUrl: '',
-    coverHint: '',
     ingestPhase: 'idle',
     ingestHint: '',
     introSource: 'placeholder',
@@ -178,16 +197,19 @@ Page({
       nextCoverFileId: video.coverFileId,
       nextPosterUrl: video.posterUrl,
     });
+    const fields = draftFieldState(
+      keepEdits
+        ? {
+            humanTitle: this.data.humanTitle,
+            autoTitle: copies.autoTitle,
+            humanIntro: this.data.humanIntro,
+            autoIntro: copies.autoIntro,
+          }
+        : copies,
+    );
     this.setData(
       Object.assign(
-        keepEdits
-          ? {
-              autoTitle: copies.autoTitle,
-              autoIntro: copies.autoIntro,
-              humanTitle: this.data.humanTitle,
-              humanIntro: this.data.humanIntro,
-            }
-          : copies,
+        fields,
         {
           modelName: keepEdits ? this.data.modelName : video.modelName,
           tags: keepEdits ? this.data.tags : (video.tags || []).join(','),
@@ -206,16 +228,29 @@ Page({
     }
   },
   resolveCoverPoster(coverFileId) {
-    if (!coverFileId || typeof wx === 'undefined' || !wx.cloud || !wx.cloud.getTempFileURL) {
+    if (!coverFileId) {
       return;
     }
-    wx.cloud.getTempFileURL({ fileList: [coverFileId] }).then((res) => {
-      const row = res && res.fileList && res.fileList[0];
-      const url = row && row.status === 0 ? String(row.tempFileURL || '').trim() : '';
-      if (url && this.data.coverFileId === coverFileId) {
-        this.setData({ posterUrl: url });
+    const applyUrl = (url) => {
+      const posterUrl = posterUrlFromList([{ _id: this.data.id, posterUrl: url }], this.data.id);
+      if (posterUrl && this.data.coverFileId === coverFileId) {
+        this.setData({ posterUrl });
       }
-    }).catch(() => {});
+    };
+    const listed = this.data.brandId && this.data.id
+      ? admin({ action: 'adminListVideos', brandId: this.data.brandId })
+        .then((res) => applyUrl(posterUrlFromList(res && res.videos, this.data.id)))
+        .catch(() => {})
+      : Promise.resolve();
+    listed.then(() => {
+      if (this.data.posterUrl || typeof wx === 'undefined' || !wx.cloud || !wx.cloud.getTempFileURL) {
+        return;
+      }
+      wx.cloud.getTempFileURL({ fileList: [coverFileId] }).then((res) => {
+        const row = res && res.fileList && res.fileList[0];
+        applyUrl(row && row.tempFileURL);
+      }).catch(() => {});
+    });
   },
   reloadVideo(keepEdits) {
     if (!this.data.id) {
@@ -227,11 +262,53 @@ Page({
       }
     });
   },
-  onHumanTitle(e) {
-    this.setData({ humanTitle: e.detail.value });
+  onTitle(e) {
+    const titleText = e.detail.value;
+    this.setData(draftFieldState({
+      humanTitle: humanCopyFromInput(titleText, this.data.autoTitle),
+      autoTitle: this.data.autoTitle,
+      humanIntro: this.data.humanIntro,
+      autoIntro: this.data.autoIntro,
+    }, { titleText, introText: this.data.introText }));
   },
-  onHumanIntro(e) {
-    this.setData({ humanIntro: e.detail.value });
+  onIntro(e) {
+    const introText = e.detail.value;
+    this.setData(draftFieldState({
+      humanTitle: this.data.humanTitle,
+      autoTitle: this.data.autoTitle,
+      humanIntro: humanCopyFromInput(introText, this.data.autoIntro),
+      autoIntro: this.data.autoIntro,
+    }, { titleText: this.data.titleText, introText }));
+  },
+  replaceTitle() {
+    if (!this.data.canReplaceTitle) {
+      return;
+    }
+    this.setData(draftFieldState({
+      humanTitle: '',
+      autoTitle: this.data.autoTitle,
+      humanIntro: this.data.humanIntro,
+      autoIntro: this.data.autoIntro,
+    }), () => {
+      this.persist(true).catch((err) => {
+        wx.showToast({ title: err.message || '替换失败', icon: 'none' });
+      });
+    });
+  },
+  replaceIntro() {
+    if (!this.data.canReplaceIntro) {
+      return;
+    }
+    this.setData(draftFieldState({
+      humanTitle: this.data.humanTitle,
+      autoTitle: this.data.autoTitle,
+      humanIntro: '',
+      autoIntro: this.data.autoIntro,
+    }), () => {
+      this.persist(true).catch((err) => {
+        wx.showToast({ title: err.message || '替换失败', icon: 'none' });
+      });
+    });
   },
   onModel(e) {
     this.setData({ modelName: e.detail.value });
@@ -244,39 +321,6 @@ Page({
       return this.persist(true);
     }
     return Promise.resolve(this.data.id);
-  },
-  pickCoverPhoto() {
-    wx.chooseMedia({
-      count: 1,
-      mediaType: ['video'],
-      sourceType: ['album'],
-      success: (res) => {
-        const picked = res.tempFiles && res.tempFiles[0];
-        const filePath = picked && picked.thumbTempFilePath;
-        if (!filePath) {
-          wx.showToast({ title: '未获取到视频缩略图', icon: 'none' });
-          return;
-        }
-        openCoverCrop(filePath)
-          .then((croppedPath) => {
-            if (!croppedPath) {
-              return null;
-            }
-            return this.ensureSaved()
-              .then(() => this.uploadCloudFile('cover', croppedPath, 'jpg'))
-              .then((fileID) => new Promise((resolve, reject) => {
-                this.setData({
-                  coverFileId: fileID,
-                  posterUrl: croppedPath,
-                  coverHint: '',
-                }, () => {
-                  this.persist(true).then(resolve).catch(reject);
-                });
-              }));
-          })
-          .catch((err) => wx.showToast({ title: err.message || '封面失败', icon: 'none' }));
-      },
-    });
   },
   uploadCloudFile(kind, filePath, ext) {
     const cloudPath = `${kind}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
@@ -320,30 +364,86 @@ Page({
     }
   },
   uploadVideo() {
+    wx.showActionSheet({
+      itemList: videoSourceLabels(currentPlatform()),
+      success: (res) => {
+        if (res.tapIndex === 0) {
+          this.pickLocalVideo();
+          return;
+        }
+        if (res.tapIndex === 1) {
+          this.pickChatVideo();
+        }
+      },
+    });
+  },
+  pickLocalVideo() {
+    wx.chooseMedia({
+      count: 1,
+      mediaType: ['video'],
+      sourceType: ['album'],
+      sizeType: ['original'],
+      success: (res) => {
+        const picked = (res.tempFiles || [])[0];
+        if (!picked || !picked.tempFilePath) {
+          return;
+        }
+        this.acceptPickedVideo({
+          tempFilePath: picked.tempFilePath,
+          name: picked.name || '',
+        });
+      },
+      fail: (err) => this.showPickError(err),
+    });
+  },
+  pickChatVideo() {
     wx.chooseMessageFile({
       count: 1,
       type: 'video',
       success: (res) => {
-        const picked = res.tempFiles[0];
-        const file = {
+        const picked = (res.tempFiles || [])[0];
+        if (!picked || !picked.path) {
+          return;
+        }
+        this.acceptPickedVideo({
           tempFilePath: picked.path,
-          name: picked.name,
-        };
-        this.setData({ autoTitle: titleFromVideoFile(file) }, () => {
-          this.ensureSaved()
-            .then(() => this.uploadCloudFile('video', file.tempFilePath, 'mp4'))
-            .then((fileID) => new Promise((resolve, reject) => {
-              this.setData({ videoFileId: fileID }, () => {
-                this.persistUploadedVideo().then(resolve).catch(reject);
-              });
-            }))
-            .then(() => this.reloadVideo())
-            .then(() => {
-              wx.showToast({ title: '视频已保存，封面将在后台补齐', icon: 'none' });
-            })
-          .catch((err) => wx.showToast({ title: err.message || '上传失败', icon: 'none' }));
+          name: picked.name || '',
         });
       },
+      fail: (err) => this.showPickError(err),
+    });
+  },
+  showPickError(err) {
+    const message = err && err.errMsg ? err.errMsg : '';
+    if (/cancel/i.test(message)) {
+      return;
+    }
+    wx.showToast({ title: '没有选到视频', icon: 'none' });
+  },
+  acceptPickedVideo(file) {
+    const named = titleFromVideoFile(file);
+    const autoTitle = named || cleanText(this.data.autoTitle);
+    const fields = draftFieldState({
+      humanTitle: this.data.humanTitle,
+      autoTitle,
+      humanIntro: this.data.humanIntro,
+      autoIntro: this.data.autoIntro,
+    }, cleanText(this.data.humanTitle)
+      ? { titleText: this.data.titleText, introText: this.data.introText }
+      : undefined);
+    this.setData(fields, () => {
+      this.ensureSaved()
+        .then(() => this.uploadCloudFile('video', file.tempFilePath, 'mp4'))
+        .then((fileID) => new Promise((resolve, reject) => {
+          this.setData({ videoFileId: fileID }, () => {
+            this.persistUploadedVideo().then(resolve).catch(reject);
+          });
+        }))
+        .then(() => this.reloadVideo())
+        .then(() => {
+          wx.showToast({ title: '视频已保存，封面将在后台补齐', icon: 'none' });
+        })
+        .catch((err) => wx.showToast({ title: err.message || '上传失败', icon: 'none' }));
     });
   },
   retryIngest() {

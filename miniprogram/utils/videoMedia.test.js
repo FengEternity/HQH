@@ -8,6 +8,7 @@ const {
   withPosterUrl,
   withPosterUrls,
   displayedPoster,
+  posterUrlFromList,
   cloudUploadOptions,
   VIDEO_UPLOAD_TIMEOUT_MS,
 } = require('./videoMedia');
@@ -93,6 +94,28 @@ describe('displayedPoster', () => {
       posterUrl: '',
       resolve: true,
     });
+  });
+});
+
+describe('posterUrlFromList', () => {
+  it('uses the same https poster already shown for that video', () => {
+    assert.equal(
+      posterUrlFromList(
+        [
+          { _id: 'other', posterUrl: 'https://cdn.example/other.jpg' },
+          { _id: 'video-1', posterUrl: 'https://cdn.example/cover.jpg' },
+        ],
+        'video-1',
+      ),
+      'https://cdn.example/cover.jpg',
+    );
+  });
+
+  it('ignores a cloud file id that cannot be displayed', () => {
+    assert.equal(
+      posterUrlFromList([{ _id: 'video-1', posterUrl: 'cloud://cover' }], 'video-1'),
+      '',
+    );
   });
 });
 

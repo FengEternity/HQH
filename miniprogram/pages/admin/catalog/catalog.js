@@ -52,7 +52,6 @@ Page({
         const brands = (brandRes.brands || []).map((item) =>
           Object.assign({}, item, {
             videoCount: item.videoCount || 0,
-            sort: item.sort === undefined ? 99 : item.sort,
           }),
         );
         this._loadedOnce = true;

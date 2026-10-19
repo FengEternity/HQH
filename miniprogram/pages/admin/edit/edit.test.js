@@ -143,34 +143,61 @@ describe('deriveVideoUi', () => {
     assert.equal(data.humanTitle, '人工标题');
     assert.equal(data.autoIntro, '自动简介');
     assert.equal(data.humanIntro, '人工简介');
+    assert.equal(data.titleText, '人工标题');
+    assert.equal(data.introText, '人工简介');
+    assert.equal(data.canReplaceTitle, true);
+    assert.equal(data.canReplaceIntro, true);
+  });
+
+  it('shows the generated title and intro when nothing was written by hand', () => {
+    const data = apply(video({
+      autoTitle: '文件名',
+      humanTitle: '',
+      autoIntro: '自动简介',
+      humanIntro: '',
+    }));
+    assert.equal(data.titleText, '文件名');
+    assert.equal(data.introText, '自动简介');
+    assert.equal(data.canReplaceTitle, false);
+    assert.equal(data.canReplaceIntro, false);
+  });
+
+  it('replacing the intro drops the handwritten copy and shows the generated one', () => {
+    const context = {
+      data: {
+        humanTitle: '人工标题',
+        autoTitle: '文件名',
+        humanIntro: '人工简介',
+        autoIntro: '自动简介',
+        canReplaceIntro: true,
+        brandId: 'b1',
+      },
+      setData(patch, callback) {
+        this.data = { ...this.data, ...patch };
+        if (callback) {
+          callback();
+        }
+      },
+      persist() {
+        return Promise.resolve('v1');
+      },
+    };
+    pageConfig.replaceIntro.call(context);
+    assert.equal(context.data.humanIntro, '');
+    assert.equal(context.data.introText, '自动简介');
+    assert.equal(context.data.canReplaceIntro, false);
+    assert.equal(context.data.humanTitle, '人工标题');
   });
 });
 
 describe('uploadVideo', () => {
-  it('只用会话文件名填自动标题，不在客户端解码视频', async () => {
-    const originalWx = global.wx;
-    let resolveSaved;
-    const saved = new Promise((resolve) => {
-      resolveSaved = resolve;
-    });
-    global.wx = {
-      chooseMessageFile({ success }) {
-        success({
-          tempFiles: [{ path: 'wxfile://video.mp4', name: '千寻数据导入.mp4' }],
-        });
-      },
-      createVideoDecoder() {
-        throw new Error('客户端不应解码视频');
-      },
-      showToast({ title }) {
-        if (/视频已保存/.test(title)) {
-          resolveSaved();
-        }
-      },
-    };
-    const context = {
+  function uploadContext(extra) {
+    return {
       data: {
         autoTitle: '',
+        humanTitle: '',
+        humanIntro: '',
+        autoIntro: '',
         coverFileId: '',
         videoFileId: '',
       },
@@ -184,13 +211,104 @@ describe('uploadVideo', () => {
       uploadCloudFile: async () => 'cloud://video',
       persistUploadedVideo: async () => 'v1',
       reloadVideo: async () => {},
-      readVideoPoster: pageConfig.readVideoPoster,
+      pickLocalVideo: pageConfig.pickLocalVideo,
+      pickChatVideo: pageConfig.pickChatVideo,
+      acceptPickedVideo: pageConfig.acceptPickedVideo,
+      showPickError: pageConfig.showPickError,
+      ...extra,
     };
+  }
+
+  it('从聊天记录选择时用文件名填标题，不在客户端解码视频', async () => {
+    const originalWx = global.wx;
+    let resolveSaved;
+    const saved = new Promise((resolve) => {
+      resolveSaved = resolve;
+    });
+    global.wx = {
+      getSystemInfoSync() {
+        return { platform: 'ios' };
+      },
+      showActionSheet({ itemList, success }) {
+        assert.deepEqual(itemList, ['从手机相册', '从聊天记录']);
+        success({ tapIndex: 1 });
+      },
+      chooseMessageFile({ success }) {
+        success({
+          tempFiles: [{ path: 'wxfile://video.mp4', name: '千寻数据导入.mp4' }],
+        });
+      },
+      chooseMedia() {
+        throw new Error('聊天记录不应打开相册');
+      },
+      createVideoDecoder() {
+        throw new Error('客户端不应解码视频');
+      },
+      showToast({ title }) {
+        if (/视频已保存/.test(title)) {
+          resolveSaved();
+        }
+      },
+    };
+    const context = uploadContext();
 
     try {
       pageConfig.uploadVideo.call(context);
       await saved;
       assert.equal(context.data.autoTitle, '千寻数据导入');
+      assert.equal(context.data.videoFileId, 'cloud://video');
+    } finally {
+      global.wx = originalWx;
+    }
+  });
+
+  it('从相册或电脑文件夹选择时上传视频，没有文件名就保留已有标题', async () => {
+    const originalWx = global.wx;
+    let resolveSaved;
+    const saved = new Promise((resolve) => {
+      resolveSaved = resolve;
+    });
+    let uploadedPath = '';
+    global.wx = {
+      getSystemInfoSync() {
+        return { platform: 'windows' };
+      },
+      showActionSheet({ itemList, success }) {
+        assert.deepEqual(itemList, ['从电脑文件夹', '从聊天记录']);
+        success({ tapIndex: 0 });
+      },
+      chooseMedia({ success }) {
+        success({
+          tempFiles: [{ tempFilePath: 'wxfile://tmp_abc.mp4' }],
+        });
+      },
+      chooseMessageFile() {
+        throw new Error('本地文件不应打开聊天记录');
+      },
+      createVideoDecoder() {
+        throw new Error('客户端不应解码视频');
+      },
+      showToast({ title }) {
+        if (/视频已保存/.test(title)) {
+          resolveSaved();
+        }
+      },
+    };
+    const context = uploadContext({
+      uploadCloudFile: async (kind, filePath) => {
+        uploadedPath = filePath;
+        return 'cloud://video';
+      },
+    });
+    context.data.autoTitle = '已有标题';
+    context.data.titleText = '已有标题';
+
+    try {
+      pageConfig.uploadVideo.call(context);
+      await saved;
+      assert.equal(uploadedPath, 'wxfile://tmp_abc.mp4');
+      assert.equal(context.data.autoTitle, '已有标题');
+      assert.equal(context.data.titleText, '已有标题');
       assert.equal(context.data.videoFileId, 'cloud://video');
     } finally {
       global.wx = originalWx;
