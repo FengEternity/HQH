@@ -12,7 +12,7 @@ const { pipeline } = require('node:stream/promises');
 
 const cloudbase = require('@cloudbase/node-sdk');
 
-const { transcribeSpeech, writeIntroText, resolveBailianConfig } = require('./lib/bailian');
+const { transcribeSpeech, writeIntroText, resolveTencentConfig } = require('./lib/tencentSpeech');
 const { PLACEHOLDER_INTRO } = require('./lib/autoIntro');
 const {
   INTRO_SYSTEM_PROMPT,
@@ -85,6 +85,33 @@ function probeLocalMedia(mediaPath, runCommand = defaultCommandRunner) {
     needsTranscode: !assessment.compliant,
     playback: toPlaybackMetadata(probe),
   };
+}
+
+async function publishSpeechAudio({ app, audioPath }) {
+  const uploaded = await app.uploadFile({
+    cloudPath: `asr-temp/${crypto.randomUUID()}.m4a`,
+    fileContent: fs.createReadStream(audioPath),
+  });
+  const fileId = uploaded && uploaded.fileID;
+  if (!fileId) {
+    throw new Error('转写音频上传失败');
+  }
+  try {
+    const resolved = await app.getTempFileURL({ fileList: [fileId] });
+    const file = resolved?.fileList?.[0];
+    const url = file && typeof file.tempFileURL === 'string' ? file.tempFileURL : '';
+    if (!url || (file.code && file.code !== 'SUCCESS')) {
+      throw new Error('获取转写音频地址失败');
+    }
+    return { fileId, url };
+  } catch (error) {
+    try {
+      await deleteCloudFiles(app, [fileId]);
+    } catch {
+      // 地址没取到时尽量清掉临时音轨
+    }
+    throw error;
+  }
 }
 
 function extractSpeechAudio({
@@ -375,7 +402,10 @@ async function callCatalog(app, data) {
   const response = await app.callFunction({ name: 'catalog', data });
   const result = response?.result ?? response;
   if (!result || result.ok !== true) {
-    const error = new Error('catalog 调用失败');
+    const message = typeof result?.message === 'string' && result.message
+      ? result.message
+      : 'catalog 调用失败';
+    const error = new Error(message);
     error.code =
       typeof result?.code === 'string' && result.code
         ? result.code
@@ -544,28 +574,48 @@ function createJobDependencies({
     },
     transcodeIfNeeded: (mediaPath, probe) =>
       transcodeLocalMedia({ app, mediaPath, workspace, probe, runCommand }),
-    recognizeSpeech: resolveBailianConfig(env)
+    recognizeSpeech: resolveTencentConfig(env)
       ? async ({ localPath, title, brandName, durationSec }) => {
         const log = (line) => stderr.write(`${line}\n`);
+        const speechConfig = resolveTencentConfig(env);
         const audioPath = extractSpeechAudio({ mediaPath: localPath, workspace, runCommand });
-        log(`bailian asr: start ${resolveBailianConfig(env).apiBase}`);
-        const segments = await transcribeSpeech({
-          env,
-          audioBytes: fs.readFileSync(audioPath),
-          durationSec,
-          terms: termDocument.terms,
-        });
-        log('bailian asr: ready');
-        const intro = await writeIntroText({
-          env,
-          systemPrompt: INTRO_SYSTEM_PROMPT,
-          userPrompt: buildIntroUserPrompt({
-            title,
-            brandName,
-            transcript: joinTranscript(segments),
-            terms: termDocument.terms,
-          }),
-        });
+        log(`tencent asr: start ${speechConfig.asrEngine}`);
+        const published = await publishSpeechAudio({ app, audioPath });
+        let segments;
+        try {
+          segments = await transcribeSpeech({
+            env,
+            audioUrl: published.url,
+            durationSec,
+          });
+        } finally {
+          try {
+            await deleteCloudFiles(app, [published.fileId]);
+          } catch {
+            log('转写音频清理失败');
+          }
+        }
+        log('tencent asr: ready');
+        if (!speechConfig.introKey) {
+          log('tencent intro skipped: no key');
+          return { segments, intro: '', grounded: false };
+        }
+        let intro = '';
+        try {
+          intro = await writeIntroText({
+            env,
+            systemPrompt: INTRO_SYSTEM_PROMPT,
+            userPrompt: buildIntroUserPrompt({
+              title,
+              brandName,
+              transcript: joinTranscript(segments),
+              terms: termDocument.terms,
+            }),
+          });
+        } catch (error) {
+          log(`tencent intro skipped: ${error && error.message ? error.message : 'failed'}`);
+          return { segments, intro: '', grounded: false };
+        }
         const verdict = acceptIntro({
           intro,
           title,
@@ -575,8 +625,8 @@ function createJobDependencies({
           brandNames: termDocument.brandNames,
           placeholderIntro: PLACEHOLDER_INTRO,
         });
-        log(`bailian intro: ${intro}`);
-        log(verdict.ok ? 'bailian intro accepted' : `bailian intro rejected ${verdict.reason || 'unknown'}`);
+        log(`tencent intro: ${intro}`);
+        log(verdict.ok ? 'tencent intro accepted' : `tencent intro rejected ${verdict.reason || 'unknown'}`);
         return { segments, intro: verdict.intro, grounded: verdict.ok === true };
       }
       : undefined,

@@ -37,13 +37,49 @@ async function completeFailure(catalog, claimed, errorCode) {
 }
 
 // ready 回写失败会把 videos.ingest 永远卡在 running，补一次失败回写让它能落到 failed。
-async function completeReady(catalog, claimed, payload) {
+async function completeReady(catalog, claimed, payload, warn) {
   try {
     await catalog.complete(payload);
-  } catch {
+  } catch (error) {
+    const code = error && error.code ? error.code : '';
+    const message = error && error.message ? error.message : 'failed';
+    warn(`complete failed: ${code} ${message}`.trim());
     return completeFailure(catalog, claimed, 'INTERNAL');
   }
   return 'processed';
+}
+
+function toTenths(value) {
+  return Math.round(Number(value) * 10);
+}
+
+function fitSegmentsToDuration(segments, durationSec) {
+  const upperTenths = toTenths(durationSec);
+  if (!Array.isArray(segments) || !(upperTenths > 0)) {
+    return Array.isArray(segments) ? segments : [];
+  }
+  const fitted = [];
+  for (const segment of segments) {
+    const startTenths = Math.max(0, toTenths(segment && segment.startSec));
+    let endTenths = toTenths(segment && segment.endSec);
+    const text = segment && typeof segment.text === 'string' ? segment.text.trim() : '';
+    if (!text || startTenths >= upperTenths) {
+      continue;
+    }
+    if (endTenths > upperTenths) {
+      endTenths = upperTenths;
+    }
+    if (endTenths <= startTenths) {
+      continue;
+    }
+    fitted.push({
+      startSec: startTenths / 10,
+      endSec: endTenths / 10,
+      text,
+    });
+  }
+  fitted.sort((left, right) => left.startSec - right.startSec);
+  return fitted;
 }
 
 async function runOnce({
@@ -93,7 +129,7 @@ async function runOnce({
         durationSec: probe.durationSec,
       });
     } catch (error) {
-      warn(`bailian skipped: ${error && error.message ? error.message : 'failed'}`);
+      warn(`tencent skipped: ${error && error.message ? error.message : 'failed'}`);
       remoteSpeech = null;
     }
     if (remoteSpeech && remoteSpeech.grounded && typeof catalog.noteIntro === 'function') {
@@ -113,7 +149,8 @@ async function runOnce({
     try {
       prepared = await transcodeIfNeeded(localPath, probe);
       probe = await probeMedia(prepared.path);
-    } catch {
+    } catch (error) {
+      warn(`transcode failed: ${error && error.message ? error.message : 'failed'}`);
       const result = await completeFailure(catalog, claimed, 'TRANSCODE_FAILED');
       if (prepared.uploadedFileId) {
         try {
@@ -125,6 +162,7 @@ async function runOnce({
       return result;
     }
     if (!probe.playback || probe.playback.compliant !== true) {
+      warn('transcode result rejected');
       const result = await completeFailure(catalog, claimed, 'TRANSCODE_FAILED');
       if (prepared.uploadedFileId) {
         try {
@@ -153,7 +191,7 @@ async function runOnce({
   const failPrepared = async (errorCode) =>
     cleanupAfterResult(await completeFailure(catalog, claimed, errorCode));
   const completePrepared = async (payload) =>
-    cleanupAfterResult(await completeReady(catalog, claimed, payload));
+    cleanupAfterResult(await completeReady(catalog, claimed, payload, warn));
 
   const transcoded =
     typeof prepared.uploadedFileId === 'string' && prepared.uploadedFileId
@@ -170,8 +208,11 @@ async function runOnce({
   }
 
   let transcription;
-  if (remoteSpeech && Array.isArray(remoteSpeech.segments) && remoteSpeech.segments.length > 0) {
-    transcription = { ok: true, skipped: false, segments: remoteSpeech.segments };
+  const remoteSegments = remoteSpeech && Array.isArray(remoteSpeech.segments)
+    ? fitSegmentsToDuration(remoteSpeech.segments, probe.durationSec)
+    : [];
+  if (remoteSegments.length > 0) {
+    transcription = { ok: true, skipped: false, segments: remoteSegments };
   } else try {
     transcription = await transcribe(prepared.path);
   } catch {
@@ -231,5 +272,6 @@ async function runOnce({
 }
 
 module.exports = {
+  fitSegmentsToDuration,
   runOnce,
 };

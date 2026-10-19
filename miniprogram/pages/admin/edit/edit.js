@@ -3,7 +3,7 @@ const { withPosterUrl, displayedPoster, planVideoCoverUpload, cloudUploadOptions
 const { captureVideoPoster } = require('../../../utils/videoPoster');
 
 function openCoverCrop(src) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (value) => {
       if (settled) {
@@ -12,16 +12,31 @@ function openCoverCrop(src) {
       settled = true;
       resolve(value);
     };
-    wx.navigateTo({
-      url: `/pages/admin/cover-crop/cover-crop?src=${encodeURIComponent(src)}`,
-      events: {
-        done: (payload) => finish((payload && payload.path) || null),
-        cancel: () => finish(null),
-      },
-      success: (result) => result.eventChannel.emit('init', { src }),
-      fail: () => finish(null),
-    });
+    // 系统选片界面还在关闭时，紧接着 navigateTo 会被丢掉，编辑页看起来像没反应。
+    setTimeout(() => {
+      wx.navigateTo({
+        url: `/pages/admin/cover-crop/cover-crop?src=${encodeURIComponent(src)}`,
+        events: {
+          done: (payload) => finish((payload && payload.path) || null),
+          cancel: () => finish(null),
+        },
+        success: (result) => result.eventChannel.emit('init', { src }),
+        fail: () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          reject(new Error('封面页没有打开'));
+        },
+      });
+    }, 300);
   });
+}
+
+function noticeAfterPicker(title) {
+  setTimeout(() => {
+    wx.showToast({ title, icon: 'none' });
+  }, 400);
 }
 
 const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
@@ -253,12 +268,19 @@ Page({
       sourceType: ['album'],
       success: (res) => {
         const picked = res.tempFiles && res.tempFiles[0];
-        const filePath = picked && picked.thumbTempFilePath;
-        if (!filePath) {
-          wx.showToast({ title: '未获取到视频缩略图', icon: 'none' });
-          return;
-        }
-        openCoverCrop(filePath)
+        const thumb = picked && picked.thumbTempFilePath;
+        const videoPath = picked && picked.tempFilePath;
+        const ready = thumb
+          ? Promise.resolve(thumb)
+          : this.readVideoPoster(videoPath);
+        ready
+          .then((filePath) => {
+            if (!filePath) {
+              noticeAfterPicker('未获取到视频缩略图');
+              return null;
+            }
+            return openCoverCrop(filePath);
+          })
           .then((croppedPath) => {
             if (!croppedPath) {
               return null;
@@ -275,7 +297,14 @@ Page({
                 });
               }));
           })
-          .catch((err) => wx.showToast({ title: err.message || '封面失败', icon: 'none' }));
+          .catch((err) => noticeAfterPicker(err.message || '封面失败'));
+      },
+      fail: (err) => {
+        const message = err && err.errMsg ? err.errMsg : '';
+        if (message.indexOf('cancel') >= 0) {
+          return;
+        }
+        noticeAfterPicker('未打开视频选择');
       },
     });
   },
