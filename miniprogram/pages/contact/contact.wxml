@@ -42,7 +42,7 @@
         wx:for="{{faqs}}"
         wx:key="id"
         data-id="{{item.id}}"
-        bindtap="askFaq"
+        bindtap="fillQuick"
       >{{item.title}}</view>
     </scroll-view>
     <view class="composer">
