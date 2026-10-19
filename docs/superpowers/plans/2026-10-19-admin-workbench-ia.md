@@ -31,9 +31,9 @@
 **Interfaces:**
 - Produces: `ingestEntryLabel({ running, queued, failed, failedToLoad })` 返回字符串。
 
-- [ ] 写失败测试并确认失败
-- [ ] 实现纯函数并确认通过
-- [ ] 提交
+- [x] 写失败测试并确认失败
+- [x] 实现纯函数并确认通过
+- [x] 提交
 
 ### Task 2: 工作台只留日常工作
 
@@ -47,9 +47,9 @@
 - Consumes: `ingestEntryLabel`
 - 工作台不再导出 `notifyLabelText`，不再调用通知接口。
 
-- [ ] 改写工作台测试并确认失败
-- [ ] 改页面并确认通过
-- [ ] 提交
+- [x] 改写工作台测试并确认失败
+- [x] 改页面并确认通过
+- [x] 提交
 
 ### Task 3: 通知移到客服工单
 
@@ -62,9 +62,9 @@
 **Interfaces:**
 - Produces: `inbox.js` 导出 `notifyLabelText(templateId, enabled, quota)`
 
-- [ ] 把原工作台通知测试迁到客服工单并确认失败
-- [ ] 搬移通知区并确认通过
-- [ ] 提交
+- [x] 把原工作台通知测试迁到客服工单并确认失败
+- [x] 搬移通知区并确认通过
+- [x] 提交
 
 ### Task 4: 内容运营进入重处理
 
@@ -77,6 +77,6 @@
 - Consumes: `ingestEntryLabel`
 - `openIngest` 进入 `/pages/admin/ingest/ingest`
 
-- [ ] 写失败测试并确认失败
-- [ ] 增加入口并确认通过
-- [ ] 提交
+- [x] 写失败测试并确认失败
+- [x] 增加入口并确认通过
+- [x] 提交
