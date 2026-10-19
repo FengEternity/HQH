@@ -53,7 +53,8 @@ async function runOnce({
   probeMedia,
   transcodeIfNeeded,
   transcribe,
-  resolveAutoIntro,
+  summarizeIntro,
+  recognizeSpeech,
   placeholderIntro,
   deleteCloudFiles = async () => {},
   warn = () => {},
@@ -80,6 +81,31 @@ async function runOnce({
     probe = await probeMedia(localPath);
   } catch {
     return completeFailure(catalog, claimed, 'INTERNAL');
+  }
+
+  let remoteSpeech = null;
+  if (probe.hasAudio && typeof recognizeSpeech === 'function') {
+    try {
+      remoteSpeech = await recognizeSpeech({
+        localPath,
+        title: typeof claimed.title === 'string' ? claimed.title : '',
+        brandName: typeof claimed.brandName === 'string' ? claimed.brandName : '',
+        durationSec: probe.durationSec,
+      });
+    } catch (error) {
+      warn(`bailian skipped: ${error && error.message ? error.message : 'failed'}`);
+      remoteSpeech = null;
+    }
+    if (remoteSpeech && remoteSpeech.grounded && typeof catalog.noteIntro === 'function') {
+      try {
+        await catalog.noteIntro({
+          ...jobIdentity(claimed),
+          intro: remoteSpeech.intro,
+        });
+      } catch (error) {
+        warn(`intro note skipped: ${error && error.message ? error.message : 'failed'}`);
+      }
+    }
   }
 
   let prepared = { path: localPath };
@@ -144,7 +170,9 @@ async function runOnce({
   }
 
   let transcription;
-  try {
+  if (remoteSpeech && Array.isArray(remoteSpeech.segments) && remoteSpeech.segments.length > 0) {
+    transcription = { ok: true, skipped: false, segments: remoteSpeech.segments };
+  } else try {
     transcription = await transcribe(prepared.path);
   } catch {
     return completePrepared({
@@ -177,14 +205,18 @@ async function runOnce({
     });
   }
 
-  let resolvedIntro;
-  try {
-    resolvedIntro = resolveAutoIntro({
+  let resolvedIntro = { grounded: false };
+  if (remoteSpeech && remoteSpeech.grounded) {
+    resolvedIntro = { grounded: true, intro: remoteSpeech.intro };
+  } else try {
+    resolvedIntro = await summarizeIntro({
+      title: typeof claimed.title === 'string' ? claimed.title : '',
+      brandName: typeof claimed.brandName === 'string' ? claimed.brandName : '',
       transcriptSegments: transcription.segments,
       placeholderIntro,
     });
   } catch {
-    return failPrepared('INTERNAL');
+    resolvedIntro = { grounded: false };
   }
 
   return completePrepared({

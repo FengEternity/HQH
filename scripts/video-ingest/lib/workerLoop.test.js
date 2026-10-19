@@ -37,6 +37,8 @@ function claimedJob() {
     videoId: 'vid',
     mediaRevision: 1,
     videoFileId: 'cloud://v',
+    title: '千寻仪器数据导入',
+    brandName: '千寻',
   };
 }
 
@@ -75,7 +77,7 @@ function createDeps(overrides = {}) {
         segments: [{ startSec: 0, endSec: 1, text: '打开项目。' }],
         skipped: false,
       }),
-      resolveAutoIntro: () => ({ grounded: false, intro: PLACEHOLDER_INTRO }),
+      summarizeIntro: () => ({ grounded: false, intro: PLACEHOLDER_INTRO }),
       placeholderIntro: PLACEHOLDER_INTRO,
       now: () => 1,
       deleteCloudFiles: async (fileIds) => {
@@ -141,7 +143,7 @@ describe('runOnce', () => {
       transcribe: async () => {
         throw new Error('无音轨不应转写');
       },
-      resolveAutoIntro: () => {
+      summarizeIntro: () => {
         throw new Error('无音轨不应生成简介');
       },
     });
@@ -509,7 +511,7 @@ describe('runOnce', () => {
       transcribe: async () => {
         throw timeout;
       },
-      resolveAutoIntro: () => {
+      summarizeIntro: () => {
         throw new Error('失败转写不应生成简介');
       },
     });
@@ -562,9 +564,11 @@ describe('runOnce', () => {
     const segments = [{ startSec: 0, endSec: 1, text: '打开项目。' }];
     const { deps, completes } = createDeps({
       transcribe: async () => ({ ok: true, segments, skipped: false }),
-      resolveAutoIntro: ({ transcriptSegments, placeholderIntro }) => {
+      summarizeIntro: ({ transcriptSegments, placeholderIntro, title, brandName }) => {
         assert.deepEqual(transcriptSegments, segments);
         assert.equal(placeholderIntro, PLACEHOLDER_INTRO);
+        assert.equal(title, '千寻仪器数据导入');
+        assert.equal(brandName, '千寻');
         return { grounded: true, intro: '打开项目。' };
       },
     });
@@ -572,6 +576,22 @@ describe('runOnce', () => {
     assert.equal(await runOnce(deps), 'processed');
     assert.deepEqual(completes[0].transcriptSegments, segments);
     assert.equal(completes[0].intro, '打开项目。');
+  });
+
+  it('摘要失败时仍回写字幕且不带 intro', async () => {
+    const segments = [{ startSec: 0, endSec: 1, text: '打开项目。' }];
+    const { deps, completes } = createDeps({
+      transcribe: async () => ({ ok: true, segments, skipped: false }),
+      summarizeIntro: async () => {
+        throw new Error('llama missing');
+      },
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes[0].asr, 'ready');
+    assert.equal(completes[0].outcome, 'ready');
+    assert.deepEqual(completes[0].transcriptSegments, segments);
+    assert.equal(Object.hasOwn(completes[0], 'intro'), false);
   });
 
   it('未取证简介仍 ready 但不覆盖 intro', async () => {
@@ -622,5 +642,66 @@ describe('runOnce', () => {
     assert.equal(await runOnce(deps), 'failed');
     assert.equal(completes[0].errorCode, 'INTERNAL');
     assert.equal(completes[0].errorMessage, '处理失败');
+  });
+
+  it('百炼简介在转码前写回，并且不再走本地转写', async () => {
+    const notes = [];
+    let transcribed = false;
+    let transcoded = false;
+    let notedBeforeTranscode = false;
+    let probes = 0;
+    const { deps, completes } = createDeps({
+      catalog: {
+        claim: async () => claimedJob(),
+        noteIntro: async (payload) => {
+          notedBeforeTranscode = transcoded === false;
+          notes.push(payload);
+        },
+        complete: async (payload) => {
+          completes.push(payload);
+        },
+      },
+      probeMedia: async () => {
+        probes += 1;
+        if (probes === 1) {
+          return {
+            hasAudio: true,
+            videoCodec: 'hevc',
+            audioCodec: 'aac',
+            durationSec: 3,
+            needsTranscode: true,
+            playback: playback({ videoCodec: 'hevc', compliant: false }),
+          };
+        }
+        return {
+          hasAudio: true,
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          durationSec: 3,
+          needsTranscode: false,
+          playback: playback(),
+        };
+      },
+      transcodeIfNeeded: async (localPath) => {
+        transcoded = true;
+        return { path: localPath, uploadedFileId: 'cloud://processed' };
+      },
+      transcribe: async () => {
+        transcribed = true;
+        return { ok: true, segments: [], skipped: false };
+      },
+      recognizeSpeech: async () => ({
+        grounded: true,
+        intro: '千寻本期讲解如何打开项目。',
+        segments: [{ startSec: 0, endSec: 1, text: '打开项目。' }],
+      }),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(notes[0].intro, '千寻本期讲解如何打开项目。');
+    assert.equal(notedBeforeTranscode, true);
+    assert.equal(transcoded, true);
+    assert.equal(transcribed, false);
+    assert.equal(completes[0].intro, '千寻本期讲解如何打开项目。');
   });
 });

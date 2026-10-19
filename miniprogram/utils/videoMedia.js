@@ -28,6 +28,27 @@ function withPosterUrls(list) {
   return (list || []).map(withPosterUrl);
 }
 
+function displayedPoster({
+  currentCoverFileId,
+  currentPosterUrl,
+  nextCoverFileId,
+  nextPosterUrl,
+}) {
+  const nextId = String(nextCoverFileId || '').trim();
+  const currentId = String(currentCoverFileId || '').trim();
+  const incoming = isHttpPosterUrl(nextPosterUrl) ? String(nextPosterUrl).trim() : '';
+  if (incoming) {
+    return { coverFileId: nextId, posterUrl: incoming, resolve: false };
+  }
+  if (nextId && nextId === currentId && currentPosterUrl) {
+    return { coverFileId: nextId, posterUrl: currentPosterUrl, resolve: false };
+  }
+  if (!nextId && currentId) {
+    return { coverFileId: currentId, posterUrl: String(currentPosterUrl || ''), resolve: false };
+  }
+  return { coverFileId: nextId, posterUrl: '', resolve: Boolean(nextId) };
+}
+
 function planVideoCoverUpload(input) {
   const coverFileId = String((input && input.coverFileId) || '').trim();
   const thumbTempFilePath = String((input && input.thumbTempFilePath) || '').trim();
@@ -45,5 +66,6 @@ module.exports = {
   cloudUploadOptions,
   withPosterUrl,
   withPosterUrls,
+  displayedPoster,
   planVideoCoverUpload,
 };

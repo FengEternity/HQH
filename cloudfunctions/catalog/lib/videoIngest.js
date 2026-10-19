@@ -53,6 +53,87 @@ function resolveNextVideoFileId({ prevVideoFileId, submittedVideoFileId, replace
 }
 
 // 管理端表单会把占位句原样回传，此时库里可能已经有 worker 写好的简介，不能被盖掉。
+function cleanText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function withoutPlaceholder(value) {
+  const text = cleanText(value);
+  return text === PLACEHOLDER_INTRO ? '' : text;
+}
+
+function splitVideoCopies(video) {
+  const source = video && typeof video === 'object' ? video : {};
+  const ingest = source.ingest && typeof source.ingest === 'object' ? source.ingest : {};
+  const introSource = ingest.introSource || 'placeholder';
+  const hasTitleCopies = typeof source.humanTitle === 'string' || typeof source.autoTitle === 'string';
+  const hasIntroCopies = typeof source.humanIntro === 'string' || typeof source.autoIntro === 'string';
+  const autoTitle = typeof source.autoTitle === 'string' ? source.autoTitle.trim() : '';
+  const humanTitle = typeof source.humanTitle === 'string'
+    ? source.humanTitle.trim()
+    : (hasTitleCopies ? '' : cleanText(source.title));
+  let autoIntro = '';
+  let humanIntro = '';
+  if (hasIntroCopies) {
+    autoIntro = withoutPlaceholder(source.autoIntro);
+    humanIntro = withoutPlaceholder(source.humanIntro);
+  } else if (introSource === 'auto') {
+    autoIntro = withoutPlaceholder(source.intro);
+  } else {
+    humanIntro = withoutPlaceholder(source.intro);
+  }
+  return { autoTitle, humanTitle, autoIntro, humanIntro };
+}
+
+function effectiveTitle(humanTitle, autoTitle) {
+  return cleanText(humanTitle) || cleanText(autoTitle);
+}
+
+function effectiveIntro(humanIntro, autoIntro) {
+  return cleanText(humanIntro) || cleanText(autoIntro) || PLACEHOLDER_INTRO;
+}
+
+function introSourceFromCopies(humanIntro, autoIntro) {
+  if (cleanText(humanIntro)) {
+    return 'human';
+  }
+  if (cleanText(autoIntro)) {
+    return 'auto';
+  }
+  return 'placeholder';
+}
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object || {}, key);
+}
+
+function resolveStoredCopies({ prevData, event, baseTitle }) {
+  const prev = splitVideoCopies(prevData || {});
+  const hasStoredTitles = Boolean(
+    prevData && (typeof prevData.humanTitle === 'string' || typeof prevData.autoTitle === 'string'),
+  );
+  const humanTitle = hasOwn(event, 'humanTitle')
+    ? cleanText(event.humanTitle)
+    : (hasStoredTitles ? prev.humanTitle : cleanText(baseTitle || (prevData && prevData.title) || ''));
+  const autoTitle = hasOwn(event, 'autoTitle') ? cleanText(event.autoTitle) : prev.autoTitle;
+  let humanIntro = prev.humanIntro;
+  if (hasOwn(event, 'humanIntro')) {
+    humanIntro = withoutPlaceholder(event.humanIntro);
+  } else if (hasOwn(event, 'intro')) {
+    const submitted = withoutPlaceholder(event.intro);
+    const previous = cleanText(prevData && prevData.intro);
+    if (submitted && submitted !== previous) {
+      humanIntro = submitted;
+    }
+  }
+  return {
+    humanTitle,
+    autoTitle,
+    humanIntro,
+    autoIntro: prev.autoIntro,
+  };
+}
+
 function isOperatorIntroEdit({ prevIntro, submittedIntro }) {
   const previous = typeof prevIntro === 'string' ? prevIntro : '';
   const submitted = typeof submittedIntro === 'string' ? submittedIntro : '';
@@ -152,6 +233,8 @@ function planWorkerComplete({
   prevIngest,
   prevIntro,
   prevIntroSource,
+  prevHumanIntro,
+  prevAutoIntro,
   complete,
   now,
 }) {
@@ -159,8 +242,20 @@ function planWorkerComplete({
     throw badInput('mediaRevision mismatch');
   }
 
+  const stored = splitVideoCopies({
+    intro: prevIntro,
+    ingest: { introSource: prevIntroSource || prevIngest.introSource },
+    ...(typeof prevHumanIntro === 'string' || typeof prevAutoIntro === 'string'
+      ? {
+          humanIntro: typeof prevHumanIntro === 'string' ? prevHumanIntro : '',
+          autoIntro: typeof prevAutoIntro === 'string' ? prevAutoIntro : '',
+        }
+      : {}),
+  });
   const ingest = { ...prevIngest };
-  let intro = prevIntro;
+  let humanIntro = stored.humanIntro;
+  let autoIntro = stored.autoIntro;
+  let intro = effectiveIntro(humanIntro, autoIntro);
   let applyIntro = false;
 
   if (complete.outcome === 'failed') {
@@ -173,7 +268,7 @@ function planWorkerComplete({
     ingest.errorMessage =
       typeof complete.errorMessage === 'string' ? complete.errorMessage : '';
     ingest.finishedAt = now;
-    return { ingest, intro, applyIntro };
+    return { ingest, intro, autoIntro, humanIntro, applyIntro };
   }
 
   ingest.phase = 'ready';
@@ -185,19 +280,52 @@ function planWorkerComplete({
       : '';
   ingest.finishedAt = now;
 
-  if (
-    prevIntroSource !== 'human' &&
-    typeof complete.intro === 'string' &&
-    complete.intro.length > 0
-  ) {
-    applyIntro = true;
-    intro = complete.intro;
-    ingest.introSource = 'auto';
-  } else if (prevIntroSource === 'human') {
-    ingest.introSource = 'human';
+  const generated = withoutPlaceholder(complete.intro);
+  if (generated) {
+    autoIntro = generated;
   }
+  const nextIntro = effectiveIntro(humanIntro, autoIntro);
+  applyIntro = nextIntro !== intro;
+  intro = nextIntro;
+  ingest.introSource = introSourceFromCopies(humanIntro, autoIntro);
 
-  return { ingest, intro, applyIntro };
+  return { ingest, intro, autoIntro, humanIntro, applyIntro };
+}
+
+function planRunningIntro({
+  prevIngest,
+  prevIntro,
+  prevIntroSource,
+  prevHumanIntro,
+  prevAutoIntro,
+  intro,
+}) {
+  const stored = splitVideoCopies({
+    intro: prevIntro,
+    ingest: { introSource: prevIntroSource || prevIngest.introSource },
+    ...(typeof prevHumanIntro === 'string' || typeof prevAutoIntro === 'string'
+      ? {
+          humanIntro: typeof prevHumanIntro === 'string' ? prevHumanIntro : '',
+          autoIntro: typeof prevAutoIntro === 'string' ? prevAutoIntro : '',
+        }
+      : {}),
+  });
+  const generated = withoutPlaceholder(intro);
+  if (!generated) {
+    return null;
+  }
+  const humanIntro = stored.humanIntro;
+  const autoIntro = generated;
+  const nextIntro = effectiveIntro(humanIntro, autoIntro);
+  return {
+    ingest: {
+      ...prevIngest,
+      introSource: introSourceFromCopies(humanIntro, autoIntro),
+    },
+    intro: nextIntro,
+    autoIntro,
+    humanIntro,
+  };
 }
 
 module.exports = {
@@ -208,5 +336,11 @@ module.exports = {
   isOperatorIntroEdit,
   planAdminSave,
   planWorkerComplete,
+  planRunningIntro,
   resolveNextVideoFileId,
+  resolveStoredCopies,
+  splitVideoCopies,
+  effectiveTitle,
+  effectiveIntro,
+  introSourceFromCopies,
 };

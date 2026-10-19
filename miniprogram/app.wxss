@@ -481,6 +481,24 @@ page {
   padding: 18rpx 20rpx;
 }
 
+.auto-intro-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16rpx;
+  padding: 8rpx 0 4rpx;
+}
+
+.auto-intro-hint {
+  margin-right: auto;
+}
+
+.auto-intro-retry {
+  margin: 0;
+  padding: 8rpx 20rpx;
+  font-size: 24rpx;
+}
+
 .media-block {
   padding: 8rpx 0 20rpx;
 }

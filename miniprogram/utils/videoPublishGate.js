@@ -9,16 +9,18 @@ function fail(message) {
 }
 
 function assertVideoDraftFields(doc) {
-  const title = String((doc && doc.title) || '').trim();
   const intro = String((doc && doc.intro) || '').trim();
   const brandId = String((doc && doc.brandId) || '').trim();
-  if (!title || !intro || !brandId) {
-    fail('标题、品牌与简介必填');
+  if (!intro || !brandId) {
+    fail('品牌与简介必填');
   }
 }
 
 function assertReadyToPublish(doc) {
   assertVideoDraftFields(doc);
+  if (!String((doc && doc.title) || '').trim()) {
+    fail('上架前请先填写标题');
+  }
   const coverFileId = String((doc && doc.coverFileId) || '').trim();
   const videoFileId = String((doc && doc.videoFileId) || '').trim();
   if (!coverFileId || !videoFileId) {

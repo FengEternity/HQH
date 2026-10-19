@@ -11,6 +11,7 @@
     "smoke:sdk": "node --test sdk-smoke.test.js"
   },
   "dependencies": {
-    "@cloudbase/node-sdk": "^3.18.3"
+    "@cloudbase/node-sdk": "^3.18.3",
+    "pinyin-pro": "^3.29.5"
   }
 }

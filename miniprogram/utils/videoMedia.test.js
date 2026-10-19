@@ -7,6 +7,7 @@ const path = require('path');
 const {
   withPosterUrl,
   withPosterUrls,
+  displayedPoster,
   planVideoCoverUpload,
   cloudUploadOptions,
   VIDEO_UPLOAD_TIMEOUT_MS,
@@ -52,6 +53,47 @@ describe('withPosterUrls', () => {
     ]);
     assert.equal(list[0].posterUrl, '');
     assert.equal(list[1].posterUrl, '');
+  });
+});
+
+describe('displayedPoster', () => {
+  it('keeps the cover already on screen when a refresh has no image url', () => {
+    assert.deepEqual(displayedPoster({
+      currentCoverFileId: 'cloud://cover',
+      currentPosterUrl: 'wxfile://tmp/crop.jpg',
+      nextCoverFileId: 'cloud://cover',
+      nextPosterUrl: '',
+    }), {
+      coverFileId: 'cloud://cover',
+      posterUrl: 'wxfile://tmp/crop.jpg',
+      resolve: false,
+    });
+  });
+
+  it('keeps a just-saved cover if the refresh is still the old record', () => {
+    assert.deepEqual(displayedPoster({
+      currentCoverFileId: 'cloud://cover',
+      currentPosterUrl: 'wxfile://tmp/crop.jpg',
+      nextCoverFileId: '',
+      nextPosterUrl: '',
+    }), {
+      coverFileId: 'cloud://cover',
+      posterUrl: 'wxfile://tmp/crop.jpg',
+      resolve: false,
+    });
+  });
+
+  it('asks for a display url when reopening a saved cover', () => {
+    assert.deepEqual(displayedPoster({
+      currentCoverFileId: '',
+      currentPosterUrl: '',
+      nextCoverFileId: 'cloud://cover',
+      nextPosterUrl: '',
+    }), {
+      coverFileId: 'cloud://cover',
+      posterUrl: '',
+      resolve: true,
+    });
   });
 });
 

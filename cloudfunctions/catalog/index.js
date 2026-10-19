@@ -221,6 +221,8 @@ async function dispatch(event) {
       return await claimVideoIngest(event);
     case 'completeVideoIngest':
       return await completeVideoIngest(event);
+    case 'noteVideoIntro':
+      return await noteVideoIntro(event);
     case 'publishVideo':
       return await publishVideo(event);
     case 'unpublishVideo':
@@ -642,6 +644,15 @@ async function claimVideoIngest(event) {
   await requireAdmin(event.ticket);
   const workerId = String(event.workerId || '').trim();
   return await videoIngestActions.claimVideo({ workerId });
+}
+
+async function noteVideoIntro(event) {
+  await requireAdmin(event.ticket);
+  return await videoIngestActions.noteRunningIntro({
+    videoId: String(event.videoId || '').trim(),
+    mediaRevision: event.mediaRevision,
+    intro: event.intro,
+  });
 }
 
 async function completeVideoIngest(event) {
