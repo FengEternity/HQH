@@ -4,7 +4,6 @@ Page({
   data: {
     id: '',
     name: '',
-    sort: '',
     videoCount: 0,
     saving: false,
   },
@@ -24,7 +23,6 @@ Page({
         }
         this.setData({
           name: found.name || '',
-          sort: String(found.sort === undefined ? '' : found.sort),
           videoCount: found.videoCount || 0,
         });
       })
@@ -38,9 +36,6 @@ Page({
   },
   onName(e) {
     this.setData({ name: e.detail.value });
-  },
-  onSort(e) {
-    this.setData({ sort: e.detail.value });
   },
   save() {
     const name = this.data.name.trim();
@@ -56,7 +51,6 @@ Page({
       action: 'upsertBrand',
       id: this.data.id || undefined,
       name,
-      sort: this.data.sort === '' ? undefined : Number(this.data.sort),
     })
       .then(() => {
         this.setData({ saving: false });

@@ -6,7 +6,7 @@
     <view class="list-row" wx:for="{{brands}}" wx:key="_id">
       <view class="list-main" data-id="{{item._id}}" data-name="{{item.name}}" bindtap="openBrand">
         <view class="tile-title">{{item.name}}</view>
-        <view class="muted">{{item.videoCount}} 条视频 · 排序 {{item.sort}}</view>
+        <view class="muted">{{item.videoCount}} 条视频</view>
       </view>
       <text class="list-action" data-id="{{item._id}}" bindtap="editBrand">编辑</text>
     </view>
