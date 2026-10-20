@@ -1,17 +1,13 @@
 const { ticketingAdmin } = require('../../../utils/api');
-const { contact } = require('../../../config.js');
 
-function notifyLabelText(templateId, enabled, quota) {
-  if (!templateId) {
-    return '未配置';
+function notifyLabelText(bound, enabled) {
+  if (!bound) {
+    return '未绑定';
   }
   if (!enabled) {
     return '未开启';
   }
-  if (Number(quota) > 0) {
-    return '还可接收 ' + quota + ' 条';
-  }
-  return '额度已用完';
+  return '接收中';
 }
 
 function pad(n) {
@@ -36,6 +32,10 @@ function formatTime(ms) {
   );
 }
 
+function hasWecomLogin() {
+  return Boolean(wx.qy && wx.qy.login);
+}
+
 Page({
   data: {
     status: 'waiting_human',
@@ -46,83 +46,67 @@ Page({
     ],
     threads: [],
     loading: true,
-    newTicketTplId: (contact && contact.newTicketTplId) || '',
+    notifyBound: false,
     notifyLabel: '未开启',
     notifyEnabled: false,
   },
   onShow() {
     return Promise.all([this.load(), this.loadNotifyTemplate()]);
   },
-  applyNotify(templateId, enabled, quota) {
+  applyNotify(bound, enabled) {
     this.setData({
-      newTicketTplId: templateId || '',
+      notifyBound: Boolean(bound),
       notifyEnabled: Boolean(enabled),
-      notifyLabel: notifyLabelText(templateId, enabled, quota),
+      notifyLabel: notifyLabelText(bound, enabled),
     });
   },
   loadNotifyTemplate() {
     return ticketingAdmin({ action: 'csNotifyConfig' })
       .then((result) => {
         if (result) {
-          this.applyNotify(result.newTicketTplId, result.enabled, result.quota);
+          this.applyNotify(result.bound, result.enabled);
         }
       })
       .catch(() => {});
   },
-  bindNotify() {
-    const templateId = this.data.newTicketTplId;
-    if (!templateId) {
-      wx.showToast({ title: '未配置通知模板', icon: 'none' });
-      return;
-    }
-    let settled = false;
-    const finish = (result) => {
-      if (settled) {
+  toggleNotify(e) {
+    const enabled = Boolean(e && e.detail && e.detail.value);
+    if (!this.data.notifyBound) {
+      if (!enabled) {
         return;
       }
-      settled = true;
-      if (!result || result[templateId] !== 'accept') {
-        wx.showToast({ title: '未允许，这个微信收不到通知', icon: 'none' });
+      if (!hasWecomLogin()) {
+        this.setData({ notifyEnabled: false });
+        wx.showToast({ title: '请在企业微信中打开后再开启', icon: 'none' });
         return;
       }
-      return ticketingAdmin({ action: 'csRegisterNotify' })
-        .then((registered) => {
-          this.applyNotify(templateId, registered.enabled, registered.quota);
-          wx.showToast({
-            title: '已开启，还可接收 ' + registered.quota + ' 条',
-            icon: 'none',
-          });
+      return Promise.resolve()
+        .then(() => wx.qy.login())
+        .then((res) =>
+          ticketingAdmin({
+            action: 'csBindWecom',
+            code: res && res.code,
+          }),
+        )
+        .then((result) => {
+          this.applyNotify(result.bound, result.enabled);
+          wx.showToast({ title: '已开启', icon: 'none' });
         })
         .catch(() => {
-          wx.showToast({ title: '通知状态更新失败', icon: 'none' });
+          wx.showToast({ title: '绑定失败', icon: 'none' });
         });
-    };
-    try {
-      let pending;
-      const request = wx.requestSubscribeMessage({
-        tmplIds: [templateId],
-        success: (result) => {
-          pending = finish(result);
-        },
-        fail: () => {
-          pending = finish(null);
-        },
-      });
-      if (request && typeof request.then === 'function') {
-        return request.then((result) => finish(result), () => finish(null));
-      }
-      return pending;
-    } catch (err) {
-      return finish(null);
     }
-  },
-  stopNotify() {
-    return ticketingAdmin({ action: 'csUnregisterNotify' })
+    return ticketingAdmin({ action: 'csSetNotify', enabled })
       .then((result) => {
-        this.applyNotify(this.data.newTicketTplId, result.enabled, result.quota);
+        this.applyNotify(result.bound, result.enabled);
+        if (enabled) {
+          wx.showToast({ title: '已开启', icon: 'none' });
+        }
       })
       .catch(() => {
-        wx.showToast({ title: '停止失败', icon: 'none' });
+        if (!enabled) {
+          wx.showToast({ title: '停止失败', icon: 'none' });
+        }
       });
   },
   load() {

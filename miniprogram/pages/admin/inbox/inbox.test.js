@@ -41,163 +41,121 @@ afterEach(() => {
 });
 
 describe('admin inbox notifications', () => {
-  it('places the notice above the status filters and stops without subscribing', () => {
+  it('places the notice above the status filters', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'inbox.wxml'), 'utf8');
     const noticeAt = wxml.indexOf('接收新工单通知');
     const filtersAt = wxml.indexOf('selectStatus');
     assert.equal(noticeAt > -1, true);
     assert.equal(filtersAt > noticeAt, true);
-    assert.equal(wxml.includes('catchtap="stopNotify"'), true);
-  });
-
-  it('binds this WeChat when the operator allows new-ticket notices', async () => {
-    const events = [];
-    global.wx = {
-      requestSubscribeMessage({ tmplIds, success }) {
-        events.push(['subscribe', tmplIds]);
-        success({ 'tpl-new': 'accept' });
-      },
-      navigateTo() {},
-      redirectTo() {},
-      showToast({ title }) {
-        events.push(['toast', title]);
-      },
-    };
-    const page = loadPage({
-      templateId: '',
-      ticketingAdmin: async (data) => {
-        events.push(['api', data.action]);
-        if (data.action === 'csNotifyConfig') {
-          return { ok: true, newTicketTplId: 'tpl-new' };
-        }
-        if (data.action === 'csAdminList') {
-          return { ok: true, threads: [] };
-        }
-        if (data.action === 'csRegisterNotify') {
-          return { ok: true, enabled: true, quota: 1 };
-        }
-        return { ok: true };
-      },
-    });
-
-    await page.onShow();
-    await page.bindNotify();
-
-    assert.equal(page.data.newTicketTplId, 'tpl-new');
-    assert.equal(page.data.notifyLabel, '还可接收 1 条');
-    assert.deepEqual(events.filter((item) => item[0] === 'subscribe'), [
-      ['subscribe', ['tpl-new']],
-    ]);
     assert.equal(
-      events.some((item) => item[0] === 'api' && item[1] === 'csRegisterNotify'),
+      wxml.includes(
+        '开启后，新工单会发到你的企业微信，并在运营群 @ 你。停止后这两处都不再通知你。',
+      ),
       true,
     );
-    assert.equal(
-      events.some((item) => item[0] === 'toast' && item[1].indexOf('已开启') === 0),
-      true,
-    );
+    assert.equal(wxml.includes('checked="{{notifyEnabled}}"'), true);
+    assert.equal(wxml.includes('bindchange="toggleNotify"'), true);
+    assert.equal(wxml.includes('bindNotify'), false);
+    assert.equal(wxml.includes('停止接收'), false);
+    assert.equal(wxml.includes('requestSubscribeMessage'), false);
+    assert.equal(wxml.includes('csRegisterNotify'), false);
   });
 
-  it('shows the four notification states', () => {
+  it('shows 未绑定, 未开启, and 接收中', () => {
     global.Page = () => {};
     delete require.cache[pagePath];
     const { notifyLabelText } = require(pagePath);
-    assert.equal(notifyLabelText('', false, 0), '未配置');
-    assert.equal(notifyLabelText('tpl', false, 2), '未开启');
-    assert.equal(notifyLabelText('tpl', true, 2), '还可接收 2 条');
-    assert.equal(notifyLabelText('tpl', true, 0), '额度已用完');
+    assert.equal(notifyLabelText(false, false), '未绑定');
+    assert.equal(notifyLabelText(false, true), '未绑定');
+    assert.equal(notifyLabelText(true, false), '未开启');
+    assert.equal(notifyLabelText(true, true), '接收中');
   });
 
-  it('does not register when the operator rejects, is banned, or the request fails', async () => {
-    for (const outcome of ['reject', 'ban', 'filter', 'fail']) {
-      const events = [];
-      global.wx = {
-        requestSubscribeMessage({ success, fail }) {
-          events.push(['subscribe']);
-          if (outcome === 'fail') {
-            fail({ errMsg: 'requestSubscribeMessage:fail' });
-            return;
-          }
-          success({ 'tpl-new': outcome });
-        },
-        navigateTo() {},
-        redirectTo() {},
-        showToast({ title }) {
-          events.push(['toast', title]);
-        },
-      };
-      const page = loadPage({
-        ticketingAdmin: async (data) => {
-          events.push(['api', data.action]);
-          if (data.action === 'csNotifyConfig') {
-            return { ok: true, newTicketTplId: 'tpl-new', enabled: false, quota: 0 };
-          }
-          if (data.action === 'csAdminList') {
-            return { ok: true, threads: [] };
-          }
-          return { ok: true, enabled: true, quota: 1 };
-        },
-      });
-
-      await page.onShow();
-      await page.bindNotify();
-
-      assert.equal(
-        events.some((item) => item[0] === 'api' && item[1] === 'csRegisterNotify'),
-        false,
-      );
-      assert.deepEqual(
-        events.filter((item) => item[0] === 'toast'),
-        [['toast', '未允许，这个微信收不到通知']],
-      );
-    }
-  });
-
-  it('registers one quota after accept and stops without subscribing again', async () => {
+  it('does not subscribe when this WeChat is outside WeCom', async () => {
     const events = [];
     global.wx = {
-      requestSubscribeMessage({ success }) {
-        events.push(['subscribe']);
-        success({ 'tpl-new': 'accept' });
+      requestSubscribeMessage() {
+        events.push('subscribe');
       },
-      navigateTo() {},
-      redirectTo() {},
       showToast({ title }) {
-        events.push(['toast', title]);
+        events.push(title);
       },
     };
     const page = loadPage({
       ticketingAdmin: async (data) => {
-        events.push(['api', data.action]);
+        events.push(data.action);
         if (data.action === 'csNotifyConfig') {
-          return { ok: true, newTicketTplId: 'tpl-new', enabled: true, quota: 1 };
-        }
-        if (data.action === 'csRegisterNotify') {
-          return { ok: true, enabled: true, quota: 2 };
-        }
-        if (data.action === 'csUnregisterNotify') {
-          return { ok: true, enabled: false, quota: 2 };
+          return { ok: true, bound: false, enabled: false };
         }
         return { ok: true, threads: [] };
       },
     });
-
     await page.onShow();
-    assert.equal(page.data.notifyLabel, '还可接收 1 条');
-    assert.equal(page.data.notifyEnabled, true);
-    await page.bindNotify();
-    assert.equal(page.data.notifyLabel, '还可接收 2 条');
-    await page.stopNotify();
-    assert.equal(page.data.notifyLabel, '未开启');
-    assert.equal(page.data.notifyEnabled, false);
-    assert.deepEqual(events.filter((item) => item[0] === 'subscribe'), [['subscribe']]);
+    await page.toggleNotify({ detail: { value: true } });
+    assert.equal(events.includes('subscribe'), false);
+    assert.equal(events.includes('csBindWecom'), false);
+    assert.equal(events.includes('请在企业微信中打开后再开启'), true);
   });
 
-  it('keeps the current state when stopping fails', async () => {
+  it('binds inside WeCom and shows 接收中', async () => {
+    const events = [];
     global.wx = {
-      requestSubscribeMessage() {},
-      navigateTo() {},
-      redirectTo() {},
+      qy: { login: () => Promise.resolve({ code: 'code-1' }) },
+      showToast({ title }) {
+        events.push(title);
+      },
+    };
+    const page = loadPage({
+      ticketingAdmin: async (data) => {
+        events.push(data.action);
+        if (data.action === 'csBindWecom') {
+          assert.equal(data.code, 'code-1');
+          return { ok: true, bound: true, enabled: true };
+        }
+        return { ok: true, bound: false, enabled: false, threads: [] };
+      },
+    });
+    await page.onShow();
+    await page.toggleNotify({ detail: { value: true } });
+    assert.equal(page.data.notifyLabel, '接收中');
+    assert.equal(events.includes('已开启'), true);
+  });
+
+  it('toggles an existing binding without logging in again', async () => {
+    const actions = [];
+    global.wx = {
+      qy: {
+        login() {
+          throw new Error('should not login');
+        },
+      },
+      showToast() {},
+    };
+    const page = loadPage({
+      ticketingAdmin: async (data) => {
+        actions.push(data.action);
+        if (data.action === 'csNotifyConfig') return { ok: true, bound: true, enabled: false };
+        if (data.action === 'csSetNotify') return { ok: true, bound: true, enabled: data.enabled };
+        return { ok: true, threads: [] };
+      },
+    });
+    await page.onShow();
+    await page.toggleNotify({ detail: { value: true } });
+    await page.toggleNotify({ detail: { value: false } });
+    assert.deepEqual(
+      actions.filter((item) => item === 'csSetNotify'),
+      ['csSetNotify', 'csSetNotify'],
+    );
+    assert.equal(page.data.notifyLabel, '未开启');
+  });
+
+  it('keeps 接收中 when stopping fails', async () => {
+    global.wx = {
+      qy: {
+        login() {
+          throw new Error('should not login');
+        },
+      },
       showToast({ title }) {
         this.toast = title;
       },
@@ -205,9 +163,9 @@ describe('admin inbox notifications', () => {
     const page = loadPage({
       ticketingAdmin: async (data) => {
         if (data.action === 'csNotifyConfig') {
-          return { ok: true, newTicketTplId: 'tpl-new', enabled: true, quota: 1 };
+          return { ok: true, bound: true, enabled: true };
         }
-        if (data.action === 'csUnregisterNotify') {
+        if (data.action === 'csSetNotify') {
           throw new Error('stop failed');
         }
         return { ok: true, threads: [] };
@@ -215,43 +173,38 @@ describe('admin inbox notifications', () => {
     });
 
     await page.onShow();
-    await page.stopNotify();
+    await page.toggleNotify({ detail: { value: false } });
 
-    assert.equal(page.data.notifyEnabled, true);
-    assert.equal(page.data.notifyLabel, '还可接收 1 条');
+    assert.equal(page.data.notifyLabel, '接收中');
     assert.equal(global.wx.toast, '停止失败');
   });
 
-  it('does not open the subscribe dialog when no template id is configured', async () => {
-    const events = [];
+  it('keeps 未绑定 when binding fails', async () => {
+    const titles = [];
     global.wx = {
-      requestSubscribeMessage() {
-        events.push(['subscribe']);
-        return Promise.resolve({});
-      },
-      navigateTo() {},
-      redirectTo() {},
+      qy: { login: () => Promise.resolve({ code: 'code-1' }) },
       showToast({ title }) {
-        events.push(['toast', title]);
+        titles.push(title);
       },
     };
     const page = loadPage({
       ticketingAdmin: async (data) => {
         if (data.action === 'csNotifyConfig') {
-          return { ok: true, newTicketTplId: '' };
+          return { ok: true, bound: false, enabled: false };
         }
-        if (data.action === 'csAdminList') {
-          return { ok: true, threads: [] };
+        if (data.action === 'csBindWecom') {
+          throw new Error('bind failed');
         }
-        return { ok: true };
+        return { ok: true, threads: [] };
       },
     });
 
     await page.onShow();
-    page.bindNotify();
+    await page.toggleNotify({ detail: { value: true } });
 
-    assert.deepEqual(events, [['toast', '未配置通知模板']]);
-    assert.equal(page.data.notifyLabel, '未配置');
+    assert.equal(page.data.notifyLabel, '未绑定');
+    assert.equal(titles.includes('绑定失败'), true);
+    assert.equal(titles.includes('已开启'), false);
   });
 
   it('keeps the notice label when config loading fails', async () => {
