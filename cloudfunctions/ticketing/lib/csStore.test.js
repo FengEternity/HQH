@@ -730,6 +730,25 @@ test('绑定成功写入 userid 并开启', async () => {
   assert.equal((await readWecomNotifyStatus(db, { openid: 'wx-1' })).bound, true);
 });
 
+test('空 code 拒绝绑定且不写库', async () => {
+  const db = makeMemoryDb();
+  let exchanged = false;
+  await assert.rejects(
+    () => csBindWecom(db, {
+      openid: 'wx-1',
+      code: '',
+      now: 10,
+      exchangeCode: async () => {
+        exchanged = true;
+        return { corpid: 'corp-1', userid: 'zhangsan' };
+      },
+    }),
+    (error) => error.code === 'BIND_FAILED',
+  );
+  assert.equal(exchanged, false);
+  assert.equal(await findSubscriberCount(db, 'wx-1'), 0);
+});
+
 test('企业不一致或空 OpenID 不写库', async () => {
   const db = makeMemoryDb();
   await assert.rejects(

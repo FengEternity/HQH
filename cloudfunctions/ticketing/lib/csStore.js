@@ -365,8 +365,11 @@ async function readWecomNotifyStatus(db, { openid }) {
 }
 
 async function csBindWecom(db, { openid, code, now, exchangeCode, expectedCorpId }) {
-  if (!openid || !code) {
+  if (!openid) {
     throw codedError('BAD_INPUT');
+  }
+  if (!code) {
+    throw codedError('BIND_FAILED');
   }
   const identity = await exchangeCode(code);
   const userid = identity && identity.userid;

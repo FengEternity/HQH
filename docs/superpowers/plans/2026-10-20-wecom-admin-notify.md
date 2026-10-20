@@ -279,7 +279,7 @@ Expected: FAIL，`csBindWecom is not a function`。
 
 - [ ] **Step 3: 写最小实现**
 
-`csBindWecom`：空 `openid` 或空 `code` 抛 `BAD_INPUT`。调用 `exchangeCode(code)`。没有 `userid`，或 `corpid` 不等于 `expectedCorpId`，抛 `BIND_FAILED` 且不写库。成功时按 `openid` 写入或更新 `wecomUserId`、`boundAt`、`enabled: true`、`updatedAt`。不保存 `session_key`。
+`csBindWecom`：空 `openid` 抛 `BAD_INPUT` 且不写库。空 `code` 在调用 `exchangeCode` 之前抛 `BIND_FAILED` 且不写库。换码后没有 `userid`，或 `corpid` 不等于 `expectedCorpId`，抛 `BIND_FAILED` 且不写库。成功时按 `openid` 写入或更新 `wecomUserId`、`boundAt`、`enabled: true`、`updatedAt`。不保存 `session_key`。
 
 `csSetNotify`：空 `openid` 抛 `BAD_INPUT`。`enabled === true` 且没有 `wecomUserId` 时抛 `UNBOUND`。`enabled === false` 且没有记录时返回 `{ ok: true, bound: false, enabled: false }`。关闭时只改 `enabled`。
 
