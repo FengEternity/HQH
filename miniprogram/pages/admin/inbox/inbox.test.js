@@ -28,8 +28,11 @@ function loadPage({ ticketingAdmin, templateId = '' }) {
 
   return Object.assign({}, definition, {
     data: JSON.parse(JSON.stringify(definition.data)),
-    setData(next) {
+    setData(next, callback) {
       this.data = Object.assign({}, this.data, next);
+      if (typeof callback === 'function') {
+        callback();
+      }
     },
   });
 }
@@ -205,6 +208,107 @@ describe('admin inbox notifications', () => {
     assert.equal(page.data.notifyLabel, '未绑定');
     assert.equal(titles.includes('绑定失败'), true);
     assert.equal(titles.includes('已开启'), false);
+  });
+
+  it('restores the switch checked value after a failed toggle', async () => {
+    const enableTitles = [];
+    const cases = [
+      {
+        name: 'outside WeCom',
+        detail: true,
+        original: false,
+        wx: { showToast() {} },
+        ticketingAdmin: async (data) => {
+          if (data.action === 'csNotifyConfig') {
+            return { ok: true, bound: false, enabled: false };
+          }
+          return { ok: true, threads: [] };
+        },
+      },
+      {
+        name: 'bind failure',
+        detail: true,
+        original: false,
+        wx: {
+          qy: { login: () => Promise.resolve({ code: 'code-1' }) },
+          showToast() {},
+        },
+        ticketingAdmin: async (data) => {
+          if (data.action === 'csNotifyConfig') {
+            return { ok: true, bound: false, enabled: false };
+          }
+          if (data.action === 'csBindWecom') {
+            throw new Error('bind failed');
+          }
+          return { ok: true, threads: [] };
+        },
+      },
+      {
+        name: 'stop failure',
+        detail: false,
+        original: true,
+        wx: {
+          qy: {
+            login() {
+              throw new Error('should not login');
+            },
+          },
+          showToast() {},
+        },
+        ticketingAdmin: async (data) => {
+          if (data.action === 'csNotifyConfig') {
+            return { ok: true, bound: true, enabled: true };
+          }
+          if (data.action === 'csSetNotify') {
+            throw new Error('stop failed');
+          }
+          return { ok: true, threads: [] };
+        },
+      },
+      {
+        name: 'enable failure',
+        detail: true,
+        original: false,
+        wx: {
+          qy: {
+            login() {
+              throw new Error('should not login');
+            },
+          },
+          showToast({ title }) {
+            enableTitles.push(title);
+          },
+        },
+        ticketingAdmin: async (data) => {
+          if (data.action === 'csNotifyConfig') {
+            return { ok: true, bound: true, enabled: false };
+          }
+          if (data.action === 'csSetNotify') {
+            throw new Error('enable failed');
+          }
+          return { ok: true, threads: [] };
+        },
+      },
+    ];
+
+    for (const item of cases) {
+      const checked = [];
+      global.wx = item.wx;
+      const page = loadPage({ ticketingAdmin: item.ticketingAdmin });
+      const apply = page.setData.bind(page);
+      page.setData = (next, callback) => {
+        if (Object.prototype.hasOwnProperty.call(next, 'notifyEnabled')) {
+          checked.push(next.notifyEnabled);
+        }
+        apply(next, callback);
+      };
+      await page.onShow();
+      checked.length = 0;
+      await page.toggleNotify({ detail: { value: item.detail } });
+      assert.deepEqual(checked, [!item.original, item.original], item.name);
+      assert.equal(page.data.notifyEnabled, item.original, item.name);
+    }
+    assert.deepEqual(enableTitles, []);
   });
 
   it('keeps the notice label when config loading fails', async () => {

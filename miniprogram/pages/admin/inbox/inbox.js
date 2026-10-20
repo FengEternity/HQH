@@ -69,6 +69,12 @@ Page({
       })
       .catch(() => {});
   },
+  restoreNotifyEnabled() {
+    const notifyEnabled = this.data.notifyEnabled;
+    this.setData({ notifyEnabled: !notifyEnabled }, () => {
+      this.setData({ notifyEnabled });
+    });
+  },
   toggleNotify(e) {
     const enabled = Boolean(e && e.detail && e.detail.value);
     if (!this.data.notifyBound) {
@@ -76,7 +82,7 @@ Page({
         return;
       }
       if (!hasWecomLogin()) {
-        this.setData({ notifyEnabled: false });
+        this.restoreNotifyEnabled();
         wx.showToast({ title: '请在企业微信中打开后再开启', icon: 'none' });
         return;
       }
@@ -93,6 +99,7 @@ Page({
           wx.showToast({ title: '已开启', icon: 'none' });
         })
         .catch(() => {
+          this.restoreNotifyEnabled();
           wx.showToast({ title: '绑定失败', icon: 'none' });
         });
     }
@@ -104,6 +111,7 @@ Page({
         }
       })
       .catch(() => {
+        this.restoreNotifyEnabled();
         if (!enabled) {
           wx.showToast({ title: '停止失败', icon: 'none' });
         }
