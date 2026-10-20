@@ -132,12 +132,12 @@ test('个人消息走应用，群消息走机器人', async () => {
   assert.equal(personal.body.touser, 'zhangsan|lisi');
   assert.equal(personal.body.msgtype, 'miniprogram_notice');
   assert.equal(personal.body.miniprogram_notice.page, 'pages/admin/ticket/ticket?id=thread-1');
-  assert.deepEqual(group.body.文本.mentioned_list, ['zhangsan', 'lisi']);
-  assert.equal(group.body.文本.content.includes('新工单'), true);
+  assert.deepEqual(group.body.text.mentioned_list, ['zhangsan', 'lisi']);
+  assert.equal(group.body.text.content.includes('新工单'), true);
 });
 
 test('access_token 过期时刷新一次', async () => {
-  让 tokenCalls = 0;
+  let tokenCalls = 0;
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
     calls.push(url);
@@ -361,10 +361,10 @@ EOF
 把 `keeps open and replies for claim/howto without notifying admins` 改成：
 
 ```js
-它('keeps open and replies for claim/howto while notifying admins', () => {
+it('keeps open and replies for claim/howto while notifying admins', () => {
   const claim = planSend({
     status: 'open',
-    文本: '领取账号',
+    text: '领取账号',
     faqId: 'claim',
     account: 'YD1',
     hasEscalateSystem: false,
@@ -373,10 +373,10 @@ EOF
   assert.equal(claim.notifyAdmins, true);
   assert.equal(claim.消息[1].文本.includes('资料馆账号'), true);
 
-  const howto = planSend({ status: 'open', 文本: '怎么找视频', faqId: 'howto', hasEscalateSystem: false });
+  const howto = planSend({ status: 'open', text: '怎么找视频', faqId: 'howto', hasEscalateSystem: false });
   assert.equal(howto.nextStatus, 'open');
   assert.equal(howto.notifyAdmins, true);
-  assert.equal(howto.消息[1].meta.source, 'rule');
+  assert.equal(howto.messages[1].meta.source, 'rule');
 });
 ```
 
@@ -535,7 +535,7 @@ test('部分 invaliduser 仍算个人发送成功', async () => {
   });
   const thread = (await db.collection('cs_threads').doc('thread-1').get()).data;
   assert.equal(thread.adminNotifyGroupResult, 'skipped');
-  assert.equal(thread.adminNotifyPersonalResult, '发送');
+  assert.equal(thread.adminNotifyPersonalResult, 'sent');
 });
 ```
 
@@ -654,7 +654,7 @@ EOF
 替换订阅相关用例，保留「通知区在筛选上面」：
 
 ```js
-它('does not subscribe when this WeChat is outside WeCom', async () => {
+it('does not subscribe when this WeChat is outside WeCom', async () => {
   const events = [];
   global.wx = {
     requestSubscribeMessage() {
@@ -680,7 +680,7 @@ EOF
   assert.equal(events.includes('请在企业微信中打开后再开启'), true);
 });
 
-它('binds inside WeCom and shows 接收中', async () => {
+it('binds inside WeCom and shows 接收中', async () => {
   const events = [];
   global.wx = {
     qy: { login: () => Promise.resolve({ code: 'code-1' }) },
@@ -702,7 +702,7 @@ EOF
   assert.equal(events.includes('已开启'), true);
 });
 
-它('toggles an existing binding without logging in again', async () => {
+it('toggles an existing binding without logging in again', async () => {
   const actions = [];
   global.wx = { qy: { login() { throw new Error('should not login'); } }, showToast() {} };
   const page = loadPage({
@@ -793,7 +793,7 @@ test('未接手不能回复和关闭', async () => {
   const db = makeMemoryDb();
   const thread = await createWaitingThread(db);
   await assert.rejects(
-    () => csAdminReply(db, { threadId: thread._id, openid: 'wx-a', 文本: '收到', now: 1_000 }),
+    () => csAdminReply(db, { threadId: thread._id, openid: 'wx-a', text: '收到', now: 1_000 }),
     (error) => error.code === 'CLAIM_REQUIRED',
   );
   await assert.rejects(
@@ -807,7 +807,7 @@ test('回复后 10 分钟重新计算，超时后别人可以接手', async () =
   const db = makeMemoryDb();
   const thread = await createWaitingThread(db);
   await csClaimReply(db, { threadId: thread._id, openid: 'wx-a', now: 1_000 });
-  await csAdminReply(db, { threadId: thread._id, openid: 'wx-a', 文本: '收到', now: 2_000 });
+  await csAdminReply(db, { threadId: thread._id, openid: 'wx-a', text: '收到', now: 2_000 });
   await assert.rejects(
     () => csClaimReply(db, { threadId: thread._id, openid: 'wx-b', now: 2_000 + 599999 }),
     (error) => error.code === 'CLAIMED',
@@ -892,7 +892,7 @@ EOF
 - [ ] **Step 1: 写失败测试**
 
 ```js
-它('不发送未接手的回复', async () => {
+it('不发送未接手的回复', async () => {
   const calls = [];
   const page = loadPage({
     ticketingAdmin: async (data) => {
@@ -907,7 +907,7 @@ EOF
   assert.equal(page.data.claimState, 'none');
 });
 
-它('接手人可以回复并看到放开', async () => {
+it('接手人可以回复并看到放开', async () => {
   const calls = [];
   const page = loadPage({
     ticketingAdmin: async (data) => {
@@ -926,7 +926,7 @@ EOF
   assert.equal(page.data.claimState, 'mine');
 });
 
-它('别人接手时不发送并提示正在处理', async () => {
+it('别人接手时不发送并提示正在处理', async () => {
   const calls = [];
   global.wx.showToast = ({ title }) => calls.push(title);
   const page = loadPage({
