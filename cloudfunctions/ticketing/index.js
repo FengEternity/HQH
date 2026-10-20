@@ -14,11 +14,11 @@ const {
   readWecomNotifyStatus,
   csBindWecom,
   csSetNotify,
-  deliverAdminNotifications,
 } = require('./lib/csStore');
 const { notifyReplied, readNewTicketTemplateId } = require('./lib/notify');
 const { verifyTicket } = require('./lib/ticket');
 const { createWecomClient } = require('./lib/wecomClient');
+const { deliverWecomAdminNotifications } = require('./lib/wecomDelivery');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -83,12 +83,17 @@ function sendSubscribeMessage(payload) {
   return cloud.openapi.subscribeMessage.send(payload);
 }
 
-function notifyAdmins(now) {
-  return deliverAdminNotifications(db, {
-    templateId: readNewTicketTemplateId(process.env),
+function notifyAdmins(now, thread) {
+  const threadId = thread && thread._id;
+  return deliverWecomAdminNotifications(db, {
+    threadId,
     now,
-    page: 'pages/admin/inbox/inbox',
-    send: sendSubscribeMessage,
+    page: 'pages/admin/ticket/ticket?id=' + threadId,
+    env: {
+      WECOM_GROUP_WEBHOOK: process.env.WECOM_GROUP_WEBHOOK,
+      WECOM_MINI_APPID: process.env.WECOM_MINI_APPID,
+    },
+    client: wecomClient,
   });
 }
 
@@ -120,7 +125,7 @@ async function dispatch(event) {
         wechatId: process.env.CS_WECHAT_ID || '',
         phone: process.env.CS_PHONE || '',
         now,
-        notifyAdminsFn: () => notifyAdmins(now),
+        notifyAdminsFn: (thread) => notifyAdmins(now, thread),
       });
     case 'csEscalate': {
       const text = event.text || '转人工';
@@ -132,7 +137,7 @@ async function dispatch(event) {
         wechatId: process.env.CS_WECHAT_ID || '',
         phone: process.env.CS_PHONE || '',
         now,
-        notifyAdminsFn: () => notifyAdmins(now),
+        notifyAdminsFn: (thread) => notifyAdmins(now, thread),
       });
     }
     case 'csAdminList':
