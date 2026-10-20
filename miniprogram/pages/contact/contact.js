@@ -142,6 +142,13 @@ Page({
   onDraft(e) {
     this.setData({ draft: e.detail.value });
   },
+  fillQuick(e) {
+    const faq = findFaq(e.currentTarget.dataset.id);
+    if (!faq) {
+      return;
+    }
+    this.setData({ draft: faq.title });
+  },
   askFaq(e) {
     const faq = findFaq(e.currentTarget.dataset.id);
     if (!faq) {

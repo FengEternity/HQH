@@ -94,6 +94,30 @@ describe('contact page', () => {
     assert.equal(page.data.hours, '工作日 9:00–18:00');
   });
 
+  it('quick chip fills the input and does not send', async () => {
+    const calls = [];
+    const { page, storage } = loadPage({
+      ticketing: async (data) => {
+        calls.push(data);
+        return { ok: true, thread: null, messages: [] };
+      },
+    });
+    page.onLoad();
+    page.data.draft = '已有内容';
+
+    await page.fillQuick({ currentTarget: { dataset: { id: 'claim' } } });
+    assert.equal(page.data.draft, '领取账号');
+
+    await page.fillQuick({ currentTarget: { dataset: { id: 'missing' } } });
+    assert.equal(page.data.draft, '没有我要的讲解');
+
+    await page.fillQuick({ currentTarget: { dataset: { id: 'howto' } } });
+    assert.equal(page.data.draft, '怎么找视频');
+
+    assert.deepEqual(calls, []);
+    assert.equal(storage.hqh_support_account || '', '');
+  });
+
   it('quick chips leave out the escalate entry kept beside the input', () => {
     const { page } = loadPage({
       ticketing: async () => ({ ok: true, thread: null, messages: [] }),
