@@ -38,7 +38,7 @@ function planSend(input) {
     }
     return {
       nextStatus: 'open',
-      notifyAdmins: false,
+      notifyAdmins: true,
       messages: [userMsg, assistant],
     };
   }
