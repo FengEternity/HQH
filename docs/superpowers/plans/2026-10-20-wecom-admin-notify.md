@@ -371,7 +371,7 @@ it('keeps open and replies for claim/howto while notifying admins', () => {
   });
   assert.equal(claim.nextStatus, 'open');
   assert.equal(claim.notifyAdmins, true);
-  assert.equal(claim.消息[1].文本.includes('资料馆账号'), true);
+  assert.equal(claim.messages[1].text.includes('资料馆账号'), true);
 
   const howto = planSend({ status: 'open', text: '怎么找视频', faqId: 'howto', hasEscalateSystem: false });
   assert.equal(howto.nextStatus, 'open');
