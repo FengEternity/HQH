@@ -7,6 +7,8 @@ const {
   csAdminGet,
   csAdminReply,
   csAdminClose,
+  csClaimReply,
+  csReleaseReply,
   csHistory,
   csSend,
   csRegisterNotify,
@@ -52,12 +54,31 @@ function makeMemoryDb({
   }
 
   function matches(doc, where) {
-    return Object.entries(where || {}).every(([key, expected]) => {
+    if (!where) {
+      return true;
+    }
+    if (where.__op === 'or') {
+      return where.operands.some((item) => matches(doc, item));
+    }
+    if (where.__op === 'and') {
+      return where.operands.every((item) => matches(doc, item));
+    }
+    return Object.entries(where).every(([key, expected]) => {
       if (expected && expected.__op === 'neq') {
         return doc[key] !== expected.value;
       }
       if (expected && expected.__op === 'gt') {
         return Number(doc[key]) > expected.value;
+      }
+      if (expected && expected.__op === 'lt') {
+        return typeof doc[key] === 'number' && doc[key] < expected.value;
+      }
+      if (expected && expected.__op === 'lte') {
+        return typeof doc[key] === 'number' && doc[key] <= expected.value;
+      }
+      if (expected && expected.__op === 'exists') {
+        const present = doc[key] !== undefined;
+        return expected.value ? present : !present;
       }
       return doc[key] === expected;
     });
@@ -147,8 +168,23 @@ function makeMemoryDb({
       gt(value) {
         return { __op: 'gt', value };
       },
+      lt(value) {
+        return { __op: 'lt', value };
+      },
+      lte(value) {
+        return { __op: 'lte', value };
+      },
       inc(value) {
         return { __op: 'inc', value };
+      },
+      exists(value) {
+        return { __op: 'exists', value };
+      },
+      or(operands) {
+        return { __op: 'or', operands };
+      },
+      and(operands) {
+        return { __op: 'and', operands };
       },
     },
     collection(name) {
@@ -275,8 +311,10 @@ test('运营回复后用户历史可见 operator 消息', async () => {
     notifyAdminsFn: async () => {},
   });
 
+  await csClaimReply(db, { threadId: sent.thread._id, openid: 'wx-admin', now: 250 });
   await csAdminReply(db, {
     threadId: sent.thread._id,
+    openid: 'wx-admin',
     text: '已经为你处理',
     now: 300,
     notifyUserFn: async () => {},
@@ -292,9 +330,11 @@ test('运营不能回复尚未升级的 open 线程', async () => {
   const db = makeMemoryDb();
   const history = await csHistory(db, { openid: 'user-1', now: 100 });
 
+  await csClaimReply(db, { threadId: history.thread._id, openid: 'wx-admin', now: 150 });
   await assert.rejects(
     csAdminReply(db, {
       threadId: history.thread._id,
+      openid: 'wx-admin',
       text: '错误回复',
       now: 200,
       notifyUserFn: async () => {},
@@ -311,7 +351,8 @@ test('关闭线程后用户再次发送会创建新线程', async () => {
     now: 200,
     notifyAdminsFn: async () => {},
   });
-  await csAdminClose(db, { threadId: first.thread._id, now: 300 });
+  await csClaimReply(db, { threadId: first.thread._id, openid: 'wx-admin', now: 250 });
+  await csAdminClose(db, { threadId: first.thread._id, openid: 'wx-admin', now: 300 });
 
   const second = await csSend(db, {
     openid: 'user-1',
@@ -344,7 +385,8 @@ test('关闭线程后 csHistory 返回旧会话并创建新欢迎消息', async 
     now: 200,
     notifyAdminsFn: async () => {},
   });
-  await csAdminClose(db, { threadId: first.thread._id, now: 300 });
+  await csClaimReply(db, { threadId: first.thread._id, openid: 'wx-admin', now: 250 });
+  await csAdminClose(db, { threadId: first.thread._id, openid: 'wx-admin', now: 300 });
 
   const history = await csHistory(db, { openid: 'user-1', now: 400 });
 
@@ -784,6 +826,71 @@ test('未绑定不能打开，关闭后保留 userid', async () => {
   const stopped = await csSetNotify(db, { openid: 'wx-1', enabled: false, now: 3 });
   assert.equal(stopped.enabled, false);
   assert.equal(stopped.bound, true);
+});
+
+async function createWaitingThread(db) {
+  const added = await db.collection('cs_threads').add({
+    data: {
+      openid: 'user-1',
+      status: 'waiting_human',
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  });
+  return (await db.collection('cs_threads').doc(added._id).get()).data;
+}
+
+test('两人同时接手只有一人成功', async () => {
+  const db = makeMemoryDb();
+  const thread = await createWaitingThread(db);
+  const results = await Promise.allSettled([
+    csClaimReply(db, { threadId: thread._id, openid: 'wx-a', now: 1_000 }),
+    csClaimReply(db, { threadId: thread._id, openid: 'wx-b', now: 1_000 }),
+  ]);
+  const ok = results.filter((item) => item.status === 'fulfilled');
+  assert.equal(ok.length, 1);
+});
+
+test('未接手不能回复和关闭', async () => {
+  const db = makeMemoryDb();
+  const thread = await createWaitingThread(db);
+  await assert.rejects(
+    () => csAdminReply(db, { threadId: thread._id, openid: 'wx-a', text: '收到', now: 1_000 }),
+    (error) => error.code === 'CLAIM_REQUIRED',
+  );
+  await assert.rejects(
+    () => csAdminClose(db, { threadId: thread._id, openid: 'wx-a', now: 1_000 }),
+    (error) => error.code === 'CLAIM_REQUIRED',
+  );
+  assert.equal((await csAdminGet(db, { threadId: thread._id })).thread.status, 'waiting_human');
+});
+
+test('回复后 10 分钟重新计算，超时后别人可以接手', async () => {
+  const db = makeMemoryDb();
+  const thread = await createWaitingThread(db);
+  await csClaimReply(db, { threadId: thread._id, openid: 'wx-a', now: 1_000 });
+  await csAdminReply(db, { threadId: thread._id, openid: 'wx-a', text: '收到', now: 2_000 });
+  await assert.rejects(
+    () => csClaimReply(db, { threadId: thread._id, openid: 'wx-b', now: 2_000 + 599999 }),
+    (error) => error.code === 'CLAIMED',
+  );
+  const taken = await csClaimReply(db, {
+    threadId: thread._id,
+    openid: 'wx-b',
+    now: 2_000 + 600000,
+  });
+  assert.equal(taken.thread.replyClaimOpenid, 'wx-b');
+});
+
+test('放开和关闭都会清掉接手', async () => {
+  const db = makeMemoryDb();
+  const thread = await createWaitingThread(db);
+  await csClaimReply(db, { threadId: thread._id, openid: 'wx-a', now: 1_000 });
+  await csReleaseReply(db, { threadId: thread._id, openid: 'wx-a', now: 1_100 });
+  await csClaimReply(db, { threadId: thread._id, openid: 'wx-b', now: 1_200 });
+  const closed = await csAdminClose(db, { threadId: thread._id, openid: 'wx-b', now: 1_300 });
+  assert.equal(closed.thread.status, 'closed');
+  assert.equal(closed.thread.replyClaimOpenid, '');
 });
 
 module.exports = { makeMemoryDb };

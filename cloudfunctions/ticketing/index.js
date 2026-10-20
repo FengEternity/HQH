@@ -9,6 +9,8 @@ const {
   csAdminGet,
   csAdminReply,
   csAdminClose,
+  csClaimReply,
+  csReleaseReply,
   csRegisterNotify,
   csUnregisterNotify,
   readWecomNotifyStatus,
@@ -41,6 +43,8 @@ const ERROR_MESSAGES = {
   UNBOUND: '请先绑定企业微信',
   UNAUTHORIZED: '登录已失效，请重新登录',
   UNKNOWN_ACTION: '不支持的操作',
+  CLAIMED: '已有同事正在处理',
+  CLAIM_REQUIRED: '需要先接手',
 };
 
 function codedError(code, message) {
@@ -151,13 +155,20 @@ async function dispatch(event) {
       await checkText(event.text);
       return csAdminReply(db, {
         threadId: event.threadId,
+        openid,
         text: event.text,
         now,
         notifyUserFn: (thread) => notifyUser(thread.openid, now),
       });
     case 'csAdminClose':
       requireAdmin(event.ticket);
-      return csAdminClose(db, { threadId: event.threadId, now });
+      return csAdminClose(db, { threadId: event.threadId, openid, now });
+    case 'csClaimReply':
+      requireAdmin(event.ticket);
+      return csClaimReply(db, { threadId: event.threadId, openid, now });
+    case 'csReleaseReply':
+      requireAdmin(event.ticket);
+      return csReleaseReply(db, { threadId: event.threadId, openid, now });
     case 'csRegisterNotify':
       requireAdmin(event.ticket);
       return csRegisterNotify(db, {

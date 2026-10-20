@@ -9,6 +9,7 @@ const { onClose, onOperatorFirstReply } = require('./csThreadState');
 const THREADS = 'cs_threads';
 const MESSAGES = 'cs_messages';
 const SUBSCRIBERS = 'admin_notify_subscribers';
+const CLAIM_WINDOW_MS = 600000;
 
 const ERROR_MESSAGES = {
   INVALID_STATE: '当前状态不支持此操作，请刷新后重试',
@@ -17,6 +18,8 @@ const ERROR_MESSAGES = {
   BAD_INPUT: '输入内容不正确',
   BIND_FAILED: '绑定失败',
   UNBOUND: '请先绑定企业微信',
+  CLAIMED: '已有同事正在处理',
+  CLAIM_REQUIRED: '需要先接手',
 };
 
 function codedError(code) {
@@ -223,11 +226,91 @@ async function csAdminGet(db, { threadId }) {
   return { ok: true, thread, messages: await getMessages(db, threadId) };
 }
 
-async function csAdminReply(db, { threadId, text, now, notifyUserFn }) {
+function isActiveClaim(thread, now) {
+  const holder = thread && thread.replyClaimOpenid;
+  if (!holder) {
+    return false;
+  }
+  const claimedAt = Number(thread.replyClaimAt);
+  if (!Number.isFinite(claimedAt)) {
+    return false;
+  }
+  return now - claimedAt < CLAIM_WINDOW_MS;
+}
+
+function assertClaimHolder(thread, openid, now) {
+  if (!isActiveClaim(thread, now) || thread.replyClaimOpenid !== openid) {
+    throw codedError('CLAIM_REQUIRED');
+  }
+}
+
+function claimAvailableWhere(db, threadId, openid, now) {
+  const command = db.command;
+  return command.and([
+    { _id: threadId },
+    command.or([
+      { replyClaimOpenid: command.exists(false) },
+      { replyClaimOpenid: '' },
+      { replyClaimAt: command.exists(false) },
+      { replyClaimAt: command.lte(now - CLAIM_WINDOW_MS) },
+      { replyClaimOpenid: openid },
+    ]),
+  ]);
+}
+
+async function csClaimReply(db, { threadId, openid, now }) {
+  const thread = await getThread(db, threadId);
+  const result = await db.collection(THREADS).where(claimAvailableWhere(db, threadId, openid, now)).update({
+    data: {
+      replyClaimOpenid: openid,
+      replyClaimAt: now,
+    },
+  });
+  if (!result || !result.stats || result.stats.updated < 1) {
+    throw codedError('CLAIMED');
+  }
+  return {
+    ok: true,
+    thread: Object.assign({}, thread, {
+      replyClaimOpenid: openid,
+      replyClaimAt: now,
+    }),
+  };
+}
+
+async function csReleaseReply(db, { threadId, openid, now }) {
+  const thread = await getThread(db, threadId);
+  if (!isActiveClaim(thread, now)) {
+    return { ok: true, thread };
+  }
+  if (thread.replyClaimOpenid !== openid) {
+    throw codedError('CLAIMED');
+  }
+  const result = await db
+    .collection(THREADS)
+    .where({ _id: threadId, replyClaimOpenid: openid })
+    .update({ data: { replyClaimOpenid: '', replyClaimAt: 0 } });
+  if (!result || !result.stats || result.stats.updated < 1) {
+    const latest = await getThread(db, threadId);
+    if (!isActiveClaim(latest, now)) {
+      return { ok: true, thread: latest };
+    }
+    throw codedError('CLAIMED');
+  }
+  return {
+    ok: true,
+    thread: Object.assign({}, thread, { replyClaimOpenid: '', replyClaimAt: 0 }),
+  };
+}
+
+async function csAdminReply(db, { threadId, openid, text, now, notifyUserFn }) {
   const body = assertUserText(text);
   let thread = await getThread(db, threadId);
+  assertClaimHolder(thread, openid, now);
   thread = await updateStatus(db, thread, onOperatorFirstReply, now);
   await addMessage(db, thread, { role: 'operator', text: body }, now);
+  await db.collection(THREADS).doc(threadId).update({ data: { replyClaimAt: now } });
+  thread = Object.assign({}, thread, { replyClaimAt: now });
   if (notifyUserFn) {
     try {
       await notifyUserFn(thread);
@@ -238,10 +321,17 @@ async function csAdminReply(db, { threadId, text, now, notifyUserFn }) {
   return { ok: true, thread, messages: await getMessages(db, threadId) };
 }
 
-async function csAdminClose(db, { threadId, now }) {
+async function csAdminClose(db, { threadId, openid, now }) {
   const current = await getThread(db, threadId);
+  assertClaimHolder(current, openid, now);
   const thread = await updateStatus(db, current, onClose, now);
-  return { ok: true, thread };
+  await db.collection(THREADS).doc(threadId).update({
+    data: { replyClaimOpenid: '', replyClaimAt: 0 },
+  });
+  return {
+    ok: true,
+    thread: Object.assign({}, thread, { replyClaimOpenid: '', replyClaimAt: 0 }),
+  };
 }
 
 function assertIdentity(openid, templateId) {
@@ -539,6 +629,9 @@ module.exports = {
   csAdminGet,
   csAdminReply,
   csAdminClose,
+  csClaimReply,
+  csReleaseReply,
+  CLAIM_WINDOW_MS,
   csRegisterNotify,
   csUnregisterNotify,
   readNotifyStatus,
