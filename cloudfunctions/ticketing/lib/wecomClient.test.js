@@ -56,8 +56,8 @@ test('个人消息走应用，群消息走机器人', async () => {
   assert.equal(personal.body.touser, 'zhangsan|lisi');
   assert.equal(personal.body.msgtype, 'miniprogram_notice');
   assert.equal(personal.body.miniprogram_notice.page, 'pages/admin/ticket/ticket?id=thread-1');
-  assert.deepEqual(group.body.文本.mentioned_list, ['zhangsan', 'lisi']);
-  assert.equal(group.body.文本.content.includes('新工单'), true);
+  assert.deepEqual(group.body.text.mentioned_list, ['zhangsan', 'lisi']);
+  assert.equal(group.body.text.content.includes('新工单'), true);
 });
 
 test('access_token 过期时刷新一次', async () => {

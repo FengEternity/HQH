@@ -85,7 +85,7 @@ function createWecomClient({ fetchImpl, env, now }) {
     const time = formatLocalTime(resolveNow(at, now));
     const body = {
       msgtype: 'text',
-      文本: {
+      text: {
         content: `新工单\n待处理\n${time}`,
         mentioned_list: userIds,
       },
