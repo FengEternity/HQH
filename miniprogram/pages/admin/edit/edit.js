@@ -1,6 +1,12 @@
 const { admin } = require('../../../utils/api');
 const { withPosterUrl, displayedPoster, posterUrlFromList, cloudUploadOptions } = require('../../../utils/videoMedia');
 
+function noticeAfterPicker(title) {
+  setTimeout(() => {
+    wx.showToast({ title, icon: 'none' });
+  }, 400);
+}
+
 const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
 
 function cleanText(value) {

@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { describe, it } = require('node:test');
 
-const { runOnce } = require('./workerLoop');
+const { fitSegmentsToDuration, runOnce } = require('./workerLoop');
 
 const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
 
@@ -697,7 +697,7 @@ describe('runOnce', () => {
     assert.equal(completes[0].errorMessage, '处理失败');
   });
 
-  it('百炼简介在转码前写回，并且不再走本地转写', async () => {
+  it('腾讯云简介在转码前写回，并且不再走本地转写', async () => {
     const notes = [];
     let transcribed = false;
     let transcoded = false;
@@ -756,5 +756,41 @@ describe('runOnce', () => {
     assert.equal(transcoded, true);
     assert.equal(transcribed, false);
     assert.equal(completes[0].intro, '千寻本期讲解如何打开项目。');
+  });
+
+  it('腾讯云句子结束时间超出片长时裁到片长再回写', async () => {
+    const { deps, completes } = createDeps({
+      recognizeSpeech: async () => ({
+        grounded: true,
+        intro: '千寻本期讲解如何打开项目。',
+        segments: [{ startSec: 0, endSec: 3.2, text: '打开项目。' }],
+      }),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes[0].outcome, 'ready');
+    assert.deepEqual(completes[0].transcriptSegments, [
+      { startSec: 0, endSec: 3, text: '打开项目。' },
+    ]);
+  });
+
+  it('把句子结束时间裁到一位小数的片长', () => {
+    assert.deepEqual(
+      fitSegmentsToDuration([{ startSec: 0, endSec: 12.36, text: '打开项目。' }], 12.31),
+      [{ startSec: 0, endSec: 12.3, text: '打开项目。' }],
+    );
+  });
+
+  it('句子乱序时先按开始时间排好', () => {
+    assert.deepEqual(
+      fitSegmentsToDuration([
+        { startSec: 2, endSec: 3, text: '后一句' },
+        { startSec: 0, endSec: 1, text: '前一句' },
+      ], 3),
+      [
+        { startSec: 0, endSec: 1, text: '前一句' },
+        { startSec: 2, endSec: 3, text: '后一句' },
+      ],
+    );
   });
 });
