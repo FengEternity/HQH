@@ -15,6 +15,8 @@ const ERROR_MESSAGES = {
   FORBIDDEN: '无权访问该会话',
   NOT_FOUND: '会话不存在',
   BAD_INPUT: '输入内容不正确',
+  BIND_FAILED: '绑定失败',
+  UNBOUND: '请先绑定企业微信',
 };
 
 function codedError(code) {
@@ -344,6 +346,74 @@ async function readNotifyStatus(db, { openid }) {
   };
 }
 
+function hasWecomUserId(record) {
+  return Boolean(record && record.wecomUserId);
+}
+
+async function readWecomNotifyStatus(db, { openid }) {
+  if (!openid) {
+    throw codedError('BAD_INPUT');
+  }
+  const current = await findSubscriber(db, openid);
+  if (!current) {
+    return { bound: false, enabled: false };
+  }
+  return {
+    bound: hasWecomUserId(current),
+    enabled: current.enabled === true,
+  };
+}
+
+async function csBindWecom(db, { openid, code, now, exchangeCode, expectedCorpId }) {
+  if (!openid || !code) {
+    throw codedError('BAD_INPUT');
+  }
+  const identity = await exchangeCode(code);
+  const userid = identity && identity.userid;
+  const corpid = identity && identity.corpid;
+  if (!userid || (expectedCorpId !== undefined && corpid !== expectedCorpId)) {
+    throw codedError('BIND_FAILED');
+  }
+  const current = await findSubscriber(db, openid);
+  const fields = {
+    wecomUserId: userid,
+    boundAt: now,
+    enabled: true,
+    updatedAt: now,
+  };
+  if (!current) {
+    await db.collection(SUBSCRIBERS).doc(openid).set({
+      data: Object.assign({ openid }, fields),
+    });
+  } else {
+    await db.collection(SUBSCRIBERS).doc(current._id).update({ data: fields });
+  }
+  return { ok: true, bound: true, enabled: true };
+}
+
+async function csSetNotify(db, { openid, enabled, now }) {
+  if (!openid) {
+    throw codedError('BAD_INPUT');
+  }
+  const current = await findSubscriber(db, openid);
+  if (enabled === true) {
+    if (!hasWecomUserId(current)) {
+      throw codedError('UNBOUND');
+    }
+    await db.collection(SUBSCRIBERS).doc(current._id).update({
+      data: { enabled: true, updatedAt: now },
+    });
+    return { ok: true, bound: true, enabled: true };
+  }
+  if (!current) {
+    return { ok: true, bound: false, enabled: false };
+  }
+  await db.collection(SUBSCRIBERS).doc(current._id).update({
+    data: { enabled: false },
+  });
+  return { ok: true, bound: hasWecomUserId(current), enabled: false };
+}
+
 async function listNotifyCandidates(db, { templateId }) {
   if (!templateId) {
     return [];
@@ -469,6 +539,9 @@ module.exports = {
   csRegisterNotify,
   csUnregisterNotify,
   readNotifyStatus,
+  readWecomNotifyStatus,
+  csBindWecom,
+  csSetNotify,
   listNotifyCandidates,
   reserveNotifySend,
   finishNotifySend,

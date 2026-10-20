@@ -11,20 +11,34 @@ const {
   csAdminClose,
   csRegisterNotify,
   csUnregisterNotify,
-  readNotifyStatus,
+  readWecomNotifyStatus,
+  csBindWecom,
+  csSetNotify,
   deliverAdminNotifications,
 } = require('./lib/csStore');
 const { notifyReplied, readNewTicketTemplateId } = require('./lib/notify');
 const { verifyTicket } = require('./lib/ticket');
+const { createWecomClient } = require('./lib/wecomClient');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
+
+const wecomClient = createWecomClient({
+  fetchImpl: async (url, options = {}) => {
+    const response = await fetch(url, options);
+    return { ok: response.ok, status: response.status, json: await response.json() };
+  },
+  env: process.env,
+  now: () => Date.now(),
+});
 
 const ERROR_MESSAGES = {
   INVALID_STATE: '当前状态不支持此操作，请刷新后重试',
   FORBIDDEN: '无权访问该会话',
   NOT_FOUND: '会话不存在',
   BAD_INPUT: '输入内容不正确',
+  BIND_FAILED: '绑定失败',
+  UNBOUND: '请先绑定企业微信',
   UNAUTHORIZED: '登录已失效，请重新登录',
   UNKNOWN_ACTION: '不支持的操作',
 };
@@ -149,12 +163,21 @@ async function dispatch(event) {
     case 'csUnregisterNotify':
       requireAdmin(event.ticket);
       return csUnregisterNotify(db, { openid, now });
+    case 'csBindWecom':
+      requireAdmin(event.ticket);
+      return csBindWecom(db, {
+        openid,
+        code: event.code,
+        now,
+        expectedCorpId: process.env.WECOM_CORP_ID || '',
+        exchangeCode: (code) => wecomClient.exchangeCode(code),
+      });
+    case 'csSetNotify':
+      requireAdmin(event.ticket);
+      return csSetNotify(db, { openid, enabled: event.enabled === true, now });
     case 'csNotifyConfig':
       requireAdmin(event.ticket);
-      return Object.assign(
-        { ok: true, newTicketTplId: readNewTicketTemplateId(process.env) },
-        await readNotifyStatus(db, { openid }),
-      );
+      return Object.assign({ ok: true }, await readWecomNotifyStatus(db, { openid }));
     default:
       throw codedError('UNKNOWN_ACTION');
   }

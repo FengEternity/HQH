@@ -12,6 +12,9 @@ const {
   csRegisterNotify,
   csUnregisterNotify,
   readNotifyStatus,
+  readWecomNotifyStatus,
+  csBindWecom,
+  csSetNotify,
   listNotifyCandidates,
   reserveNotifySend,
   finishNotifySend,
@@ -708,6 +711,60 @@ test('43101 归零，其他失败退回额度', async () => {
     enabled: true,
     quota: 1,
   });
+});
+
+async function findSubscriberCount(db, openid) {
+  const result = await db.collection('admin_notify_subscribers').where({ openid }).get();
+  return result.data.length;
+}
+
+test('绑定成功写入 userid 并开启', async () => {
+  const db = makeMemoryDb();
+  const result = await csBindWecom(db, {
+    openid: 'wx-1',
+    code: 'code-1',
+    now: 10,
+    exchangeCode: async () => ({ corpid: 'corp-1', userid: 'zhangsan' }),
+  });
+  assert.deepEqual(result, { ok: true, bound: true, enabled: true });
+  assert.equal((await readWecomNotifyStatus(db, { openid: 'wx-1' })).bound, true);
+});
+
+test('企业不一致或空 OpenID 不写库', async () => {
+  const db = makeMemoryDb();
+  await assert.rejects(
+    () => csBindWecom(db, {
+      openid: 'wx-1',
+      code: 'code-1',
+      now: 10,
+      exchangeCode: async () => ({ corpid: 'other', userid: 'zhangsan' }),
+      expectedCorpId: 'corp-1',
+    }),
+    (error) => error.code === 'BIND_FAILED',
+  );
+  await assert.rejects(
+    () => csBindWecom(db, { openid: '', code: 'code-1', now: 10, exchangeCode: async () => ({}) }),
+    (error) => error.code === 'BAD_INPUT',
+  );
+  assert.equal(await findSubscriberCount(db, 'wx-1'), 0);
+});
+
+test('未绑定不能打开，关闭后保留 userid', async () => {
+  const db = makeMemoryDb();
+  await assert.rejects(
+    () => csSetNotify(db, { openid: 'wx-1', enabled: true, now: 1 }),
+    (error) => error.code === 'UNBOUND',
+  );
+  await csBindWecom(db, {
+    openid: 'wx-1',
+    code: 'code-1',
+    now: 2,
+    exchangeCode: async () => ({ corpid: 'corp-1', userid: 'zhangsan' }),
+    expectedCorpId: 'corp-1',
+  });
+  const stopped = await csSetNotify(db, { openid: 'wx-1', enabled: false, now: 3 });
+  assert.equal(stopped.enabled, false);
+  assert.equal(stopped.bound, true);
 });
 
 module.exports = { makeMemoryDb };
