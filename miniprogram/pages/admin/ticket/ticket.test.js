@@ -57,6 +57,33 @@ function watchToasts(titles) {
   global.wx.showToast = ({ title }) => titles.push(title);
 }
 
+function renderedClaimLabel(wxml, data) {
+  const status = data.thread && data.thread.status;
+  if (!status || status === 'closed') {
+    return '';
+  }
+  const claimAt = wxml.indexOf('>接手</view>');
+  const composerAt = wxml.indexOf('class="composer"');
+  if (claimAt < 0 || claimAt > composerAt) {
+    return '';
+  }
+  const dockHead = wxml.slice(wxml.lastIndexOf('class="dock"', claimAt), claimAt);
+  const claimableOnly = /wx:if="\{\{[^"]*waiting_human[^"]*human[^"]*\}\}"/.test(dockHead);
+  if (claimableOnly && status !== 'waiting_human' && status !== 'human') {
+    return '';
+  }
+  if (data.claimState === 'none') {
+    return '接手';
+  }
+  if (data.claimState === 'mine') {
+    return '放开';
+  }
+  if (data.claimState === 'other') {
+    return '已有同事正在处理';
+  }
+  return '';
+}
+
 afterEach(() => {
   delete require.cache[pagePath];
   global.Page = originalPage;
@@ -136,6 +163,22 @@ describe('admin ticket chat', () => {
     assert.equal(wxml.includes('bindtap="release"'), true);
     assert.equal(wxml.includes('replyClaimOpenid'), false);
     assert.equal(wxml.includes('{{thread.openid}}'), false);
+  });
+
+  it('open 工单不渲染接手', async () => {
+    const page = loadPage({
+      ticketingAdmin: async () =>
+        threadResult(
+          [{ _id: 'a1', role: 'assistant', text: '请领取账号', createdAt: 1 }],
+          'open',
+          { viewerOpenid: 'wx-a' },
+        ),
+    });
+    page.onLoad({ id: 'thread-1' });
+    await page.onShow();
+    const wxml = fs.readFileSync(path.join(__dirname, 'ticket.wxml'), 'utf8');
+    assert.equal(page.data.thread.status, 'open');
+    assert.equal(renderedClaimLabel(wxml, page.data).includes('接手'), false);
   });
 
   it('10 分钟窗口区分 none、mine 和 other', () => {

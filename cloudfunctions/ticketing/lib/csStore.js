@@ -258,8 +258,15 @@ function claimAvailableWhere(db, threadId, openid, now) {
   ]);
 }
 
+function assertClaimableStatus(thread) {
+  if (!thread || (thread.status !== 'waiting_human' && thread.status !== 'human')) {
+    throw codedError('INVALID_STATE');
+  }
+}
+
 async function csClaimReply(db, { threadId, openid, now }) {
   const thread = await getThread(db, threadId);
+  assertClaimableStatus(thread);
   const result = await db.collection(THREADS).where(claimAvailableWhere(db, threadId, openid, now)).update({
     data: {
       replyClaimOpenid: openid,

@@ -330,17 +330,58 @@ test('运营不能回复尚未升级的 open 线程', async () => {
   const db = makeMemoryDb();
   const history = await csHistory(db, { openid: 'user-1', now: 100 });
 
-  await csClaimReply(db, { threadId: history.thread._id, openid: 'wx-admin', now: 150 });
   await assert.rejects(
-    csAdminReply(db, {
-      threadId: history.thread._id,
-      openid: 'wx-admin',
-      text: '错误回复',
-      now: 200,
-      notifyUserFn: async () => {},
-    }),
+    () => csClaimReply(db, { threadId: history.thread._id, openid: 'wx-admin', now: 150 }),
     { code: 'INVALID_STATE' },
   );
+  await assert.rejects(
+    () =>
+      csAdminReply(db, {
+        threadId: history.thread._id,
+        openid: 'wx-admin',
+        text: '错误回复',
+        now: 200,
+        notifyUserFn: async () => {},
+      }),
+    { code: 'CLAIM_REQUIRED' },
+  );
+  const stored = (await csAdminGet(db, { threadId: history.thread._id })).thread;
+  assert.equal(stored.status, 'open');
+  assert.equal(Object.hasOwn(stored, 'replyClaimOpenid'), false);
+  assert.equal(Object.hasOwn(stored, 'replyClaimAt'), false);
+});
+
+test('open 工单不能接手且不写入接手字段', async () => {
+  const db = makeMemoryDb();
+  const history = await csHistory(db, { openid: 'user-1', now: 100 });
+
+  await assert.rejects(
+    () => csClaimReply(db, { threadId: history.thread._id, openid: 'wx-admin', now: 150 }),
+    (error) =>
+      error.code === 'INVALID_STATE' && error.message === '当前状态不支持此操作，请刷新后重试',
+  );
+
+  const stored = (await csAdminGet(db, { threadId: history.thread._id })).thread;
+  assert.equal(stored.status, 'open');
+  assert.equal(Object.hasOwn(stored, 'replyClaimOpenid'), false);
+  assert.equal(Object.hasOwn(stored, 'replyClaimAt'), false);
+});
+
+test('closed 工单不能接手', async () => {
+  const db = makeMemoryDb();
+  const thread = await createWaitingThread(db);
+  await csClaimReply(db, { threadId: thread._id, openid: 'wx-a', now: 1_000 });
+  await csAdminClose(db, { threadId: thread._id, openid: 'wx-a', now: 1_100 });
+
+  await assert.rejects(
+    () => csClaimReply(db, { threadId: thread._id, openid: 'wx-b', now: 1_200 }),
+    { code: 'INVALID_STATE' },
+  );
+
+  const stored = (await csAdminGet(db, { threadId: thread._id })).thread;
+  assert.equal(stored.status, 'closed');
+  assert.equal(stored.replyClaimOpenid, '');
+  assert.equal(stored.replyClaimAt, 0);
 });
 
 test('关闭线程后用户再次发送会创建新线程', async () => {
