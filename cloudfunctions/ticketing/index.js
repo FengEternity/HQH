@@ -149,7 +149,9 @@ async function dispatch(event) {
       return csAdminList(db, { status: event.status, now });
     case 'csAdminGet':
       requireAdmin(event.ticket);
-      return csAdminGet(db, { threadId: event.threadId });
+      return Object.assign({}, await csAdminGet(db, { threadId: event.threadId }), {
+        viewerOpenid: openid,
+      });
     case 'csAdminReply':
       requireAdmin(event.ticket);
       await checkText(event.text);

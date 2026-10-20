@@ -56,6 +56,20 @@ function userLabel(openid) {
   return openid ? '用户 ' + openid.slice(-8) : '未知用户';
 }
 
+const CLAIM_WINDOW_MS = 600000;
+
+function claimState(thread, openid, now) {
+  const holder = thread && thread.replyClaimOpenid;
+  const claimedAt = Number(thread && thread.replyClaimAt);
+  if (!holder || !Number.isFinite(claimedAt) || now - claimedAt >= CLAIM_WINDOW_MS) {
+    return 'none';
+  }
+  if (holder === openid) {
+    return 'mine';
+  }
+  return 'other';
+}
+
 function mapThread(thread) {
   return Object.assign({}, thread, {
     statusLabel: statusLabel(thread.status),
@@ -72,6 +86,8 @@ Page({
     anchor: '',
     loading: true,
     submitting: false,
+    viewerOpenid: '',
+    claimState: '',
   },
   onLoad(options) {
     this.setData({ threadId: options.id || '' });
@@ -84,6 +100,9 @@ Page({
   },
   load() {
     this.setData({ loading: true });
+    return this.refreshTicket();
+  },
+  refreshTicket() {
     return ticketingAdmin({
       action: 'csAdminGet',
       threadId: this.data.threadId,
@@ -99,9 +118,12 @@ Page({
         side: bubbleSide(item.role),
       }),
     );
+    const viewerOpenid = result.viewerOpenid || this.data.viewerOpenid || '';
     const last = messages[messages.length - 1];
     this.setData({
       thread: mapThread(result.thread),
+      viewerOpenid,
+      claimState: claimState(result.thread, viewerOpenid, Date.now()),
       messages,
       anchor: last ? 'm' + last._id : '',
       loading: false,
@@ -124,6 +146,13 @@ Page({
     if (!text || this.data.submitting) {
       return;
     }
+    if (this.data.claimState !== 'mine') {
+      wx.showToast({
+        title: this.data.claimState === 'other' ? '已有同事正在处理' : '需要先接手',
+        icon: 'none',
+      });
+      return;
+    }
     this.setData({ submitting: true });
     return ticketingAdmin({
       action: 'csAdminReply',
@@ -135,6 +164,40 @@ Page({
         this.applyResult(result);
       })
       .catch((err) => this.showError(err));
+  },
+  claim() {
+    if (this.data.submitting) {
+      return;
+    }
+    this.setData({ submitting: true });
+    return ticketingAdmin({
+      action: 'csClaimReply',
+      threadId: this.data.threadId,
+    })
+      .then(() => this.refreshTicket())
+      .catch((err) => {
+        this.setData({ submitting: false });
+        if (err && err.code === 'CLAIMED') {
+          wx.showToast({ title: '已有同事正在处理', icon: 'none' });
+          return;
+        }
+        this.showError(err);
+      });
+  },
+  release() {
+    if (this.data.submitting) {
+      return;
+    }
+    this.setData({ submitting: true });
+    return ticketingAdmin({
+      action: 'csReleaseReply',
+      threadId: this.data.threadId,
+    })
+      .then(() => this.refreshTicket())
+      .catch(() => {
+        this.setData({ submitting: false });
+        wx.showToast({ title: '放开失败', icon: 'none' });
+      });
   },
   close() {
     if (this.data.submitting || !this.data.thread) {
@@ -163,3 +226,5 @@ Page({
     });
   },
 });
+
+module.exports = { claimState };

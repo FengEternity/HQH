@@ -35,6 +35,9 @@
     </scroll-view>
 
     <view class="dock" wx:if="{{thread.status !== 'closed'}}">
+      <view wx:if="{{claimState === 'none'}}" class="claim-line" bindtap="claim">接手</view>
+      <view wx:elif="{{claimState === 'mine'}}" class="claim-line" bindtap="release">放开</view>
+      <view wx:elif="{{claimState === 'other'}}" class="claim-line">已有同事正在处理</view>
       <view class="composer">
         <input
           class="composer-input"
