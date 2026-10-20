@@ -151,7 +151,7 @@
 
 接手失败 toast「已有同事正在处理」。未接手就发送 toast「需要先接手」。放开失败时保留原状态，toast「放开失败」。
 
-## 9. 失败与并发
+## 9. 通知失败与并发
 
 同一条工单同时有两条消息时，用条件更新抢 `adminNotifyClaimedAt`。只有抢到的一方发送。占用时间在 120 秒内，另一方直接跳过。超过 120 秒还没写完结果，下一条消息可以重新抢，并只补发还没成功的那一路。
 
@@ -190,6 +190,12 @@
 - 已绑定后打开和关闭只调用 `csSetNotify`。
 - 不再调用 `wx.requestSubscribeMessage` 和 `csRegisterNotify`。
 - 停止失败时保留「接收中」。
+
+`miniprogram/pages/admin/ticket/ticket.test.js`：
+
+- 没有有效接手时不发送回复。
+- 当前微信是接手人时可以回复，并显示「放开」。
+- 别人持有有效接手时不发送，并显示「已有同事正在处理」。
 
 `cloudfunctions/ticketing/lib/csSendFlow.test.js`：
 
