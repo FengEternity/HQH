@@ -1,3 +1,12 @@
+const { applyDefaultShare } = require('./utils/defaultShare');
+
+// 微信没有全站分享开关。页面脚本在 app.js 之后执行，这里接住 Page，
+// 给每个页面补上转发和朋友圈回调，右上角菜单才会出现分享。
+const nativePage = Page;
+Page = function pageWithDefaultShare(config) {
+  return nativePage(applyDefaultShare(config));
+};
+
 const INIT_KEY = 'hqh_db_inited_v2';
 
 App({
