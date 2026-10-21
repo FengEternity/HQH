@@ -30,8 +30,20 @@
 }
 
 .note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
   font-size: 26rpx;
   margin-top: 8rpx;
+}
+
+.note-mark {
+  flex-shrink: 0;
+}
+
+.note-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .internal {
