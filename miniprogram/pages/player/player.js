@@ -4,13 +4,20 @@ const { formatPriceYuan } = require('../../utils/shopPrice');
 
 Page({
   data: {
+    videoId: '',
     video: null,
     src: '',
     error: '',
     shopProducts: [],
+    tab: 'intro',
+    inputDraft: '',
+    messages: [],
+    currentTimeSec: 0,
   },
   onLoad(query) {
-    const id = query.id;
+    const id = String((query && query.id) || '').trim();
+    this._currentTimeSec = 0;
+    this.setData({ videoId: id });
     catalog({ action: 'getVideo', id })
       .then((res) => {
         const video = withPosterUrl(res.video);
@@ -18,18 +25,22 @@ Page({
           wx.setNavigationBarTitle({ title: video.title });
         }
         const src = String((res && res.videoUrl) || '').trim();
+        const nextVideo = video
+          ? Object.assign({}, video, {
+              tags: Array.isArray(video.tags) ? video.tags : [],
+            })
+          : video;
         if (!src) {
           this.setData({
-            video,
+            video: nextVideo,
             error:
               video && video.videoFileId
                 ? '视频地址未返回。请重新上传部署 catalog 云函数后再试'
-                : '暂无视频文件',
+                : '',
           });
         } else {
-          const posterUrl = String((video && video.posterUrl) || '').trim();
           this.setData({
-            video: posterUrl ? Object.assign({}, video, { posterUrl }) : video,
+            video: nextVideo,
             src,
           });
         }
@@ -49,6 +60,27 @@ Page({
       .catch((err) => {
         this.setData({ error: err.message || '无法播放' });
       });
+  },
+  onTabTap(e) {
+    const tab = e.currentTarget.dataset.tab;
+    if (tab !== 'intro' && tab !== 'ask') {
+      return;
+    }
+    if (tab === this.data.tab) {
+      return;
+    }
+    this.setData({ tab, currentTimeSec: this._currentTimeSec || 0 });
+  },
+  onTimeUpdate(e) {
+    const sec = Math.floor(Number(e.detail && e.detail.currentTime) || 0);
+    this._currentTimeSec = sec;
+  },
+  onAskInput(e) {
+    this.setData({ inputDraft: e.detail.value });
+  },
+  onAskSend() {
+    // 预留：agent({ profile: 'video_doc', message, videoId, currentTimeSec })
+    wx.showToast({ title: '本片问答即将开放', icon: 'none' });
   },
   resolveShopCovers(products) {
     const cloudIds = (products || [])
