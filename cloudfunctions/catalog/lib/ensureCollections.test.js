@@ -15,6 +15,7 @@ describe('ensureCollections', () => {
     for (const name of [
       'cs_threads',
       'cs_messages',
+      'cs_profiles',
       'admin_notify_subscribers',
       'shop_products',
       'video_shop_links',

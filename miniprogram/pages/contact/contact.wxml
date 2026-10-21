@@ -1,4 +1,5 @@
 <view class="chat-page">
+  <profile-gate bind:bound="onProfileBound" />
   <scroll-view
     class="thread"
     scroll-y
@@ -21,6 +22,7 @@
           <view class="account" wx:if="{{item.meta.account}}">{{item.meta.account}}</view>
         </view>
       </view>
+      <view wx:if="{{item.readLabel}}" class="read-state {{item.readState === 'read' ? 'read-done' : ''}}">{{item.readLabel}}</view>
       <view class="actions" wx:if="{{item.actions}}">
         <view
           class="chip-btn"
@@ -36,7 +38,7 @@
   </scroll-view>
 
   <view class="dock">
-    <scroll-view scroll-x class="quick" wx:if="{{faqs.length}}">
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="quick" wx:if="{{faqs.length}}">
       <view
         class="quick-chip"
         wx:for="{{faqs}}"
@@ -56,7 +58,6 @@
         bindinput="onDraft"
         bindconfirm="send"
       />
-      <view class="btn human" bindtap="escalate">转人工</view>
       <view class="btn send" bindtap="send">发送</view>
     </view>
   </view>

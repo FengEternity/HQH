@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "目录"
+  "navigationBarTitleText": "目录",
+  "usingComponents": {
+    "profile-gate": "/components/profile-gate/profile-gate"
+  }
 }

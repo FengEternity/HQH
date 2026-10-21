@@ -36,10 +36,10 @@ describe('csThreadState', () => {
   it('onOperatorFirstReply and onClose follow the table', () => {
     assert.equal(onOperatorFirstReply('waiting_human'), 'human');
     assert.equal(onOperatorFirstReply('human'), 'human');
-    assert.equal(codeOf(() => onOperatorFirstReply('open')), 'INVALID_STATE');
+    assert.equal(onOperatorFirstReply('open'), 'human');
+    assert.equal(onClose('open'), 'closed');
     assert.equal(onClose('waiting_human'), 'closed');
     assert.equal(onClose('human'), 'closed');
-    assert.equal(codeOf(() => onClose('open')), 'INVALID_STATE');
     assert.equal(codeOf(() => onClose('closed')), 'INVALID_STATE');
   });
 });

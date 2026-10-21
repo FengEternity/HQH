@@ -22,17 +22,14 @@ function onEscalate(status) {
 }
 
 function onOperatorFirstReply(status) {
-  if (status === 'waiting_human') {
-    return 'human';
-  }
-  if (status === 'human') {
+  if (status === 'open' || status === 'waiting_human' || status === 'human') {
     return 'human';
   }
   invalid(status);
 }
 
 function onClose(status) {
-  if (status === 'waiting_human' || status === 'human') {
+  if (status === 'open' || status === 'waiting_human' || status === 'human') {
     return 'closed';
   }
   invalid(status);

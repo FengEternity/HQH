@@ -1,5 +1,6 @@
 const { ticketing } = require('../../utils/api');
 const { contact } = require('../../config.js');
+const { readLabel } = require('../../utils/readReceipt');
 
 const STORE_ACCOUNT = 'hqh_support_account';
 
@@ -15,7 +16,6 @@ function findFaq(id) {
   return faqs().find((item) => item.id === id);
 }
 
-// 输入框旁常驻「转人工」，快捷区不再重复一颗
 function quickFaqs() {
   return faqs().filter((item) => item.id !== 'human');
 }
@@ -25,11 +25,14 @@ function makeAccount() {
   return 'YD' + Date.now().toString().slice(-6) + n;
 }
 
-function mapMessage(message) {
+function mapMessage(message, thread, messages) {
   const meta = message.meta || {};
+  const label = readLabel(message, thread, 'user', messages);
   return Object.assign({}, message, {
     account: meta.account,
     actions: meta.actions,
+    readLabel: label,
+    readState: label === '已读' ? 'read' : label === '未读' ? 'unread' : '',
   });
 }
 
@@ -41,6 +44,7 @@ Page({
     messages: [],
     draft: '',
     anchor: '',
+    nickname: '',
   },
   onLoad() {
     const cfg = contactCfg();
@@ -50,32 +54,78 @@ Page({
     });
   },
   onShow() {
+    this.armSeenRefresh();
+    return this.loadHistory();
+  },
+  onHide() {
+    this.disarmSeenRefresh();
+  },
+  onUnload() {
+    this.disarmSeenRefresh();
+  },
+  loadHistory() {
     return ticketing({ action: 'csHistory' })
       .then((result) => this.applyResult(result))
       .catch((err) => this.showError(err));
   },
+  armSeenRefresh() {
+    this.disarmSeenRefresh();
+    const timer = setInterval(() => {
+      ticketing({ action: 'csHistory' })
+        .then((result) => this.applyResult(result))
+        .catch(() => {});
+    }, 4000);
+    if (timer && typeof timer.unref === 'function') {
+      timer.unref();
+    }
+    this._seenTimer = timer;
+  },
+  disarmSeenRefresh() {
+    if (this._seenTimer) {
+      clearInterval(this._seenTimer);
+      this._seenTimer = null;
+    }
+  },
   applyResult(result, doneLocalId) {
-    const server = (result.messages || []).map(mapMessage);
+    const raw = result.messages || [];
+    const server = raw.map((item) => mapMessage(item, result.thread, raw));
     const pending = (this.data.messages || []).filter(
       (item) => item.local && item._id !== doneLocalId,
     );
     const messages = server.concat(pending);
     const last = messages[messages.length - 1];
-    this.setData({
+    const next = {
       thread: result.thread,
       messages,
       hours: contactCfg().hours || '工作日 9:00–18:00',
       anchor: last ? 'm' + last._id : '',
-    });
+    };
+    if (typeof result.nickname === 'string' && (result.nickname || !this.data.nickname)) {
+      next.nickname = result.nickname;
+    }
+    this.setData(next);
+  },
+  onProfileBound(e) {
+    const nickname = e && e.detail && e.detail.nickname;
+    if (nickname) {
+      this.setData({ nickname });
+    }
+  },
+  ensureProfile() {
+    if (String(this.data.nickname || '').trim()) {
+      return true;
+    }
+    wx.showToast({ title: '请先填写昵称', icon: 'none' });
+    return false;
   },
   pushLocal(text) {
-    const message = {
+    const message = mapMessage({
       _id: 'local-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
       role: 'user',
       text,
       local: true,
       failed: false,
-    };
+    }, this.data.thread);
     const messages = (this.data.messages || []).concat(message);
     this.setData({
       messages,
@@ -151,7 +201,7 @@ Page({
   },
   askFaq(e) {
     const faq = findFaq(e.currentTarget.dataset.id);
-    if (!faq) {
+    if (!faq || !this.ensureProfile()) {
       return;
     }
     if (faq.id === 'claim') {
@@ -185,7 +235,7 @@ Page({
   },
   send() {
     const text = (this.data.draft || '').trim();
-    if (!text) {
+    if (!text || !this.ensureProfile()) {
       return;
     }
     const localId = this.pushLocal(text);
@@ -202,7 +252,7 @@ Page({
   retrySend(e) {
     const localId = e.currentTarget.dataset.id;
     const message = (this.data.messages || []).find((item) => item._id === localId);
-    if (!message || !message.failed) {
+    if (!message || !message.failed || !this.ensureProfile()) {
       return;
     }
     this.setData({
@@ -221,16 +271,10 @@ Page({
       ),
     );
   },
-  escalate() {
-    const text = (this.data.draft || '').trim();
-    const data = { action: 'csEscalate' };
-    if (text) {
-      data.text = text;
-      this.setData({ draft: '' });
-    }
-    return this.requestReplySubscription().then(() => this.submit(data));
-  },
   claimAccount() {
+    if (!this.ensureProfile()) {
+      return;
+    }
     let account = wx.getStorageSync(STORE_ACCOUNT);
     if (!account) {
       account = makeAccount();

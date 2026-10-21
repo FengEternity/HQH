@@ -59,12 +59,42 @@ page {
   justify-content: flex-end;
 }
 
+.msg-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 78%;
+}
+
+.bubble-line {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.fail-mark {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  background: #e11d48;
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 36rpx;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.msg-out .msg-col {
+  align-items: flex-end;
+}
+
 .msg-notice {
   justify-content: center;
 }
 
 .bubble {
-  max-width: 78%;
+  max-width: 100%;
   padding: 18rpx 22rpx;
   border-radius: 16rpx;
   font-size: 28rpx;
@@ -103,6 +133,17 @@ page {
   text-align: right;
 }
 
+.read-state {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  line-height: 1.2;
+  color: #4b6fdb;
+}
+
+.read-done {
+  color: #a1a1aa;
+}
+
 .pad {
   height: 16rpx;
 }
@@ -137,4 +178,27 @@ page {
   flex-shrink: 0;
   padding: 16rpx 28rpx;
   font-size: 26rpx;
+}
+
+.hold-line {
+  text-align: right;
+  color: #4b6fdb;
+  font-size: 24rpx;
+  font-weight: 600;
+  padding: 4rpx 8rpx 12rpx;
+}
+
+.hold-busy {
+  text-align: center;
+  color: #71717a;
+  font-weight: 400;
+}
+
+.composer-off {
+  color: #a1a1aa;
+}
+
+.send-off {
+  background: #e4e4e7;
+  color: #a1a1aa;
 }

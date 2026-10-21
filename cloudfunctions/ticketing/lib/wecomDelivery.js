@@ -61,11 +61,11 @@ async function writeGroup(db, threadId, now, result) {
   });
 }
 
-async function writePersonal(db, threadId, now) {
+async function writePersonal(db, threadId, now, result) {
   await db.collection('cs_threads').doc(threadId).update({
     data: {
       adminNotifyPersonalAt: now,
-      adminNotifyPersonalResult: 'sent',
+      adminNotifyPersonalResult: result,
     },
   });
 }
@@ -107,32 +107,9 @@ async function deliverGroup(db, threadId, now, env, client, userIds) {
   return 'failed';
 }
 
-async function deliverPersonal(db, threadId, now, page, env, client, userIds) {
-  let result;
-  try {
-    result = await client.sendPersonal({
-      userIds,
-      appId: env && env.WECOM_MINI_APPID,
-      page,
-      now,
-    });
-  } catch {
-    console.error('cs wecom personal send failed');
-    return 'failed';
-  }
-  if (result && result.errcode === 0) {
-    if (result.invaliduser) {
-      console.error('cs wecom personal invaliduser', result.invaliduser);
-    }
-    await writePersonal(db, threadId, now);
-    return 'sent';
-  }
-  if (result && typeof result.errcode === 'number') {
-    console.error('cs wecom personal send failed', result.errcode);
-  } else {
-    console.error('cs wecom personal send failed');
-  }
-  return 'failed';
+async function deliverPersonal(db, threadId, now) {
+  await writePersonal(db, threadId, now, 'skipped');
+  return 'skipped';
 }
 
 async function deliverWecomAdminNotifications(db, input) {
@@ -147,26 +124,16 @@ async function deliverWecomAdminNotifications(db, input) {
   }
 
   const before = await readThread(db, threadId);
-  const groupDone = finishedResult(before && before.adminNotifyGroupResult);
-  const personalDone = finishedResult(before && before.adminNotifyPersonalResult);
-  if (groupDone && personalDone) {
-    return { ok: true, group: groupDone, personal: personalDone };
-  }
-
   const claimed = await claimThread(db, threadId, now);
   if (!claimed) {
     return pendingResults(before);
   }
 
-  let groupResult = groupDone;
-  let personalResult = personalDone;
+  let groupResult = 'pending';
+  let personalResult = 'pending';
   try {
-    if (!groupResult) {
-      groupResult = await deliverGroup(db, threadId, now, env, client, userIds);
-    }
-    if (!personalResult) {
-      personalResult = await deliverPersonal(db, threadId, now, page, env, client, userIds);
-    }
+    groupResult = await deliverGroup(db, threadId, now, env, client, userIds);
+    personalResult = await deliverPersonal(db, threadId, now);
   } finally {
     await releaseClaim(db, threadId);
   }

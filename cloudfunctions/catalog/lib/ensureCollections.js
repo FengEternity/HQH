@@ -8,6 +8,7 @@ const CATALOG_COLLECTIONS = [
   'support_messages',
   'cs_threads',
   'cs_messages',
+  'cs_profiles',
   'admin_notify_subscribers',
   'shop_products',
   'video_shop_links',

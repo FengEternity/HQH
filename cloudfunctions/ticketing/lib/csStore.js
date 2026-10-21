@@ -8,6 +8,7 @@ const { onClose, onOperatorFirstReply } = require('./csThreadState');
 
 const THREADS = 'cs_threads';
 const MESSAGES = 'cs_messages';
+const PROFILES = 'cs_profiles';
 const SUBSCRIBERS = 'admin_notify_subscribers';
 const CLAIM_WINDOW_MS = 600000;
 
@@ -18,12 +19,12 @@ const ERROR_MESSAGES = {
   BAD_INPUT: '输入内容不正确',
   BIND_FAILED: '绑定失败',
   UNBOUND: '请先绑定企业微信',
-  CLAIMED: '已有同事正在处理',
-  CLAIM_REQUIRED: '需要先接手',
+  CLAIMED: '同事正在回复',
+  CLAIM_REQUIRED: '请先持有会话',
 };
 
-function codedError(code) {
-  const error = new Error(ERROR_MESSAGES[code] || '请求失败');
+function codedError(code, message) {
+  const error = new Error(message || ERROR_MESSAGES[code] || '请求失败');
   error.code = code;
   return error;
 }
@@ -33,7 +34,7 @@ async function getThread(db, threadId) {
   if (!result.data) {
     throw codedError('NOT_FOUND');
   }
-  return result.data;
+  return Object.assign({ _id: threadId }, result.data);
 }
 
 async function listWhere(collection, where) {
@@ -109,6 +110,20 @@ async function updateStatus(db, thread, transition, now) {
   throw codedError('INVALID_STATE');
 }
 
+async function markSeen(db, thread, field, now) {
+  const seenAt = Number(now);
+  if (!thread || !thread._id || !Number.isFinite(seenAt)) {
+    return thread;
+  }
+  if ((Number(thread[field]) || 0) >= seenAt) {
+    return thread;
+  }
+  await db.collection(THREADS).doc(thread._id).update({
+    data: { [field]: seenAt },
+  });
+  return Object.assign({}, thread, { [field]: seenAt });
+}
+
 async function csHistory(db, { openid, now }) {
   let thread = await getOpenThread(db, openid);
   if (!thread) {
@@ -117,6 +132,7 @@ async function csHistory(db, { openid, now }) {
       status: 'open',
       createdAt: now,
       updatedAt: now,
+      userSeenAt: now,
     };
     const added = await db.collection(THREADS).add({ data });
     thread = Object.assign({ _id: added._id }, data);
@@ -131,7 +147,103 @@ async function csHistory(db, { openid, now }) {
       now,
     );
   }
-  return { ok: true, thread, messages: await getConversationMessages(db, thread) };
+  thread = await markSeen(db, thread, 'userSeenAt', now);
+  const profile = await readProfile(db, openid);
+  return {
+    ok: true,
+    thread,
+    nickname: profile && profile.nickname ? profile.nickname : '',
+    messages: await getConversationMessages(db, thread),
+  };
+}
+
+function assertNickname(raw) {
+  const nickname = String(raw ?? '').trim();
+  if (!nickname) {
+    throw codedError('BAD_INPUT', '请填写昵称');
+  }
+  if (nickname.length > 32) {
+    throw codedError('BAD_INPUT', '昵称太长');
+  }
+  return nickname;
+}
+
+function isMissingCollection(error) {
+  const code = error && (error.errCode || error.code);
+  const msg = String((error && (error.errMsg || error.message)) || '');
+  return code === -502005 || /collection not exist/i.test(msg);
+}
+
+async function withProfiles(db, fn) {
+  try {
+    return await fn();
+  } catch (error) {
+    if (!isMissingCollection(error) || typeof db.createCollection !== 'function') {
+      throw error;
+    }
+    try {
+      await db.createCollection(PROFILES);
+    } catch (createError) {
+      const createMsg = String((createError && (createError.errMsg || createError.message)) || '');
+      const createCode = createError && (createError.errCode || createError.code);
+      if (createCode !== -501001 && !/already exists/i.test(createMsg) && createMsg.indexOf('集合已存在') < 0) {
+        throw error;
+      }
+    }
+    return await fn();
+  }
+}
+
+async function readProfile(db, openid) {
+  if (!openid) {
+    return null;
+  }
+  return withProfiles(db, async () => {
+    const result = await db.collection(PROFILES).where({ openid }).limit(1).get();
+    return (result.data && result.data[0]) || null;
+  });
+}
+
+async function nicknameOf(db, openid, cache) {
+  if (!openid) {
+    return '';
+  }
+  if (cache.has(openid)) {
+    return cache.get(openid);
+  }
+  const profile = await readProfile(db, openid);
+  const nickname = profile && profile.nickname ? String(profile.nickname) : '';
+  cache.set(openid, nickname);
+  return nickname;
+}
+
+async function csBindProfile(db, { openid, nickname, avatarFileId, now }) {
+  if (!openid) {
+    throw codedError('BAD_INPUT');
+  }
+  const name = assertNickname(nickname);
+  const current = await readProfile(db, openid);
+  const nextAvatar = typeof avatarFileId === 'string' ? avatarFileId.trim() : '';
+  const storedAvatar = nextAvatar || (current && current.avatarFileId) || '';
+  await withProfiles(db, () => db.collection(PROFILES).doc(openid).set({
+    data: {
+      openid,
+      nickname: name,
+      avatarFileId: storedAvatar,
+      boundAt: current && current.boundAt ? current.boundAt : now,
+      updatedAt: now,
+    },
+  }));
+  return { ok: true, nickname: name, avatarFileId: storedAvatar };
+}
+
+async function csGetProfile(db, { openid }) {
+  const profile = await readProfile(db, openid);
+  return {
+    ok: true,
+    nickname: profile && profile.nickname ? profile.nickname : '',
+    avatarFileId: profile && profile.avatarFileId ? profile.avatarFileId : '',
+  };
 }
 
 async function resolveUserThread(db, input) {
@@ -171,6 +283,8 @@ async function csSend(db, input) {
         account: input.account,
         wechatId: input.wechatId,
         phone: input.phone,
+        now: input.now,
+        lastOperatorAt: lastOperatorAt(existingMessages),
         hasEscalateSystem:
           status !== 'open' ||
           existingMessages.some(
@@ -191,6 +305,7 @@ async function csSend(db, input) {
       console.error('cs notify admins failed', error);
     }
   }
+  thread = await markSeen(db, thread, 'userSeenAt', input.now);
   return { ok: true, thread, messages: await getConversationMessages(db, thread) };
 }
 
@@ -204,26 +319,53 @@ function csEscalate(db, input) {
   );
 }
 
-async function csAdminList(db, { status = 'waiting_human' }) {
-  // 只按状态取出再在内存排序。where 加 orderBy 需要组合索引，缺索引时云数据库直接失败，工作台会显示成没有工单。
-  const rows = await listWhere(db.collection(THREADS), { status });
+function lastOperatorAt(messages) {
+  const found = (messages || [])
+    .slice()
+    .reverse()
+    .find((message) => message.role === 'operator');
+  return found ? Number(found.createdAt) || 0 : 0;
+}
+
+function attentionMessage(messages) {
+  return (messages || [])
+    .slice()
+    .reverse()
+    .find((message) => message.role === 'user' || message.role === 'operator');
+}
+
+async function csAdminList(db, { status = 'active' } = {}) {
+  // 只按状态取出再在内存排序。where 加 orderBy 需要组合索引，缺索引时云数据库直接失败，工作台会显示成没有会话。
+  const statuses = status === 'active' ? ['open', 'waiting_human', 'human'] : [status];
+  const rows = [];
+  for (const item of statuses) {
+    rows.push(...(await listWhere(db.collection(THREADS), { status: item })));
+  }
   rows.sort(byTime('updatedAt', 'desc'));
   const threads = [];
+  const nicknames = new Map();
   for (const thread of rows.slice(0, 100)) {
     const messages = await getMessages(db, thread._id);
-    const lastUser = messages
-      .slice()
-      .reverse()
-      .find((message) => message.role === 'user');
-    const last = lastUser || messages[messages.length - 1];
-    threads.push(Object.assign({}, thread, { preview: last ? String(last.text || '') : '' }));
+    const attention = attentionMessage(messages);
+    const last = attention || messages[messages.length - 1];
+    threads.push(Object.assign({}, thread, {
+      preview: last ? String(last.text || '') : '',
+      unread: Boolean(attention && attention.role === 'user'),
+      nickname: await nicknameOf(db, thread.openid, nicknames),
+    }));
   }
   return { ok: true, threads };
 }
 
-async function csAdminGet(db, { threadId }) {
-  const thread = await getThread(db, threadId);
-  return { ok: true, thread, messages: await getMessages(db, threadId) };
+async function csAdminGet(db, { threadId, now }) {
+  let thread = await getThread(db, threadId);
+  thread = await markSeen(db, thread, 'operatorSeenAt', now);
+  const nickname = await nicknameOf(db, thread.openid, new Map());
+  return {
+    ok: true,
+    thread: Object.assign({}, thread, { nickname }),
+    messages: await getMessages(db, threadId),
+  };
 }
 
 function isActiveClaim(thread, now) {
@@ -236,12 +378,6 @@ function isActiveClaim(thread, now) {
     return false;
   }
   return now - claimedAt < CLAIM_WINDOW_MS;
-}
-
-function assertClaimHolder(thread, openid, now) {
-  if (!isActiveClaim(thread, now) || thread.replyClaimOpenid !== openid) {
-    throw codedError('CLAIM_REQUIRED');
-  }
 }
 
 function claimAvailableWhere(db, threadId, openid, now) {
@@ -259,7 +395,7 @@ function claimAvailableWhere(db, threadId, openid, now) {
 }
 
 function assertClaimableStatus(thread) {
-  if (!thread || (thread.status !== 'waiting_human' && thread.status !== 'human')) {
+  if (!thread || thread.status === 'closed' || !thread.status) {
     throw codedError('INVALID_STATE');
   }
 }
@@ -312,25 +448,40 @@ async function csReleaseReply(db, { threadId, openid, now }) {
 
 async function csAdminReply(db, { threadId, openid, text, now, notifyUserFn }) {
   const body = assertUserText(text);
-  let thread = await getThread(db, threadId);
-  assertClaimHolder(thread, openid, now);
-  thread = await updateStatus(db, thread, onOperatorFirstReply, now);
+  if (!openid) {
+    throw codedError('BAD_INPUT');
+  }
+  const current = await getThread(db, threadId);
+  if (current.status === 'closed') {
+    throw codedError('INVALID_STATE');
+  }
+  const refreshed = await db
+    .collection(THREADS)
+    .where({
+      _id: threadId,
+      replyClaimOpenid: openid,
+      replyClaimAt: db.command.gt(now - CLAIM_WINDOW_MS),
+    })
+    .update({ data: { replyClaimAt: now } });
+  if (!refreshed || !refreshed.stats || refreshed.stats.updated < 1) {
+    throw codedError('CLAIM_REQUIRED');
+  }
+  const thread = await updateStatus(db, current, onOperatorFirstReply, now);
   await addMessage(db, thread, { role: 'operator', text: body }, now);
-  await db.collection(THREADS).doc(threadId).update({ data: { replyClaimAt: now } });
-  thread = Object.assign({}, thread, { replyClaimAt: now });
+  let held = Object.assign({}, thread, { replyClaimOpenid: openid, replyClaimAt: now });
+  held = await markSeen(db, held, 'operatorSeenAt', now);
   if (notifyUserFn) {
     try {
-      await notifyUserFn(thread);
+      await notifyUserFn(held);
     } catch (error) {
       console.error('cs notify user failed', error);
     }
   }
-  return { ok: true, thread, messages: await getMessages(db, threadId) };
+  return { ok: true, thread: held, messages: await getMessages(db, threadId) };
 }
 
 async function csAdminClose(db, { threadId, openid, now }) {
   const current = await getThread(db, threadId);
-  assertClaimHolder(current, openid, now);
   const thread = await updateStatus(db, current, onClose, now);
   await db.collection(THREADS).doc(threadId).update({
     data: { replyClaimOpenid: '', replyClaimAt: 0 },
@@ -461,22 +612,10 @@ async function readWecomNotifyStatus(db, { openid }) {
   };
 }
 
-async function csBindWecom(db, { openid, code, now, exchangeCode, expectedCorpId }) {
-  if (!openid) {
-    throw codedError('BAD_INPUT');
-  }
-  if (!code) {
-    throw codedError('BIND_FAILED');
-  }
-  const identity = await exchangeCode(code);
-  const userid = identity && identity.userid;
-  const corpid = identity && identity.corpid;
-  if (!userid || (expectedCorpId !== undefined && corpid !== expectedCorpId)) {
-    throw codedError('BIND_FAILED');
-  }
+async function writeWecomBinding(db, { openid, userId, now }) {
   const current = await findSubscriber(db, openid);
   const fields = {
-    wecomUserId: userid,
+    wecomUserId: userId,
     boundAt: now,
     enabled: true,
     updatedAt: now,
@@ -489,6 +628,35 @@ async function csBindWecom(db, { openid, code, now, exchangeCode, expectedCorpId
     await db.collection(SUBSCRIBERS).doc(current._id).update({ data: fields });
   }
   return { ok: true, bound: true, enabled: true };
+}
+
+async function csBindWecom(db, { openid, code, mobile, now, exchangeCode, expectedCorpId }) {
+  if (!openid) {
+    throw codedError('BAD_INPUT');
+  }
+  const phone = typeof mobile === 'string' ? mobile.trim() : '';
+  if (phone) {
+    if (!/^1\d{10}$/.test(phone)) {
+      throw codedError('BIND_FAILED', '请填写企业微信里的11位手机号');
+    }
+    return writeWecomBinding(db, { openid, userId: phone, now });
+  }
+  if (!code) {
+    throw codedError('BIND_FAILED', '企业微信没有返回登录码');
+  }
+  const identity = await exchangeCode(code);
+  const userid = identity && identity.userid;
+  const corpid = identity && identity.corpid;
+  if (expectedCorpId === '') {
+    throw codedError('BIND_FAILED', '云函数未配置企业 ID');
+  }
+  if (expectedCorpId && corpid !== expectedCorpId) {
+    throw codedError('BIND_FAILED', '企业 ID 不一致');
+  }
+  if (!userid) {
+    throw codedError('BIND_FAILED', '企业微信没有返回成员 ID');
+  }
+  return writeWecomBinding(db, { openid, userId: userid, now });
 }
 
 async function csSetNotify(db, { openid, enabled, now }) {
@@ -644,6 +812,8 @@ module.exports = {
   readNotifyStatus,
   readWecomNotifyStatus,
   csBindWecom,
+  csBindProfile,
+  csGetProfile,
   csSetNotify,
   listNotifyCandidates,
   reserveNotifySend,

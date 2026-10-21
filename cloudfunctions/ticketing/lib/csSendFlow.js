@@ -1,12 +1,10 @@
 'use strict';
 
-const { canAutoRuleReply, onEscalate } = require('./csThreadState');
-const { assertUserText, classifyTurn } = require('./csFaq');
-const { faqs, escalatedText } = require('./contactCopy');
+const { onEscalate } = require('./csThreadState');
+const { assertUserText } = require('./csFaq');
+const { escalatedText } = require('./contactCopy');
 
-function faqById(id) {
-  return faqs.find((item) => item.id === id);
-}
+const QUIET_AFTER_REPLY_MS = 600000;
 
 function systemEscalateBody(wechatId, phone) {
   let body = escalatedText;
@@ -19,29 +17,18 @@ function systemEscalateBody(wechatId, phone) {
   return body;
 }
 
+function shouldNotifyAdmins(input) {
+  const at = Number(input && input.lastOperatorAt);
+  const now = Number(input && input.now);
+  if (!Number.isFinite(at) || at <= 0 || !Number.isFinite(now)) {
+    return true;
+  }
+  return now - at >= QUIET_AFTER_REPLY_MS;
+}
+
 function planSend(input) {
   const text = assertUserText(input.text);
-  const kind = classifyTurn({ text, faqId: input.faqId });
   const userMsg = { role: 'user', text };
-  if (canAutoRuleReply(input.status) && (kind === 'claim' || kind === 'howto')) {
-    const faq = faqById(kind);
-    const assistant = {
-      role: 'assistant',
-      text: faq.answer,
-      meta: { source: 'rule' },
-    };
-    if (kind === 'claim') {
-      assistant.meta.account = String(input.account || '');
-      assistant.meta.actions = [{ id: 'copyAccount', label: '复制账号' }];
-      assistant.text =
-        '这是你的资料馆账号，点复制带走。回来搜型号、补充问题时把账号一并告诉我。';
-    }
-    return {
-      nextStatus: 'open',
-      notifyAdmins: true,
-      messages: [userMsg, assistant],
-    };
-  }
   const nextStatus = onEscalate(input.status);
   const messages = [userMsg];
   if (!input.hasEscalateSystem) {
@@ -53,9 +40,9 @@ function planSend(input) {
   }
   return {
     nextStatus,
-    notifyAdmins: nextStatus === 'waiting_human' || nextStatus === 'human',
+    notifyAdmins: shouldNotifyAdmins(input),
     messages,
   };
 }
 
-module.exports = { planSend, systemEscalateBody };
+module.exports = { planSend, shouldNotifyAdmins, systemEscalateBody, QUIET_AFTER_REPLY_MS };

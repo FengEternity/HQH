@@ -1,4 +1,5 @@
 <view class="player-page">
+  <profile-gate />
   <view wx:if="{{error}}" class="player-empty">{{error}}</view>
   <block wx:elif="{{video}}">
     <view class="player-stage">

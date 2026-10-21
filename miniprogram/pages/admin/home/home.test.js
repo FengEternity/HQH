@@ -81,7 +81,7 @@ describe('admin home workbench', () => {
     const page = loadPage({
       ticketingAdmin: async (data) => {
         actions.push(data.action);
-        return { ok: true, threads: [{ _id: 'a' }] };
+        return { ok: true, threads: [{ _id: 'a', unread: true }] };
       },
       admin: async (data) => {
         actions.push(data.action);
@@ -96,7 +96,7 @@ describe('admin home workbench', () => {
     page.openAbout();
 
     assert.equal(page.data.aboutHint, '开发版 · 0.2.3');
-    assert.equal(page.data.pendingLabel, '1 条待处理');
+    assert.equal(page.data.pendingLabel, '1 条未读');
     assert.equal(page.data.ingestLabel, '进入');
     assert.deepEqual(
       events.filter((item) => item[0] === 'nav'),

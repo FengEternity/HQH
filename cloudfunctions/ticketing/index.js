@@ -15,21 +15,20 @@ const {
   csUnregisterNotify,
   readWecomNotifyStatus,
   csBindWecom,
+  csBindProfile,
+  csGetProfile,
   csSetNotify,
 } = require('./lib/csStore');
 const { notifyReplied, readNewTicketTemplateId } = require('./lib/notify');
 const { verifyTicket } = require('./lib/ticket');
 const { createWecomClient } = require('./lib/wecomClient');
 const { deliverWecomAdminNotifications } = require('./lib/wecomDelivery');
+const { handleWecomCallback } = require('./lib/wecomCallback');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
 const wecomClient = createWecomClient({
-  fetchImpl: async (url, options = {}) => {
-    const response = await fetch(url, options);
-    return { ok: response.ok, status: response.status, json: await response.json() };
-  },
   env: process.env,
   now: () => Date.now(),
 });
@@ -43,8 +42,8 @@ const ERROR_MESSAGES = {
   UNBOUND: '请先绑定企业微信',
   UNAUTHORIZED: '登录已失效，请重新登录',
   UNKNOWN_ACTION: '不支持的操作',
-  CLAIMED: '已有同事正在处理',
-  CLAIM_REQUIRED: '需要先接手',
+  CLAIMED: '同事正在回复',
+  CLAIM_REQUIRED: '请先持有会话',
 };
 
 function codedError(code, message) {
@@ -149,7 +148,7 @@ async function dispatch(event) {
       return csAdminList(db, { status: event.status, now });
     case 'csAdminGet':
       requireAdmin(event.ticket);
-      return Object.assign({}, await csAdminGet(db, { threadId: event.threadId }), {
+      return Object.assign({}, await csAdminGet(db, { threadId: event.threadId, now }), {
         viewerOpenid: openid,
       });
     case 'csAdminReply':
@@ -181,11 +180,22 @@ async function dispatch(event) {
     case 'csUnregisterNotify':
       requireAdmin(event.ticket);
       return csUnregisterNotify(db, { openid, now });
+    case 'csGetProfile':
+      return csGetProfile(db, { openid });
+    case 'csBindProfile':
+      await checkText(event.nickname);
+      return csBindProfile(db, {
+        openid,
+        nickname: event.nickname,
+        avatarFileId: event.avatarFileId,
+        now,
+      });
     case 'csBindWecom':
       requireAdmin(event.ticket);
       return csBindWecom(db, {
         openid,
         code: event.code,
+        mobile: event.mobile,
         now,
         expectedCorpId: process.env.WECOM_CORP_ID || '',
         exchangeCode: (code) => wecomClient.exchangeCode(code),
@@ -202,6 +212,9 @@ async function dispatch(event) {
 }
 
 exports.main = async (event) => {
+  if (event && typeof event.httpMethod === 'string') {
+    return handleWecomCallback(event, process.env);
+  }
   try {
     return await dispatch(event);
   } catch (error) {

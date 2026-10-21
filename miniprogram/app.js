@@ -12,6 +12,8 @@ const INIT_KEY = 'hqh_db_inited_v2';
 App({
   globalData: {
     cloudReady: null,
+    nickname: '',
+    avatarFileId: '',
   },
   onLaunch() {
     if (!wx.cloud) {

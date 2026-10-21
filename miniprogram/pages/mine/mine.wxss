@@ -1,1 +1,32 @@
-/* uses global .page / .empty from app.wxss */
+.me {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.me-copy {
+  min-width: 0;
+}
+
+.me-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 48rpx;
+  flex-shrink: 0;
+}
+
+.me-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #18181b;
+  color: #ffffff;
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+.version-foot {
+  margin-top: auto;
+  padding-top: 24rpx;
+  text-align: center;
+}

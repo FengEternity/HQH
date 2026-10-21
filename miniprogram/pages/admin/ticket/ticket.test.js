@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 
 const apiPath = require.resolve('../../../utils/api');
 const pagePath = require.resolve('./ticket');
+const { clearCsViewCache } = require('../csViewCache');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
@@ -85,6 +86,7 @@ function renderedClaimLabel(wxml, data) {
 }
 
 afterEach(() => {
+  clearCsViewCache();
   delete require.cache[pagePath];
   global.Page = originalPage;
   global.wx = originalWx;
@@ -110,6 +112,7 @@ describe('admin ticket chat', () => {
     assert.equal(page.data.messages[3].side, 'out');
     assert.equal(page.data.anchor, 'ma4');
     assert.equal(page.data.loading, false);
+    assert.equal(page.data.thread.conversationLabel, '已回复');
   });
 
   it('sends a reply into the thread and scrolls to that bubble', async () => {
@@ -147,217 +150,160 @@ describe('admin ticket chat', () => {
     assert.equal(page.data.submitting, false);
   });
 
-  it('按接手状态在输入框上方显示接手、放开或正在处理', () => {
-    const wxml = fs.readFileSync(path.join(__dirname, 'ticket.wxml'), 'utf8');
-    const composerAt = wxml.indexOf('class="composer"');
-    const noneAt = wxml.indexOf("claimState === 'none'");
-    const mineAt = wxml.indexOf("claimState === 'mine'");
-    const otherAt = wxml.indexOf("claimState === 'other'");
-    assert.equal(noneAt > -1 && noneAt < composerAt, true);
-    assert.equal(mineAt > -1 && mineAt < composerAt, true);
-    assert.equal(otherAt > -1 && otherAt < composerAt, true);
-    assert.equal(wxml.slice(noneAt, mineAt).includes('接手'), true);
-    assert.equal(wxml.slice(mineAt, otherAt).includes('放开'), true);
-    assert.equal(wxml.slice(otherAt, composerAt).includes('已有同事正在处理'), true);
-    assert.equal(wxml.includes('bindtap="claim"'), true);
-    assert.equal(wxml.includes('bindtap="release"'), true);
-    assert.equal(wxml.includes('replyClaimOpenid'), false);
-    assert.equal(wxml.includes('{{thread.openid}}'), false);
-  });
-
-  it('open 工单不渲染接手', async () => {
-    const page = loadPage({
-      ticketingAdmin: async () =>
-        threadResult(
-          [{ _id: 'a1', role: 'assistant', text: '请领取账号', createdAt: 1 }],
-          'open',
-          { viewerOpenid: 'wx-a' },
-        ),
+  it('回复先出现在对话里，不等云函数返回', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
     });
-    page.onLoad({ id: 'thread-1' });
-    await page.onShow();
-    const wxml = fs.readFileSync(path.join(__dirname, 'ticket.wxml'), 'utf8');
-    assert.equal(page.data.thread.status, 'open');
-    assert.equal(renderedClaimLabel(wxml, page.data).includes('接手'), false);
-  });
-
-  it('10 分钟窗口区分 none、mine 和 other', () => {
-    global.Page = () => {};
-    delete require.cache[pagePath];
-    const { claimState } = require(pagePath);
-    const now = 1_700_000_000_000;
-    assert.equal(
-      claimState({ replyClaimOpenid: 'wx-a', replyClaimAt: now - 600000 }, 'wx-a', now),
-      'none',
-    );
-    assert.equal(
-      claimState({ replyClaimOpenid: 'wx-a', replyClaimAt: now - 599999 }, 'wx-a', now),
-      'mine',
-    );
-    assert.equal(
-      claimState({ replyClaimOpenid: 'wx-a', replyClaimAt: now - 599999 }, 'wx-b', now),
-      'other',
-    );
-    assert.equal(claimState({ replyClaimOpenid: '', replyClaimAt: now }, 'wx-a', now), 'none');
-    assert.equal(claimState(null, 'wx-a', now), 'none');
-  });
-
-  it('不发送未接手的回复', async () => {
-    const calls = [];
-    const titles = [];
     const page = loadPage({
       ticketingAdmin: async (data) => {
-        calls.push(data.action);
-        return threadResult([], 'waiting_human', { viewerOpenid: 'wx-a' });
-      },
-    });
-    watchToasts(titles);
-    page.setData({ threadId: 'thread-1', draft: '收到' });
-    await page.onShow();
-    await page.reply();
-    assert.equal(calls.includes('csAdminReply'), false);
-    assert.equal(page.data.claimState, 'none');
-    assert.equal(titles.includes('需要先接手'), true);
-  });
-
-  it('接手人可以回复并看到放开', async () => {
-    const calls = [];
-    const page = loadPage({
-      ticketingAdmin: async (data) => {
-        calls.push(data.action);
         if (data.action === 'csAdminReply') {
-          return threadResult([], 'human', {
-            replyClaimOpenid: 'wx-a',
-            replyClaimAt: Date.now(),
-          });
+          await gate;
+          return threadResult(
+            [
+              { _id: 'a1', role: 'user', text: '你好', createdAt: 1 },
+              { _id: 'a2', role: 'operator', text: data.text, createdAt: 400, userSeenAt: 0 },
+            ],
+            'human',
+            { userSeenAt: 0, operatorSeenAt: 400 },
+          );
         }
-        return threadResult([], 'human', {
+        return threadResult([{ _id: 'a1', role: 'user', text: '你好', createdAt: 1 }], 'waiting_human', {
           viewerOpenid: 'wx-a',
           replyClaimOpenid: 'wx-a',
           replyClaimAt: Date.now(),
         });
       },
     });
-    page.setData({ threadId: 'thread-1', draft: '收到' });
+    page.onLoad({ id: 'thread-1' });
     await page.onShow();
-    await page.reply();
-    assert.equal(calls.includes('csAdminReply'), true);
-    assert.equal(page.data.claimState, 'mine');
+    page.onDraft({ detail: { value: '马上看' } });
+    const pending = page.reply();
+    assert.equal(page.data.draft, '');
+    const local = page.data.messages[page.data.messages.length - 1];
+    assert.equal(local.text, '马上看');
+    assert.equal(local.side, 'out');
+    assert.equal(local.readLabel, '未读');
+    release();
+    await pending;
+    const sent = page.data.messages.find((item) => item._id === 'a2');
+    assert.equal(sent.readLabel, '未读');
+    assert.equal(page.data.messages.some((item) => item.local), false);
   });
 
-  it('别人接手时不发送并提示正在处理', async () => {
+  it('发送失败时留下可重试的气泡', async () => {
+    let calls = 0;
+    const page = loadPage({
+      ticketingAdmin: async (data) => {
+        if (data.action === 'csAdminReply') {
+          calls += 1;
+          if (calls === 1) {
+            throw new Error('网络不好');
+          }
+          return threadResult(
+            [
+              { _id: 'a1', role: 'user', text: '你好', createdAt: 1 },
+              { _id: 'a2', role: 'operator', text: data.text, createdAt: 2 },
+            ],
+            'human',
+          );
+        }
+        return threadResult([{ _id: 'a1', role: 'user', text: '你好', createdAt: 1 }], 'waiting_human', {
+          viewerOpenid: 'wx-a',
+          replyClaimOpenid: 'wx-a',
+          replyClaimAt: Date.now(),
+        });
+      },
+    });
+    page.onLoad({ id: 'thread-1' });
+    await page.onShow();
+    page.setData({ draft: '马上看' });
+    await page.reply();
+    const failed = page.data.messages.find((item) => item.local);
+    assert.equal(failed.failed, true);
+    await page.retryReply({ currentTarget: { dataset: { id: failed._id } } });
+    assert.equal(page.data.messages.some((item) => item._id === 'a2'), true);
+    assert.equal(page.data.messages.some((item) => item.local), false);
+  });
+
+  it('会话按持有状态决定能不能回复', () => {
+    const wxml = fs.readFileSync(path.join(__dirname, 'ticket.wxml'), 'utf8');
+    assert.equal(wxml.includes('bindtap="close"'), false);
+    assert.equal(wxml.includes('holdState === \'mine\''), true);
+    assert.equal(wxml.includes('>放开</view>'), true);
+    assert.equal(wxml.includes('>持有</view>'), true);
+    assert.equal(wxml.includes('bindtap="claim"'), true);
+    assert.equal(wxml.includes('同事正在回复'), true);
+    global.Page = () => {};
+    delete require.cache[pagePath];
+    const { conversationLabel, holdState, userLabel } = require(pagePath);
+    assert.equal(userLabel({ nickname: '张三', openid: 'abcdefghijklmnop' }), '张三');
+    const now = 1_700_000_000_000;
+    assert.equal(holdState({ replyClaimOpenid: 'wx-a', replyClaimAt: now - 600000 }, 'wx-b', now), 'free');
+    assert.equal(holdState({ replyClaimOpenid: 'wx-a', replyClaimAt: now - 599999 }, 'wx-a', now), 'mine');
+    assert.equal(holdState({ replyClaimOpenid: 'wx-a', replyClaimAt: now - 599999 }, 'wx-b', now), 'other');
+    assert.equal(conversationLabel('human', [{ role: 'user' }, { role: 'operator' }]), '已回复');
+    assert.equal(conversationLabel('human', [{ role: 'operator' }, { role: 'user' }]), '未读');
+  });
+
+  it('同事持有时不发送', async () => {
     const calls = [];
+    const titles = [];
     const page = loadPage({
       ticketingAdmin: async (data) => {
         calls.push(data.action);
-        return threadResult([], 'waiting_human', {
+        return threadResult([{ _id: 'a1', role: 'user', text: '你好', createdAt: 1 }], 'human', {
           viewerOpenid: 'wx-b',
           replyClaimOpenid: 'wx-a',
           replyClaimAt: Date.now(),
         });
       },
     });
-    watchToasts(calls);
+    global.wx.showToast = ({ title }) => titles.push(title);
+    page.setData({ threadId: 'thread-1', draft: '收到' });
+    await page.onShow();
+    assert.equal(page.data.holdState, 'other');
+    await page.reply();
+    assert.equal(calls.includes('csAdminReply'), false);
+    assert.equal(titles.includes('同事正在回复'), true);
+  });
+
+  it('没人持有时要点持有才能回复', async () => {
+    const calls = [];
+    let held = false;
+    const page = loadPage({
+      ticketingAdmin: async (data) => {
+        calls.push(data.action);
+        if (data.action === 'csClaimReply') {
+          held = true;
+          return { ok: true };
+        }
+        const claim = held
+          ? { viewerOpenid: 'wx-a', replyClaimOpenid: 'wx-a', replyClaimAt: Date.now() }
+          : { viewerOpenid: 'wx-a' };
+        if (data.action === 'csAdminReply') {
+          return threadResult(
+            [
+              { _id: 'a1', role: 'user', text: '你好', createdAt: 1 },
+              { _id: 'a2', role: 'operator', text: data.text, createdAt: 2 },
+            ],
+            'human',
+            claim,
+          );
+        }
+        return threadResult([{ _id: 'a1', role: 'user', text: '你好', createdAt: 1 }], 'waiting_human', claim);
+      },
+    });
     page.setData({ threadId: 'thread-1', draft: '收到' });
     await page.onShow();
     await page.reply();
-    assert.equal(page.data.claimState, 'other');
     assert.equal(calls.includes('csAdminReply'), false);
-    assert.equal(calls.includes('已有同事正在处理'), true);
-  });
-
-  it('接手成功后刷新工单', async () => {
-    const calls = [];
-    const page = loadPage({
-      ticketingAdmin: async (data) => {
-        calls.push(data);
-        if (data.action === 'csClaimReply') {
-          return { ok: true };
-        }
-        const claimed = calls.some((item) => item.action === 'csClaimReply');
-        return threadResult([], 'waiting_human', {
-          viewerOpenid: 'wx-a',
-          replyClaimOpenid: claimed ? 'wx-a' : '',
-          replyClaimAt: claimed ? Date.now() : 0,
-        });
-      },
-    });
-    page.setData({ threadId: 'thread-1' });
-    await page.onShow();
-    assert.equal(page.data.claimState, 'none');
     await page.claim();
-    const claim = calls.find((item) => item.action === 'csClaimReply');
-    assert.equal(claim.threadId, 'thread-1');
-    assert.equal(calls.filter((item) => item.action === 'csAdminGet').length >= 2, true);
-    assert.equal(page.data.claimState, 'mine');
-  });
-
-  it('别人已接手时提示正在处理', async () => {
-    const titles = [];
-    const page = loadPage({
-      ticketingAdmin: async (data) => {
-        if (data.action === 'csClaimReply') {
-          const error = new Error('claimed');
-          error.code = 'CLAIMED';
-          throw error;
-        }
-        return threadResult([], 'waiting_human', { viewerOpenid: 'wx-b' });
-      },
-    });
-    page.setData({ threadId: 'thread-1' });
-    await page.onShow();
-    watchToasts(titles);
-    await page.claim();
-    assert.equal(titles.includes('已有同事正在处理'), true);
-    assert.equal(page.data.submitting, false);
-  });
-
-  it('放开成功后刷新工单', async () => {
-    const calls = [];
-    const page = loadPage({
-      ticketingAdmin: async (data) => {
-        calls.push(data);
-        if (data.action === 'csReleaseReply') {
-          return { ok: true };
-        }
-        const released = calls.some((item) => item.action === 'csReleaseReply');
-        return threadResult([], 'human', {
-          viewerOpenid: 'wx-a',
-          replyClaimOpenid: released ? '' : 'wx-a',
-          replyClaimAt: released ? 0 : Date.now(),
-        });
-      },
-    });
-    page.setData({ threadId: 'thread-1' });
-    await page.onShow();
-    assert.equal(page.data.claimState, 'mine');
-    await page.release();
-    const release = calls.find((item) => item.action === 'csReleaseReply');
-    assert.equal(release.threadId, 'thread-1');
-    assert.equal(calls.filter((item) => item.action === 'csAdminGet').length >= 2, true);
-    assert.equal(page.data.claimState, 'none');
-  });
-
-  it('放开失败时提示放开失败', async () => {
-    const titles = [];
-    const page = loadPage({
-      ticketingAdmin: async (data) => {
-        if (data.action === 'csReleaseReply') {
-          throw new Error('boom');
-        }
-        return threadResult([], 'human', {
-          viewerOpenid: 'wx-a',
-          replyClaimOpenid: 'wx-a',
-          replyClaimAt: Date.now(),
-        });
-      },
-    });
-    page.setData({ threadId: 'thread-1' });
-    await page.onShow();
-    watchToasts(titles);
-    await page.release();
-    assert.equal(titles.includes('放开失败'), true);
-    assert.equal(page.data.submitting, false);
+    page.setData({ draft: '收到' });
+    await page.reply();
+    assert.equal(calls.includes('csClaimReply'), true);
+    assert.equal(calls.includes('csAdminReply'), true);
+    assert.equal(page.data.thread.conversationLabel, '已回复');
   });
 
   it('csAdminGet 返回当前运营 OpenID', () => {
@@ -369,5 +315,39 @@ describe('admin ticket chat', () => {
     const end = source.indexOf("case 'csAdminReply':");
     const block = source.slice(start, end);
     assert.equal(block.includes('viewerOpenid: openid'), true);
+  });
+
+  it('再次打开同一会话时先显示上次的消息，不切到加载中', async () => {
+    let calls = 0;
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const ticketingAdmin = async () => {
+      calls += 1;
+      if (calls > 1) {
+        await gate;
+      }
+      return threadResult([{ _id: 'a1', role: 'user', text: '还在', createdAt: 1 }]);
+    };
+    const first = loadPage({ ticketingAdmin });
+    first.onLoad({ id: 'thread-1' });
+    await first.onShow();
+    const second = loadPage({ ticketingAdmin });
+    second.onLoad({ id: 'thread-1' });
+    let sawLoading = false;
+    const apply = second.setData.bind(second);
+    second.setData = (next) => {
+      if (next.loading === true) {
+        sawLoading = true;
+      }
+      apply(next);
+    };
+    const pending = second.onShow();
+    assert.equal(sawLoading, false);
+    assert.equal(second.data.loading, false);
+    assert.equal(second.data.messages[0].text, '还在');
+    release();
+    await pending;
   });
 });

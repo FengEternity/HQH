@@ -1,4 +1,7 @@
 {
+  "usingComponents": {
+    "profile-gate": "/components/profile-gate/profile-gate"
+  },
   "navigationBarTitleText": "播放",
   "navigationBarBackgroundColor": "#000000",
   "navigationBarTextStyle": "white",

@@ -1,9 +1,12 @@
 <view class="page">
-  <view class="empty">登录后可查看订单</view>
-  <view class="hub-item" bindtap="openAbout">
-    <view>
-      <view class="tile-title">关于</view>
+  <profile-gate id="profileGate" bind:bound="onProfileBound" />
+  <view class="card me" bindtap="editProfile">
+    <image wx:if="{{avatarFileId}}" class="me-avatar" src="{{avatarFileId}}" mode="aspectFill" />
+    <view wx:else class="me-avatar me-fallback">{{initial}}</view>
+    <view class="me-copy">
+      <view class="tile-title">{{nickname || '未设置昵称'}}</view>
+      <view class="muted">修改头像与昵称</view>
     </view>
-    <text class="muted">{{version}}</text>
   </view>
+  <view class="muted version-foot">{{version}}</view>
 </view>

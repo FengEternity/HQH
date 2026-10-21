@@ -41,9 +41,9 @@
 底栏「客服」进入 `pages/contact/contact`（`switchTab`）。开场话术和快捷问题在 `miniprogram/config.js` 的 `contact`。
 
 - 领取的账号存在本机 `hqh_support_account`，同一设备重复领取会拿到同一组。
-- 用户自己打字或点「转人工」会升级为待处理工单；运营回复后，用户再次进入客服页即可在时间线查看。关闭后，用户再次发消息会创建新线程。
+- 用户在客服页发出的消息会进入待处理工单；运营回复后，用户再次进入客服页即可在时间线查看。关闭后，用户再次发消息会创建新线程。
 - C 端客服不再写 `support_messages`；该集合仅保留兼容旧留言数据。
-- 在微信公众平台申请新工单、客服回复两个订阅消息模板后，把模板 ID 分别配置到云函数环境变量 `CS_NEW_TICKET_TPL`、`CS_REPLIED_TPL`，并配置到 `miniprogram/config.js` 的 `contact.newTicketTplId`、`contact.replyTplId`。模板 ID 留空时，工单回复与转人工仍可使用。
+- 在微信公众平台申请新工单、客服回复两个订阅消息模板后，把模板 ID 分别配置到云函数环境变量 `CS_NEW_TICKET_TPL`、`CS_REPLIED_TPL`，并配置到 `miniprogram/config.js` 的 `contact.newTicketTplId`、`contact.replyTplId`。模板 ID 留空时，工单与回复仍可使用。
 
 ## 自动化单测（不依赖微信）
 

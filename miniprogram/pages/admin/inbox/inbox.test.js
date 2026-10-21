@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const apiPath = require.resolve('../../../utils/api');
 const configPath = require.resolve('../../../config.js');
 const pagePath = require.resolve('./inbox');
+const { clearCsViewCache } = require('../csViewCache');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
@@ -38,6 +39,7 @@ function loadPage({ ticketingAdmin, templateId = '' }) {
 }
 
 afterEach(() => {
+  clearCsViewCache();
   delete require.cache[pagePath];
   global.Page = originalPage;
   global.wx = originalWx;
@@ -46,18 +48,22 @@ afterEach(() => {
 describe('admin inbox notifications', () => {
   it('places the notice above the status filters', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'inbox.wxml'), 'utf8');
-    const noticeAt = wxml.indexOf('接收新工单通知');
+    const noticeAt = wxml.indexOf('接收会话通知');
     const filtersAt = wxml.indexOf('selectStatus');
-    assert.equal(noticeAt > -1, true);
-    assert.equal(filtersAt > noticeAt, true);
+    assert.equal(noticeAt > -1 && filtersAt > noticeAt, true);
+    assert.equal(wxml.includes('wx:key="id"'), true);
+    assert.equal(wxml.includes('filterId === item.id'), true);
+    assert.equal(wxml.includes('wx:key="value"'), false);
     assert.equal(
       wxml.includes(
-        '开启后，新工单会发到你的企业微信，并在运营群 @ 你。停止后这两处都不再通知你。',
+        '开启后，用户发来消息会在运营群 @ 这个手机号。手机号要和企业微信通讯录里的一致。停止后不再 @ 你。',
       ),
       true,
     );
     assert.equal(wxml.includes('checked="{{notifyEnabled}}"'), true);
     assert.equal(wxml.includes('bindchange="toggleNotify"'), true);
+    assert.equal(wxml.includes('notifyError'), true);
+    assert.equal(wxml.includes('class="chip notify-chip"'), true);
     assert.equal(wxml.includes('bindNotify'), false);
     assert.equal(wxml.includes('停止接收'), false);
     assert.equal(wxml.includes('requestSubscribeMessage'), false);
@@ -97,13 +103,12 @@ describe('admin inbox notifications', () => {
     await page.toggleNotify({ detail: { value: true } });
     assert.equal(events.includes('subscribe'), false);
     assert.equal(events.includes('csBindWecom'), false);
-    assert.equal(events.includes('请在企业微信中打开后再开启'), true);
+    assert.equal(page.data.notifyError, '请填写企业微信里的11位手机号');
   });
 
-  it('binds inside WeCom and shows 接收中', async () => {
+  it('binds a WeCom mobile and shows 接收中', async () => {
     const events = [];
     global.wx = {
-      qy: { login: () => Promise.resolve({ code: 'code-1' }) },
       showToast({ title }) {
         events.push(title);
       },
@@ -112,13 +117,14 @@ describe('admin inbox notifications', () => {
       ticketingAdmin: async (data) => {
         events.push(data.action);
         if (data.action === 'csBindWecom') {
-          assert.equal(data.code, 'code-1');
+          assert.equal(data.mobile, '13800000000');
           return { ok: true, bound: true, enabled: true };
         }
         return { ok: true, bound: false, enabled: false, threads: [] };
       },
     });
     await page.onShow();
+    page.setData({ notifyMobile: '13800000000' });
     await page.toggleNotify({ detail: { value: true } });
     assert.equal(page.data.notifyLabel, '接收中');
     assert.equal(events.includes('已开启'), true);
@@ -203,9 +209,11 @@ describe('admin inbox notifications', () => {
     });
 
     await page.onShow();
+    page.setData({ notifyMobile: '13800000000' });
     await page.toggleNotify({ detail: { value: true } });
 
     assert.equal(page.data.notifyLabel, '未绑定');
+    assert.equal(page.data.notifyError, 'bind failed');
     assert.equal(titles.includes('绑定失败'), true);
     assert.equal(titles.includes('已开启'), false);
   });
@@ -229,10 +237,8 @@ describe('admin inbox notifications', () => {
         name: 'bind failure',
         detail: true,
         original: false,
-        wx: {
-          qy: { login: () => Promise.resolve({ code: 'code-1' }) },
-          showToast() {},
-        },
+        mobile: '13800000000',
+        wx: { showToast() {} },
         ticketingAdmin: async (data) => {
           if (data.action === 'csNotifyConfig') {
             return { ok: true, bound: false, enabled: false };
@@ -304,6 +310,9 @@ describe('admin inbox notifications', () => {
       };
       await page.onShow();
       checked.length = 0;
+      if (item.mobile) {
+        page.data.notifyMobile = item.mobile;
+      }
       await page.toggleNotify({ detail: { value: item.detail } });
       assert.deepEqual(checked, [!item.original, item.original], item.name);
       assert.equal(page.data.notifyEnabled, item.original, item.name);
@@ -329,5 +338,43 @@ describe('admin inbox notifications', () => {
     await page.onShow();
     assert.equal(page.data.notifyLabel, '未开启');
     assert.equal(page.data.loading, false);
+  });
+
+  it('再次进入时先显示上次的会话，不切到加载中', async () => {
+    let listCalls = 0;
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const ticketingAdmin = async (data) => {
+      if (data.action === 'csNotifyConfig') {
+        return { ok: true, bound: false, enabled: false };
+      }
+      listCalls += 1;
+      if (listCalls > 1) {
+        await gate;
+      }
+      return {
+        ok: true,
+        threads: [{ _id: 'a', updatedAt: 1, nickname: '甲', unread: true }],
+      };
+    };
+    const first = loadPage({ ticketingAdmin });
+    await first.onShow();
+    const second = loadPage({ ticketingAdmin });
+    let sawLoading = false;
+    const apply = second.setData.bind(second);
+    second.setData = (next) => {
+      if (next.loading === true) {
+        sawLoading = true;
+      }
+      apply(next);
+    };
+    const pending = second.onShow();
+    assert.equal(sawLoading, false);
+    assert.equal(second.data.loading, false);
+    assert.equal(second.data.threads[0].userLabel, '甲');
+    release();
+    await pending;
   });
 });

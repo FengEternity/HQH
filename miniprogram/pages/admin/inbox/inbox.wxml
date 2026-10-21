@@ -1,25 +1,36 @@
 <view class="page">
   <view class="hub-item hub-item-notify">
-    <view class="notify-main">
-      <view>
-        <view class="tile-title">接收新工单通知</view>
-        <view class="muted">开启后，新工单会发到你的企业微信，并在运营群 @ 你。停止后这两处都不再通知你。</view>
-      </view>
-      <switch checked="{{notifyEnabled}}" bindchange="toggleNotify" />
-      <text class="chip">{{notifyLabel}}</text>
+    <view class="notify-head">
+      <view class="tile-title">接收会话通知</view>
+      <text class="chip notify-chip">{{notifyLabel}}</text>
     </view>
+    <view class="muted notify-copy">开启后，用户发来消息会在运营群 @ 这个手机号。手机号要和企业微信通讯录里的一致。停止后不再 @ 你。</view>
+    <input
+      wx:if="{{!notifyBound}}"
+      class="notify-mobile"
+      type="number"
+      maxlength="11"
+      placeholder="企业微信手机号"
+      value="{{notifyMobile}}"
+      bindinput="onNotifyMobile"
+    />
+    <view class="notify-switch-row">
+      <text>接收通知</text>
+      <switch checked="{{notifyEnabled}}" bindchange="toggleNotify" />
+    </view>
+    <view wx:if="{{notifyError}}" class="notify-error">{{notifyError}}</view>
   </view>
   <view style="white-space: nowrap">
     <view
-      wx:for="{{statuses}}"
-      wx:key="value"
-      class="brand-pill {{status === item.value ? 'brand-pill-on' : ''}}"
-      data-status="{{item.value}}"
+      wx:for="{{filters}}"
+      wx:key="id"
+      class="brand-pill {{filterId === item.id ? 'brand-pill-on' : ''}}"
+      data-filter="{{item.id}}"
       bindtap="selectStatus"
     >{{item.label}}</view>
   </view>
   <view wx:if="{{loading}}" class="empty">加载中</view>
-  <view wx:elif="{{threads.length === 0}}" class="empty">还没有待处理工单。</view>
+  <view wx:elif="{{threads.length === 0}}" class="empty">{{filterId === 'closed' ? '没有已关闭的会话' : '还没有会话'}}</view>
   <view
     class="card"
     wx:for="{{threads}}"
@@ -29,7 +40,8 @@
   >
     <view class="row">
       <view class="tile-title">{{item.userLabel}}</view>
-      <text class="muted">进入</text>
+      <text class="chip" wx:if="{{item.unread}}">未读</text>
+      <text class="muted" wx:else>进入</text>
     </view>
     <view wx:if="{{item.preview}}" class="inbox-preview">{{item.preview}}</view>
     <view class="muted" style="margin-top: 8rpx">更新于 {{item.timeLabel}}</view>

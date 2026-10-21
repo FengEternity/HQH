@@ -16,6 +16,8 @@ const {
   readNotifyStatus,
   readWecomNotifyStatus,
   csBindWecom,
+  csBindProfile,
+  csGetProfile,
   csSetNotify,
   listNotifyCandidates,
   reserveNotifySend,
@@ -267,10 +269,87 @@ test('csHistory 重复读取只创建一条欢迎消息', async () => {
   assert.equal(second.messages[0].meta.actions.length, 3);
 });
 
-test('领取账号自动回复后默认待处理列表为空', async () => {
+test('第一次读取昵称不创建工单', async () => {
+  const db = makeMemoryDb();
+  const empty = await csGetProfile(db, { openid: 'user-1' });
+  assert.deepEqual(empty, { ok: true, nickname: '', avatarFileId: '' });
+  assert.equal((await db.collection('cs_threads').where({}).get()).data.length, 0);
+  await csBindProfile(db, { openid: 'user-1', nickname: '张三', now: 1 });
+  assert.equal((await csGetProfile(db, { openid: 'user-1' })).nickname, '张三');
+});
+
+test('资料集合不存在时先创建再读取', async () => {
+  const rows = [];
+  let gets = 0;
+  const db = {
+    created: [],
+    async createCollection(name) {
+      this.created.push(name);
+    },
+    collection() {
+      return {
+        where() {
+          return {
+            limit() {
+              return {
+                async get() {
+                  gets += 1;
+                  if (gets === 1) {
+                    const error = new Error('database collection not exists');
+                    error.errCode = -502005;
+                    throw error;
+                  }
+                  return { data: rows };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  const result = await csGetProfile(db, { openid: 'user-1' });
+  assert.deepEqual(result, { ok: true, nickname: '', avatarFileId: '' });
+  assert.deepEqual(db.created, ['cs_profiles']);
+});
+
+test('昵称按微信身份保存，工单列表能读到', async () => {
+  const db = makeMemoryDb();
+  await csHistory(db, { openid: 'user-1', now: 100 });
+  const saved = await csBindProfile(db, {
+    openid: 'user-1',
+    nickname: ' 张三 ',
+    avatarFileId: 'cloud://avatar',
+    now: 150,
+  });
+  assert.deepEqual(saved, { ok: true, nickname: '张三', avatarFileId: 'cloud://avatar' });
+
+  const again = await csBindProfile(db, { openid: 'user-1', nickname: '李四', now: 180 });
+  assert.equal(again.nickname, '李四');
+  const history = await csHistory(db, { openid: 'user-1', now: 200 });
+  assert.equal(history.nickname, '李四');
+
+  const sent = await csSend(db, {
+    openid: 'user-1',
+    text: '型号问题',
+    now: 220,
+    notifyAdminsFn: async () => {},
+  });
+  const listed = await csAdminList(db, { now: 300 });
+  assert.equal(listed.threads[0].nickname, '李四');
+  const detail = await csAdminGet(db, { threadId: sent.thread._id });
+  assert.equal(detail.thread.nickname, '李四');
+
+  await assert.rejects(
+    () => csBindProfile(db, { openid: 'user-1', nickname: '  ', now: 400 }),
+    (error) => error.code === 'BAD_INPUT' && error.message === '请填写昵称',
+  );
+});
+
+test('领取账号进入待处理且不自动回复', async () => {
   const db = makeMemoryDb();
 
-  await csSend(db, {
+  const sent = await csSend(db, {
     openid: 'user-1',
     text: '领取账号',
     faqId: 'claim',
@@ -280,7 +359,53 @@ test('领取账号自动回复后默认待处理列表为空', async () => {
   });
 
   const result = await csAdminList(db, { now: 300 });
-  assert.deepEqual(result.threads, []);
+  assert.equal(sent.thread.status, 'waiting_human');
+  assert.equal(result.threads.length, 1);
+  assert.equal(result.threads[0]._id, sent.thread._id);
+  assert.equal(
+    sent.messages.some((message) => message.role === 'user' && message.text === '领取账号'),
+    true,
+  );
+  assert.equal(
+    sent.messages.some((message) => message.meta && message.meta.account === 'demo-account'),
+    false,
+  );
+});
+
+test('运营刚回复的 10 分钟内不再通知，过后用户再发会通知', async () => {
+  const db = makeMemoryDb();
+  const sent = await csSend(db, {
+    openid: 'user-1',
+    text: '你好',
+    now: 1_000,
+    notifyAdminsFn: async () => {},
+  });
+  await csClaimReply(db, { threadId: sent.thread._id, openid: 'wx-admin', now: 1_500 });
+  await csAdminReply(db, {
+    threadId: sent.thread._id,
+    openid: 'wx-admin',
+    text: '在的',
+    now: 2_000,
+  });
+  const calls = [];
+  await csSend(db, {
+    openid: 'user-1',
+    threadId: sent.thread._id,
+    text: '马上再说',
+    now: 2_000 + 599999,
+    notifyAdminsFn: async () => calls.push('soon'),
+  });
+  await csSend(db, {
+    openid: 'user-1',
+    threadId: sent.thread._id,
+    text: '过了十分钟',
+    now: 2_000 + 600000,
+    notifyAdminsFn: async () => calls.push('later'),
+  });
+  assert.deepEqual(calls, ['later']);
+  const listed = await csAdminList(db, { status: 'active' });
+  assert.equal(listed.threads[0].unread, true);
+  assert.equal(listed.threads[0].preview, '过了十分钟');
 });
 
 test('自由输入升级为待处理并在通知失败时仍成功', async () => {
@@ -300,6 +425,7 @@ test('自由输入升级为待处理并在通知失败时仍成功', async () =>
   assert.equal(sent.thread.status, 'waiting_human');
   assert.equal(result.threads.length, 1);
   assert.equal(result.threads[0]._id, sent.thread._id);
+  assert.equal(result.threads[0].unread, true);
 });
 
 test('运营回复后用户历史可见 operator 消息', async () => {
@@ -326,45 +452,35 @@ test('运营回复后用户历史可见 operator 消息', async () => {
   assert.equal(history.messages.at(-1).text, '已经为你处理');
 });
 
-test('运营不能回复尚未升级的 open 线程', async () => {
+test('没持有不能回复，持有后可以回复尚未升级的会话', async () => {
   const db = makeMemoryDb();
   const history = await csHistory(db, { openid: 'user-1', now: 100 });
 
-  await assert.rejects(
-    () => csClaimReply(db, { threadId: history.thread._id, openid: 'wx-admin', now: 150 }),
-    { code: 'INVALID_STATE' },
-  );
   await assert.rejects(
     () =>
       csAdminReply(db, {
         threadId: history.thread._id,
         openid: 'wx-admin',
-        text: '错误回复',
+        text: '我来了',
         now: 200,
-        notifyUserFn: async () => {},
       }),
-    { code: 'CLAIM_REQUIRED' },
+    (error) => error.code === 'CLAIM_REQUIRED',
   );
-  const stored = (await csAdminGet(db, { threadId: history.thread._id })).thread;
-  assert.equal(stored.status, 'open');
-  assert.equal(Object.hasOwn(stored, 'replyClaimOpenid'), false);
-  assert.equal(Object.hasOwn(stored, 'replyClaimAt'), false);
-});
-
-test('open 工单不能接手且不写入接手字段', async () => {
-  const db = makeMemoryDb();
-  const history = await csHistory(db, { openid: 'user-1', now: 100 });
-
-  await assert.rejects(
-    () => csClaimReply(db, { threadId: history.thread._id, openid: 'wx-admin', now: 150 }),
-    (error) =>
-      error.code === 'INVALID_STATE' && error.message === '当前状态不支持此操作，请刷新后重试',
-  );
-
-  const stored = (await csAdminGet(db, { threadId: history.thread._id })).thread;
-  assert.equal(stored.status, 'open');
-  assert.equal(Object.hasOwn(stored, 'replyClaimOpenid'), false);
-  assert.equal(Object.hasOwn(stored, 'replyClaimAt'), false);
+  const claimed = await csClaimReply(db, {
+    threadId: history.thread._id,
+    openid: 'wx-admin',
+    now: 150,
+  });
+  assert.equal(claimed.thread.replyClaimOpenid, 'wx-admin');
+  const replied = await csAdminReply(db, {
+    threadId: history.thread._id,
+    openid: 'wx-admin',
+    text: '我来了',
+    now: 200,
+    notifyUserFn: async () => {},
+  });
+  assert.equal(replied.thread.status, 'human');
+  assert.equal(replied.messages.at(-1).text, '我来了');
 });
 
 test('closed 工单不能接手', async () => {
@@ -813,6 +929,21 @@ test('绑定成功写入 userid 并开启', async () => {
   assert.equal((await readWecomNotifyStatus(db, { openid: 'wx-1' })).bound, true);
 });
 
+test('手机号绑定写入并开启', async () => {
+  const db = makeMemoryDb();
+  const result = await csBindWecom(db, {
+    openid: 'wx-1',
+    mobile: '13800000000',
+    now: 10,
+    exchangeCode: async () => {
+      throw new Error('should not exchange');
+    },
+  });
+  assert.deepEqual(result, { ok: true, bound: true, enabled: true });
+  const row = (await db.collection('admin_notify_subscribers').where({ openid: 'wx-1' }).get()).data[0];
+  assert.equal(row.wecomUserId, '13800000000');
+});
+
 test('空 code 拒绝绑定且不写库', async () => {
   const db = makeMemoryDb();
   let exchanged = false;
@@ -842,7 +973,17 @@ test('企业不一致或空 OpenID 不写库', async () => {
       exchangeCode: async () => ({ corpid: 'other', userid: 'zhangsan' }),
       expectedCorpId: 'corp-1',
     }),
-    (error) => error.code === 'BIND_FAILED',
+    (error) => error.code === 'BIND_FAILED' && error.message === '企业 ID 不一致',
+  );
+  await assert.rejects(
+    () => csBindWecom(db, {
+      openid: 'wx-1',
+      code: 'code-1',
+      now: 10,
+      exchangeCode: async () => ({ corpid: 'corp-1', userid: 'zhangsan' }),
+      expectedCorpId: '',
+    }),
+    (error) => error.code === 'BIND_FAILED' && error.message === '云函数未配置企业 ID',
   );
   await assert.rejects(
     () => csBindWecom(db, { openid: '', code: 'code-1', now: 10, exchangeCode: async () => ({}) }),
@@ -892,18 +1033,52 @@ test('两人同时接手只有一人成功', async () => {
   assert.equal(ok.length, 1);
 });
 
-test('未接手不能回复和关闭', async () => {
+test('别人持有时不能回复，超时或放开后可以', async () => {
   const db = makeMemoryDb();
   const thread = await createWaitingThread(db);
+  await csClaimReply(db, { threadId: thread._id, openid: 'wx-a', now: 1_500 });
+  const first = await csAdminReply(db, {
+    threadId: thread._id,
+    openid: 'wx-a',
+    text: '我来',
+    now: 2_000,
+  });
+  assert.equal(first.thread.replyClaimOpenid, 'wx-a');
   await assert.rejects(
-    () => csAdminReply(db, { threadId: thread._id, openid: 'wx-a', text: '收到', now: 1_000 }),
+    () => csAdminReply(db, { threadId: thread._id, openid: 'wx-b', text: '我也来', now: 2_000 + 599999 }),
     (error) => error.code === 'CLAIM_REQUIRED',
   );
   await assert.rejects(
-    () => csAdminClose(db, { threadId: thread._id, openid: 'wx-a', now: 1_000 }),
+    () => csClaimReply(db, { threadId: thread._id, openid: 'wx-b', now: 2_000 + 599999 }),
+    (error) => error.code === 'CLAIMED',
+  );
+  const released = await csReleaseReply(db, { threadId: thread._id, openid: 'wx-a', now: 2_100 });
+  assert.equal(released.thread.replyClaimOpenid, '');
+  await assert.rejects(
+    () => csAdminReply(db, { threadId: thread._id, openid: 'wx-b', text: '现在我来', now: 3_000 }),
     (error) => error.code === 'CLAIM_REQUIRED',
   );
-  assert.equal((await csAdminGet(db, { threadId: thread._id })).thread.status, 'waiting_human');
+  await csClaimReply(db, { threadId: thread._id, openid: 'wx-b', now: 2_900 });
+  const taken = await csAdminReply(db, {
+    threadId: thread._id,
+    openid: 'wx-b',
+    text: '现在我来',
+    now: 3_000,
+  });
+  assert.equal(taken.thread.replyClaimOpenid, 'wx-b');
+  await assert.rejects(
+    () => csAdminReply(db, { threadId: thread._id, openid: 'wx-a', text: '十分钟后', now: 3_000 + 600000 }),
+    (error) => error.code === 'CLAIM_REQUIRED',
+  );
+  await csClaimReply(db, { threadId: thread._id, openid: 'wx-a', now: 3_000 + 600000 });
+  const later = await csAdminReply(db, {
+    threadId: thread._id,
+    openid: 'wx-a',
+    text: '十分钟后',
+    now: 3_000 + 600000,
+  });
+  assert.equal(later.thread.replyClaimOpenid, 'wx-a');
+  assert.equal(later.messages.at(-1).text, '十分钟后');
 });
 
 test('回复后 10 分钟重新计算，超时后别人可以接手', async () => {
@@ -921,6 +1096,39 @@ test('回复后 10 分钟重新计算，超时后别人可以接手', async () =
     now: 2_000 + 600000,
   });
   assert.equal(taken.thread.replyClaimOpenid, 'wx-b');
+});
+
+test('打开会话才把对方消息记成已读', async () => {
+  const db = makeMemoryDb();
+  await csHistory(db, { openid: 'user-1', now: 100 });
+  const sent = await csSend(db, {
+    openid: 'user-1',
+    text: '在吗',
+    now: 200,
+    notifyAdminsFn: async () => {},
+  });
+  const listed = await csAdminList(db, { status: 'active' });
+  assert.equal(listed.threads[0].operatorSeenAt || 0, 0);
+  assert.equal(sent.thread.userSeenAt, 200);
+
+  const opened = await csAdminGet(db, { threadId: sent.thread._id, now: 300 });
+  assert.equal(opened.thread.operatorSeenAt, 300);
+  await csClaimReply(db, { threadId: sent.thread._id, openid: 'wx-a', now: 350 });
+
+  const replied = await csAdminReply(db, {
+    threadId: sent.thread._id,
+    openid: 'wx-a',
+    text: '在的',
+    now: 400,
+  });
+  assert.equal(replied.thread.operatorSeenAt, 400);
+  assert.equal(replied.thread.userSeenAt, 200);
+  const operatorMessage = replied.messages.find((item) => item.role === 'operator');
+  assert.equal(operatorMessage.createdAt <= replied.thread.userSeenAt, false);
+
+  const seen = await csHistory(db, { openid: 'user-1', now: 500 });
+  assert.equal(seen.thread.userSeenAt, 500);
+  assert.equal(operatorMessage.createdAt <= seen.thread.userSeenAt, true);
 });
 
 test('放开和关闭都会清掉接手', async () => {

@@ -1,0 +1,36 @@
+<view wx:if="{{visible}}" class="profile-gate">
+  <form class="profile-card" bindsubmit="bindProfile">
+    <view class="profile-header">
+      <view class="profile-title">{{canDismiss ? '修改个人资料' : '完善个人资料'}}</view>
+      <view class="profile-subtitle">设置头像与昵称，以便客服提供专属服务</view>
+    </view>
+
+    <view class="avatar-section">
+      <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+        <image wx:if="{{avatarUrl}}" class="avatar-img" src="{{avatarUrl}}" mode="aspectFill" />
+        <view wx:else class="avatar-placeholder">
+          <view class="avatar-camera-icon">
+            <view class="camera-lens"></view>
+          </view>
+          <text class="avatar-tip">点此选头像</text>
+        </view>
+      </button>
+    </view>
+
+    <view class="input-section">
+      <view class="input-label">昵称</view>
+      <input
+        class="profile-input"
+        type="nickname"
+        name="nickname"
+        placeholder="请输入或选择微信昵称"
+        placeholder-class="input-placeholder"
+        maxlength="32"
+        value="{{nicknameDraft}}"
+      />
+    </view>
+
+    <button class="profile-btn" form-type="submit">确认保存</button>
+    <view wx:if="{{canDismiss}}" class="profile-cancel" bindtap="dismiss">取消</view>
+  </form>
+</view>

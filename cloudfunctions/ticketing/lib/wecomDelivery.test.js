@@ -165,12 +165,12 @@ test('没人开启时不发送，也不写工单通知结果', async () => {
   assert.equal(thread.adminNotifyGroupAt, undefined);
 });
 
-test('有人开启时群只 @ 这些人，个人发给同一些人', async () => {
+test('有人开启时群按手机号 @，个人通道记为跳过', async () => {
   const db = makeMemoryDb();
   await db.collection('cs_threads').add({ data: { _id: 'thread-1' } });
   await seed(db, [
-    { openid: 'a', enabled: true, wecomUserId: 'zhangsan' },
-    { openid: 'b', enabled: false, wecomUserId: 'lisi' },
+    { openid: 'a', enabled: true, wecomUserId: '13800000000' },
+    { openid: 'b', enabled: false, wecomUserId: '13900000000' },
     { openid: 'c', enabled: true, wecomUserId: '' },
   ]);
   const seen = [];
@@ -180,14 +180,16 @@ test('有人开启时群只 @ 这些人，个人发给同一些人', async () =>
     page: 'pages/admin/ticket/ticket?id=thread-1',
     env: { WECOM_GROUP_WEBHOOK: 'https://example.test/webhook', WECOM_MINI_APPID: 'wx-app' },
     client: {
-      sendPersonal: async (payload) => seen.push(payload.userIds),
+      sendPersonal: async () => seen.push('personal'),
       sendGroup: async (payload) => seen.push(payload.userIds),
     },
   });
-  assert.deepEqual(seen, [['zhangsan'], ['zhangsan']]);
+  assert.deepEqual(seen, [['13800000000']]);
+  const thread = (await db.collection('cs_threads').doc('thread-1').get()).data;
+  assert.equal(thread.adminNotifyPersonalResult, 'skipped');
 });
 
-test('群成功、个人失败时下一次只补发个人', async () => {
+test('下一次调用会再次发送群通知', async () => {
   const db = makeMemoryDb();
   await db.collection('cs_threads').add({ data: { _id: 'thread-1' } });
   await seed(db, [{ openid: 'a', enabled: true, wecomUserId: 'zhangsan' }]);
@@ -216,7 +218,7 @@ test('群成功、个人失败时下一次只补发个人', async () => {
       },
     },
   });
-  assert.deepEqual(second, ['personal']);
+  assert.deepEqual(second, ['group']);
 });
 
 test('部分 invaliduser 仍算个人发送成功', async () => {
@@ -235,7 +237,7 @@ test('部分 invaliduser 仍算个人发送成功', async () => {
   });
   const thread = (await db.collection('cs_threads').doc('thread-1').get()).data;
   assert.equal(thread.adminNotifyGroupResult, 'skipped');
-  assert.equal(thread.adminNotifyPersonalResult, 'sent');
+  assert.equal(thread.adminNotifyPersonalResult, 'skipped');
 });
 
 test('两路都失败后可以整轮再试', async () => {
@@ -264,7 +266,7 @@ test('两路都失败后可以整轮再试', async () => {
       sendPersonal: async () => { seen.push('personal'); return { errcode: 0 }; },
     },
   }));
-  assert.deepEqual(seen.sort(), ['group', 'personal']);
+  assert.deepEqual(seen, ['group']);
 });
 
 test('120 秒内第二个调用不再发送', async () => {
@@ -285,4 +287,87 @@ test('120 秒内第二个调用不再发送', async () => {
     },
   });
   assert.deepEqual(seen, []);
+});
+
+test('待处理工单 (waiting_human) 用户再发消息时群机器人会再次发送', async () => {
+  const db = makeMemoryDb();
+  await db.collection('cs_threads').add({
+    data: { _id: 'thread-1', status: 'waiting_human' },
+  });
+  await seed(db, [{ openid: 'a', enabled: true, wecomUserId: '13800000000' }]);
+  const seen = [];
+  const env = { WECOM_GROUP_WEBHOOK: 'https://example.test/webhook', WECOM_MINI_APPID: 'wx-app' };
+  const client = {
+    sendGroup: async (payload) => {
+      seen.push(payload.userIds);
+      return { errcode: 0 };
+    },
+    sendPersonal: async () => ({ errcode: 0 }),
+  };
+
+  await deliverWecomAdminNotifications(db, {
+    threadId: 'thread-1',
+    now: 100,
+    page: 'pages/admin/ticket/ticket?id=thread-1',
+    env,
+    client,
+  });
+
+  const threadAfterFirst = (await db.collection('cs_threads').doc('thread-1').get()).data;
+  assert.equal(threadAfterFirst.adminNotifyGroupResult, 'sent');
+  assert.equal(seen.length, 1);
+
+  // 用户在依然是 waiting_human 状态下发送第二条消息（如“测试一下 1701”）
+  await deliverWecomAdminNotifications(db, {
+    threadId: 'thread-1',
+    now: 200,
+    page: 'pages/admin/ticket/ticket?id=thread-1',
+    env,
+    client,
+  });
+
+  assert.equal(seen.length, 2);
+  assert.deepEqual(seen[1], ['13800000000']);
+});
+
+test('未配群机器人时跳过，配置后用户新消息可补发', async () => {
+  const db = makeMemoryDb();
+  await db.collection('cs_threads').add({
+    data: { _id: 'thread-1', status: 'waiting_human' },
+  });
+  await seed(db, [{ openid: 'a', enabled: true, wecomUserId: '13800000000' }]);
+  const seen = [];
+
+  // 第一次发送时环境变量尚未配置 WECOM_GROUP_WEBHOOK
+  await deliverWecomAdminNotifications(db, {
+    threadId: 'thread-1',
+    now: 100,
+    page: 'pages/admin/ticket/ticket?id=thread-1',
+    env: { WECOM_GROUP_WEBHOOK: '', WECOM_MINI_APPID: 'wx-app' },
+    client: {
+      sendGroup: async () => seen.push('group'),
+      sendPersonal: async () => ({ errcode: 0 }),
+    },
+  });
+
+  assert.equal(seen.length, 0);
+
+  // 后续运维配置了 Webhook，用户发了新消息
+  await deliverWecomAdminNotifications(db, {
+    threadId: 'thread-1',
+    now: 200,
+    page: 'pages/admin/ticket/ticket?id=thread-1',
+    env: { WECOM_GROUP_WEBHOOK: 'https://example.test/webhook', WECOM_MINI_APPID: 'wx-app' },
+    client: {
+      sendGroup: async () => {
+        seen.push('group');
+        return { errcode: 0 };
+      },
+      sendPersonal: async () => ({ errcode: 0 }),
+    },
+  });
+
+  assert.equal(seen.length, 1);
+  const thread = (await db.collection('cs_threads').doc('thread-1').get()).data;
+  assert.equal(thread.adminNotifyGroupResult, 'sent');
 });

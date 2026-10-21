@@ -4,13 +4,8 @@
     <view class="chat-head">
       <view class="chat-who">
         <text class="chat-name">{{thread.userLabel}}</text>
-        <text class="chip">{{thread.statusLabel}}</text>
+        <text class="chip" wx:if="{{thread.conversationLabel}}">{{thread.conversationLabel}}</text>
       </view>
-      <view
-        wx:if="{{thread.status !== 'closed'}}"
-        class="chat-close"
-        bindtap="close"
-      >关闭</view>
     </view>
 
     <scroll-view
@@ -25,37 +20,47 @@
         id="m{{item._id}}"
         class="msg msg-{{item.side}}"
       >
-        <view class="bubble">
-          <view class="bubble-text">{{item.text}}</view>
-          <view class="bubble-meta" wx:if="{{item.side === 'notice'}}">{{item.roleLabel}} · {{item.timeLabel}}</view>
-          <view class="bubble-meta" wx:else>{{item.timeLabel}}</view>
+        <view class="msg-col">
+          <view class="bubble-line">
+            <view
+              wx:if="{{item.failed}}"
+              class="fail-mark"
+              data-id="{{item._id}}"
+              bindtap="retryReply"
+            >!</view>
+            <view class="bubble">
+              <view class="bubble-text">{{item.text}}</view>
+              <view class="bubble-meta" wx:if="{{item.side === 'notice'}}">{{item.roleLabel}} · {{item.timeLabel}}</view>
+              <view class="bubble-meta" wx:else>{{item.timeLabel}}</view>
+            </view>
+          </view>
+          <view wx:if="{{item.readLabel}}" class="read-state {{item.readState === 'read' ? 'read-done' : ''}}">{{item.readLabel}}</view>
         </view>
       </view>
       <view id="bottom" class="pad"></view>
     </scroll-view>
 
     <view class="dock" wx:if="{{thread.status !== 'closed'}}">
-      <block wx:if="{{thread.status === 'waiting_human' || thread.status === 'human'}}">
-        <view wx:if="{{claimState === 'none'}}" class="claim-line" bindtap="claim">接手</view>
-        <view wx:elif="{{claimState === 'mine'}}" class="claim-line" bindtap="release">放开</view>
-        <view wx:elif="{{claimState === 'other'}}" class="claim-line">已有同事正在处理</view>
-      </block>
+      <view wx:if="{{holdState === 'mine'}}" class="hold-line" bindtap="release">放开</view>
+      <view wx:elif="{{holdState === 'other'}}" class="hold-line hold-busy" bindtap="claim">同事正在回复</view>
+      <view wx:else class="hold-line" bindtap="claim">持有</view>
       <view class="composer">
         <input
-          class="composer-input"
-          placeholder="输入回复"
+          class="composer-input {{holdState === 'mine' ? '' : 'composer-off'}}"
+          placeholder="{{holdState === 'mine' ? '输入回复' : holdState === 'other' ? '同事正在回复' : '先持有再回复'}}"
           value="{{draft}}"
           confirm-type="send"
           maxlength="500"
           cursor-spacing="16"
           adjust-position="{{true}}"
+          disabled="{{holdState !== 'mine'}}"
           bindinput="onDraft"
           bindconfirm="reply"
         />
-        <view class="btn send" bindtap="reply">{{submitting ? '发送中' : '发送'}}</view>
+        <view class="btn send {{holdState === 'mine' ? '' : 'send-off'}}" bindtap="reply">{{submitting ? '发送中' : '发送'}}</view>
       </view>
     </view>
-    <view wx:else class="dock dock-closed">会话已关闭，用户再次发消息会新开一条</view>
+    <view wx:else class="dock dock-closed">会话已关闭。用户再次发消息会新开一段</view>
   </block>
   <view wx:else class="empty">工单不存在。</view>
 </view>

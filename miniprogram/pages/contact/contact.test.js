@@ -2,6 +2,8 @@
 
 const { afterEach, describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const apiPath = require.resolve('../../utils/api');
 const configPath = require.resolve('../../config.js');
@@ -92,6 +94,33 @@ describe('contact page', () => {
     ]);
     assert.equal(page.data.anchor, 'mmessage-1');
     assert.equal(page.data.hours, '工作日 9:00–18:00');
+    assert.equal(page.data.nickname, '');
+  });
+
+  it('asks for a nickname before the first message can be sent', async () => {
+    const calls = [];
+    const titles = [];
+    const { page } = loadPage({
+      ticketing: async (data) => {
+        calls.push(data);
+        if (data.action === 'csBindProfile') {
+          return { ok: true, nickname: data.nickname };
+        }
+        return { ok: true, thread: { _id: 'thread-1', status: 'open' }, messages: [], nickname: '' };
+      },
+    });
+    global.wx.showToast = ({ title }) => {
+      titles.push(title);
+    };
+    page.onLoad();
+    await page.onShow();
+    page.data.draft = '型号问题';
+    await page.send();
+    assert.equal(calls.some((item) => item.action === 'csSend'), false);
+    assert.equal(titles.includes('请先填写昵称'), true);
+
+    page.onProfileBound({ detail: { nickname: '张三' } });
+    assert.equal(page.data.nickname, '张三');
   });
 
   it('quick chip fills the input and does not send', async () => {
@@ -118,7 +147,7 @@ describe('contact page', () => {
     assert.equal(storage.hqh_support_account || '', '');
   });
 
-  it('quick chips leave out the escalate entry kept beside the input', () => {
+  it('quick chips leave out 转人工 and the composer has no escalate button', () => {
     const { page } = loadPage({
       ticketing: async () => ({ ok: true, thread: null, messages: [] }),
     });
@@ -129,6 +158,9 @@ describe('contact page', () => {
       page.data.faqs.map((item) => item.id),
       ['claim', 'missing', 'howto'],
     );
+    const wxml = fs.readFileSync(path.join(__dirname, 'contact.wxml'), 'utf8');
+    assert.equal(wxml.includes('转人工'), false);
+    assert.equal(wxml.includes('escalate'), false);
   });
 
   it('claim creates a persistent account and sends it to the current thread', async () => {
@@ -145,6 +177,7 @@ describe('contact page', () => {
       },
     });
     page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.nickname = '测试';
 
     await page.askFaq({ currentTarget: { dataset: { id: 'claim' } } });
 
@@ -174,6 +207,7 @@ describe('contact page', () => {
       },
     });
     page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.nickname = '测试';
     page.data.draft = '  型号问题  ';
     let requested;
     global.wx.requestSubscribeMessage = ({ tmplIds }) => {
@@ -191,31 +225,23 @@ describe('contact page', () => {
     assert.equal(page.data.thread.status, 'waiting_human');
   });
 
-  it('escalate requests reply subscription and calls csEscalate', async () => {
-    const calls = [];
+  it('shows 已读 on the user bubble after an operator has opened the chat', async () => {
     const { page } = loadPage({
-      replyTplId: 'reply-template',
-      ticketing: async (data) => {
-        calls.push(data);
-        return {
-          ok: true,
-          thread: { _id: 'thread-1', status: 'waiting_human' },
-          messages: [],
-        };
-      },
+      ticketing: async () => ({
+        ok: true,
+        thread: { _id: 'thread-1', status: 'human', operatorSeenAt: 300, userSeenAt: 100 },
+        messages: [
+          { _id: 'u1', role: 'user', text: '在吗', createdAt: 200 },
+          { _id: 'o1', role: 'operator', text: '在的', createdAt: 400 },
+        ],
+      }),
     });
-    page.data.thread = { _id: 'thread-1', status: 'open' };
-    page.data.draft = '需要人工';
-
-    await page.escalate();
-
-    assert.deepEqual(calls, [
-      {
-        action: 'csEscalate',
-        text: '需要人工',
-        threadId: 'thread-1',
-      },
-    ]);
+    page.data.nickname = '测试';
+    await page.onShow();
+    assert.equal(page.data.messages.find((item) => item._id === 'u1').readLabel, '已读');
+    assert.equal(page.data.messages.find((item) => item._id === 'o1').readLabel, '');
+    const wxml = fs.readFileSync(path.join(__dirname, 'contact.wxml'), 'utf8');
+    assert.equal(wxml.includes('{{item.readLabel}}'), true);
   });
 
   it('missing and human FAQ request reply subscription before sending', async () => {
@@ -232,6 +258,7 @@ describe('contact page', () => {
       },
     });
     page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.nickname = '测试';
 
     await page.askFaq({ currentTarget: { dataset: { id: 'missing' } } });
     await page.askFaq({ currentTarget: { dataset: { id: 'human' } } });
@@ -267,6 +294,7 @@ describe('contact page', () => {
         })),
     });
     page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.nickname = '测试';
     page.data.messages = [{ _id: 'welcome', role: 'assistant', text: '欢迎' }];
     page.data.draft = '测试';
 
@@ -303,6 +331,7 @@ describe('contact page', () => {
       },
     });
     page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.nickname = '测试';
     page.data.messages = [{ _id: 'welcome', role: 'assistant', text: '欢迎' }];
     page.data.draft = '测试';
 
@@ -332,6 +361,7 @@ describe('contact page', () => {
       }),
     });
     page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.nickname = '测试';
 
     await page.askFaq({ currentTarget: { dataset: { id: 'missing' } } });
 

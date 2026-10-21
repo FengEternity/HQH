@@ -5,7 +5,7 @@ const { ingestEntryLabel } = require('../../../utils/ingestEntryLabel');
 
 Page({
   data: {
-    pendingLabel: '暂无待处理',
+    pendingLabel: '暂无未读',
     aboutHint: '',
     ingestLabel: '进入',
   },
@@ -21,9 +21,9 @@ Page({
   load() {
     return ticketingAdmin({ action: 'csAdminList' })
       .then((inboxRes) => {
-        const pending = (inboxRes.threads || []).length;
+        const pending = (inboxRes.threads || []).filter((item) => item.unread).length;
         this.setData({
-          pendingLabel: pending ? pending + ' 条待处理' : '暂无待处理',
+          pendingLabel: pending ? pending + ' 条未读' : '暂无未读',
         });
       })
       .catch((err) => {

@@ -1,4 +1,7 @@
 {
   "navigationBarTitleText": "优度客服",
-  "disableScroll": true
+  "disableScroll": true,
+  "usingComponents": {
+    "profile-gate": "/components/profile-gate/profile-gate"
+  }
 }
