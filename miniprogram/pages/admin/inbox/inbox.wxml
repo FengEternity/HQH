@@ -30,6 +30,7 @@
     >{{item.label}}</view>
   </view>
   <view wx:if="{{loading}}" class="empty">加载中</view>
+  <view wx:elif="{{loadError}}" class="empty">{{loadError}}</view>
   <view wx:elif="{{threads.length === 0}}" class="empty">{{filterId === 'closed' ? '没有已关闭的会话' : '还没有会话'}}</view>
   <view
     class="card"

@@ -63,6 +63,8 @@ describe('admin inbox notifications', () => {
     assert.equal(wxml.includes('checked="{{notifyEnabled}}"'), true);
     assert.equal(wxml.includes('bindchange="toggleNotify"'), true);
     assert.equal(wxml.includes('notifyError'), true);
+    assert.equal(wxml.includes('loadError'), true);
+    assert.equal(wxml.includes('还没有会话'), true);
     assert.equal(wxml.includes('class="chip notify-chip"'), true);
     assert.equal(wxml.includes('bindNotify'), false);
     assert.equal(wxml.includes('停止接收'), false);
@@ -338,6 +340,34 @@ describe('admin inbox notifications', () => {
     await page.onShow();
     assert.equal(page.data.notifyLabel, '未开启');
     assert.equal(page.data.loading, false);
+  });
+
+  it('列表超时不显示成还没有会话', async () => {
+    const titles = [];
+    const page = loadPage({
+      ticketingAdmin: async (data) => {
+        if (data.action === 'csNotifyConfig') {
+          return { ok: true, bound: true, enabled: true };
+        }
+        const err = new Error(
+          'cloud.callFunction:fail Error: errCode: -504003 | errMsg: Invoking task timed out after 3 seconds',
+        );
+        err.errCode = -504003;
+        throw err;
+      },
+    });
+    global.wx = {
+      showToast({ title }) {
+        titles.push(title);
+      },
+      redirectTo() {},
+    };
+
+    await page.onShow();
+
+    assert.equal(page.data.threads.length, 0);
+    assert.equal(page.data.loadError, '服务响应超时，请再试一次');
+    assert.deepEqual(titles, ['服务响应超时，请再试一次']);
   });
 
   it('再次进入时先显示上次的会话，不切到加载中', async () => {

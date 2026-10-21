@@ -85,6 +85,17 @@ async function getConversationMessages(db, thread) {
   return previous.concat(await getMessages(db, thread._id));
 }
 
+function latestPatch(message, now) {
+  const text = String((message && message.text) || '');
+  const role = String((message && message.role) || '');
+  const patch = { lastText: text, lastRole: role, lastAt: now };
+  if (role === 'user' || role === 'operator') {
+    patch.attentionText = text;
+    patch.attentionRole = role;
+  }
+  return patch;
+}
+
 async function addMessage(db, thread, message, now) {
   const data = Object.assign({}, message, {
     threadId: thread._id,
@@ -92,6 +103,9 @@ async function addMessage(db, thread, message, now) {
     createdAt: now,
   });
   await db.collection(MESSAGES).add({ data });
+  if (thread && thread._id) {
+    await db.collection(THREADS).doc(thread._id).update({ data: latestPatch(message, now) });
+  }
 }
 
 async function updateStatus(db, thread, transition, now) {
@@ -337,6 +351,45 @@ function attentionMessage(messages) {
     .find((message) => message.role === 'user' || message.role === 'operator');
 }
 
+function messageSummary(messages) {
+  const attention = attentionMessage(messages);
+  const last = messages[messages.length - 1];
+  const shown = attention || last;
+  return {
+    preview: shown ? String(shown.text || '') : '',
+    unread: Boolean(attention && attention.role === 'user'),
+    attentionText: attention ? String(attention.text || '') : '',
+    attentionRole: attention ? String(attention.role || '') : '',
+    lastText: last ? String(last.text || '') : '',
+    lastRole: last ? String(last.role || '') : '',
+  };
+}
+
+function storedSummary(thread) {
+  if (!thread || (!thread.attentionRole && !thread.lastRole)) {
+    return null;
+  }
+  return {
+    preview: String(thread.attentionText || thread.lastText || ''),
+    unread: thread.attentionRole === 'user',
+  };
+}
+
+async function latestMessagePage(db, threadId) {
+  const counted = await db.collection(MESSAGES).where({ threadId }).count();
+  const total = Number(counted && counted.total) || 0;
+  if (!total) {
+    return [];
+  }
+  const result = await db
+    .collection(MESSAGES)
+    .where({ threadId })
+    .skip(Math.max(0, total - 100))
+    .limit(100)
+    .get();
+  return (result.data || []).slice().sort(byTime('createdAt', 'asc'));
+}
+
 async function csAdminList(db, { status = 'active' } = {}) {
   // 只按状态取出再在内存排序。where 加 orderBy 需要组合索引，缺索引时云数据库直接失败，工作台会显示成没有会话。
   const statuses = status === 'active' ? ['open', 'waiting_human', 'human'] : [status];
@@ -345,20 +398,32 @@ async function csAdminList(db, { status = 'active' } = {}) {
     rows.push(...(await listWhere(db.collection(THREADS), { status: item })));
   }
   rows.sort(byTime('updatedAt', 'desc'));
-  const threads = [];
   const nicknames = new Map();
-  for (const thread of rows.slice(0, 100)) {
-    const messages = await getMessages(db, thread._id);
-    const attention = attentionMessage(messages);
-    const last = attention || messages[messages.length - 1];
+  const threads = await Promise.all(rows.slice(0, 100).map(async (thread) => {
+    let summary = storedSummary(thread);
+    if (!summary) {
+      const messages = await latestMessagePage(db, thread._id);
+      const filled = messageSummary(messages);
+      summary = filled;
+      if (thread._id && (filled.attentionRole || filled.lastRole)) {
+        await db.collection(THREADS).doc(thread._id).update({
+          data: {
+            attentionText: filled.attentionText,
+            attentionRole: filled.attentionRole,
+            lastText: filled.lastText,
+            lastRole: filled.lastRole,
+          },
+        });
+      }
+    }
     const profile = await profileOf(db, thread.openid, nicknames);
-    threads.push(Object.assign({}, thread, {
-      preview: last ? String(last.text || '') : '',
-      unread: Boolean(attention && attention.role === 'user'),
+    return Object.assign({}, thread, {
+      preview: summary.preview,
+      unread: summary.unread,
       nickname: profile.nickname,
       avatarFileId: profile.avatarFileId,
-    }));
-  }
+    });
+  }));
   return { ok: true, threads };
 }
 

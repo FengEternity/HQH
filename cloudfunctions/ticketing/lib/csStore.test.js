@@ -127,6 +127,10 @@ function makeMemoryDb({
       skip(value) {
         return query(name, where, order, max, value);
       },
+      async count() {
+        const data = rows(name).filter((item) => matches(item, where));
+        return { total: data.length };
+      },
       async get() {
         let data = rows(name).filter((item) => matches(item, where));
         if (order) {
@@ -640,6 +644,42 @@ test('自由输入在缺少组合索引时仍按更新时间出现在待处理�
     result.threads.map((item) => item.preview),
     ['测试', '先发'],
   );
+});
+
+test('旧会话只读最近一页消息，并记住最新一句', async () => {
+  const db = makeMemoryDb({ rejectOrderBy: true });
+  const added = await db.collection('cs_threads').add({
+    data: { openid: 'user-1', status: 'human', createdAt: 1, updatedAt: 1 },
+  });
+  for (let index = 1; index <= 120; index += 1) {
+    await db.collection('cs_messages').add({
+      data: {
+        threadId: added._id,
+        openid: 'user-1',
+        role: 'user',
+        text: String(index),
+        createdAt: index,
+      },
+    });
+  }
+
+  const listed = await csAdminList(db, { status: 'human' });
+  assert.equal(listed.threads[0].preview, '120');
+  assert.equal(listed.threads[0].unread, true);
+  const stored = await db.collection('cs_threads').doc(added._id).get();
+  assert.equal(stored.data.attentionText, '120');
+
+  await db.collection('cs_messages').add({
+    data: {
+      threadId: added._id,
+      openid: 'user-1',
+      role: 'user',
+      text: '999',
+      createdAt: 999,
+    },
+  });
+  const again = await csAdminList(db, { status: 'human' });
+  assert.equal(again.threads[0].preview, '120');
 });
 
 test('用户不能向其他 openid 的线程发送消息', async () => {

@@ -53,6 +53,28 @@ describe('ticketing', () => {
       (error) => error.message === '状态已变化' && error.code === 'INVALID_STATE',
     );
   });
+
+  it('maps a timed out cloud call to a short message', async () => {
+    global.wx = {
+      cloud: {
+        callFunction() {
+          const err = new Error(
+            'cloud.callFunction:fail Error: errCode: -504003 | errMsg: Invoking task timed out after 3 seconds',
+          );
+          err.errCode = -504003;
+          return Promise.reject(err);
+        },
+      },
+      getStorageSync() {},
+      setStorageSync() {},
+    };
+    const { ticketing } = require('./api');
+
+    await assert.rejects(
+      () => ticketing({ action: 'csAdminList' }),
+      (error) => error.code === 'TIME_LIMIT' && error.message === '服务响应超时，请再试一次',
+    );
+  });
 });
 
 describe('ticketingAdmin', () => {

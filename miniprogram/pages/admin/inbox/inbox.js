@@ -24,6 +24,22 @@ function initialOf(nickname) {
   return name ? name.slice(0, 1) : '优';
 }
 
+function visibleListError(err) {
+  const code = err && (err.errCode || err.code);
+  const message = String((err && err.message) || '');
+  if (
+    code === -504003 ||
+    code === 'TIME_LIMIT' ||
+    /504003|TIME_LIMIT_EXCEEDED|Invoking task timed out/i.test(message)
+  ) {
+    return '服务响应超时，请再试一次';
+  }
+  if (!message || /cloud\.callFunction|errCode/i.test(message)) {
+    return '会话暂时打不开，请再试一次';
+  }
+  return message;
+}
+
 function pad(n) {
   return String(n).padStart(2, '0');
 }
@@ -55,6 +71,7 @@ Page({
     ],
     threads: [],
     loading: true,
+    loadError: '',
     notifyBound: false,
     notifyLabel: '未开启',
     notifyEnabled: false,
@@ -162,15 +179,17 @@ Page({
         this.setData({
           threads,
           loading: false,
+          loadError: '',
         });
       })
       .catch((err) => {
-        this.setData({ loading: false });
+        const loadError = (this.data.threads || []).length ? '' : visibleListError(err);
+        this.setData({ loading: false, loadError });
         if (err.code === 'UNAUTHORIZED') {
           wx.redirectTo({ url: '/pages/admin/login/login' });
           return;
         }
-        wx.showToast({ title: err.message || '加载失败', icon: 'none' });
+        wx.showToast({ title: loadError || err.message || '加载失败', icon: 'none' });
       });
   },
   selectStatus(e) {
@@ -178,7 +197,7 @@ Page({
     if (!filterId || filterId === this.data.filterId) {
       return;
     }
-    this.setData({ filterId, threads: [] });
+    this.setData({ filterId, threads: [], loadError: '' });
     return this.load();
   },
   onNotifyMobile(e) {
@@ -194,4 +213,4 @@ Page({
   },
 });
 
-module.exports = { notifyLabelText };
+module.exports = { notifyLabelText, visibleListError };

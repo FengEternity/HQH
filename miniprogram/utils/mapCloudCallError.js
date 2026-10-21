@@ -12,6 +12,11 @@ function mapCloudCallError(err, functionName) {
     mapped.code = 'FUNCTION_NOT_FOUND';
     return mapped;
   }
+  if (code === -504003 || /504003|TIME_LIMIT_EXCEEDED|Invoking task timed out/i.test(msg)) {
+    const mapped = new Error('服务响应超时，请再试一次');
+    mapped.code = 'TIME_LIMIT';
+    return mapped;
+  }
   if (
     code === -504002 ||
     /Cannot find module ['"]wx-server-sdk['"]/i.test(msg) ||

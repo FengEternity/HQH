@@ -36,4 +36,14 @@ describe('mapCloudCallError', () => {
     assert.equal(err.code, 'FUNCTION_DEPS_MISSING');
     assert.equal(err.message, 'shop 云函数依赖未安装，请云端安装依赖后重部署');
   });
+
+  it('maps a cloud function timeout to a short message', () => {
+    const raw = new Error(
+      'cloud.callFunction:fail Error: errCode: -504003 | errMsg: Invoking task timed out after 3 seconds',
+    );
+    raw.errCode = -504003;
+    const err = mapCloudCallError(raw, 'ticketing');
+    assert.equal(err.code, 'TIME_LIMIT');
+    assert.equal(err.message, '服务响应超时，请再试一次');
+  });
 });

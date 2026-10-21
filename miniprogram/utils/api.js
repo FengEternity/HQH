@@ -45,6 +45,9 @@ function ticketing(data) {
         throw err;
       }
       return result;
+    })
+    .catch((err) => {
+      throw mapCloudCallError(err, 'ticketing');
     });
 }
 
