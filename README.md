@@ -1,8 +1,8 @@
 # 测绘仪器讲解小程序
 
-当前线上/体验版能力对应 **0.2.3**：微信云开发目录（品牌/视频）、关键词搜索、运营入库、播放、客服工单；底栏为讲解、客服、「我的」。
+当前待发体验版 **0.2.4**：微信云开发目录（品牌/视频）、关键词搜索、运营入库、播放页简介和问答、即时客服；底栏为讲解、客服、「我的」。
 
-下一期（商城、统一搜索、播放页文档问答、AI 客服）需求在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`，需求总表在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-req-board.md`，实现计划索引在 `docs/superpowers/plans/2026-09-09-00-ai-native-mall-index.md`。未合入 `main` 前，下文「打开与上云 / 运营 / 手测」仍以已发布版本为准。
+下一期（商城、AI 客服）需求在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md`，需求总表在 `docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-req-board.md`，实现计划索引在 `docs/superpowers/plans/2026-09-09-00-ai-native-mall-index.md`。未合入 `main` 前，下文「打开与上云 / 运营 / 手测」仍以已发布版本为准。
 
 运营主体：**优度（杭州）智能装备有限公司**（简称「优度」）。产品对外名称是「仪器讲解资料馆」，和执照上的公司全称不是同一个字段。
 
