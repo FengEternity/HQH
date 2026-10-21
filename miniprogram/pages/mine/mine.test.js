@@ -42,6 +42,8 @@ describe('mine page', () => {
     assert.equal(wxml.includes('editProfile'), true);
     assert.equal(wxml.includes('version-foot'), true);
     assert.equal(wxml.includes('profile-gate'), true);
+    assert.equal(wxml.includes('prompt="{{false}}"'), true);
+    assert.equal(wxml.includes('修改头像与昵称'), false);
     assert.equal(wxml.includes('bindtap="editProfile"'), true);
     const footer = wxml.slice(wxml.indexOf('version-foot'));
     assert.equal(footer.includes('bindtap'), false);

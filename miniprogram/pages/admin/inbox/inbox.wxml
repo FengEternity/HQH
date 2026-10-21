@@ -38,12 +38,18 @@
     data-id="{{item._id}}"
     bindtap="openTicket"
   >
-    <view class="row">
-      <view class="tile-title">{{item.userLabel}}</view>
-      <text class="chip" wx:if="{{item.unread}}">未读</text>
-      <text class="muted" wx:else>进入</text>
+    <view class="inbox-row">
+      <image wx:if="{{item.avatarFileId}}" class="inbox-avatar" src="{{item.avatarFileId}}" mode="aspectFill" />
+      <view wx:else class="inbox-avatar inbox-fallback">{{item.initial}}</view>
+      <view class="inbox-main">
+        <view class="row">
+          <view class="tile-title">{{item.userLabel}}</view>
+          <text class="chip" wx:if="{{item.unread}}">未读</text>
+          <text class="muted" wx:else>进入</text>
+        </view>
+        <view wx:if="{{item.preview}}" class="inbox-preview">{{item.preview}}</view>
+        <view class="muted" style="margin-top: 8rpx">更新于 {{item.timeLabel}}</view>
+      </view>
     </view>
-    <view wx:if="{{item.preview}}" class="inbox-preview">{{item.preview}}</view>
-    <view class="muted" style="margin-top: 8rpx">更新于 {{item.timeLabel}}</view>
   </view>
 </view>

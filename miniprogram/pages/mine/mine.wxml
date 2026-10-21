@@ -1,11 +1,10 @@
 <view class="page">
-  <profile-gate id="profileGate" bind:bound="onProfileBound" />
+  <profile-gate id="profileGate" prompt="{{false}}" bind:bound="onProfileBound" />
   <view class="card me" bindtap="editProfile">
     <image wx:if="{{avatarFileId}}" class="me-avatar" src="{{avatarFileId}}" mode="aspectFill" />
     <view wx:else class="me-avatar me-fallback">{{initial}}</view>
     <view class="me-copy">
       <view class="tile-title">{{nickname || '未设置昵称'}}</view>
-      <view class="muted">修改头像与昵称</view>
     </view>
   </view>
   <view class="muted version-foot">{{version}}</view>

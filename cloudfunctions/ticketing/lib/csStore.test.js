@@ -339,6 +339,8 @@ test('昵称按微信身份保存，工单列表能读到', async () => {
   assert.equal(listed.threads[0].nickname, '李四');
   const detail = await csAdminGet(db, { threadId: sent.thread._id });
   assert.equal(detail.thread.nickname, '李四');
+  assert.equal(detail.thread.avatarFileId, 'cloud://avatar');
+  assert.equal(listed.threads[0].avatarFileId, 'cloud://avatar');
 
   await assert.rejects(
     () => csBindProfile(db, { openid: 'user-1', nickname: '  ', now: 400 }),

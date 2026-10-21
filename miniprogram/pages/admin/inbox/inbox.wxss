@@ -34,6 +34,34 @@
   font-size: 28rpx;
 }
 
+.inbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+}
+
+.inbox-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.inbox-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #eef1fc;
+}
+
+.inbox-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4b6fdb;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
 .notify-error {
   margin-top: 16rpx;
   color: #b91c1c;

@@ -73,6 +73,13 @@ describe('profile gate', () => {
     assert.equal(component.events[0].detail.nickname, '李四');
   });
 
+  it('stays closed on 我的 when prompting is turned off', async () => {
+    const { component } = loadComponent(async () => ({ ok: true, nickname: '' }));
+    component.properties = { prompt: false };
+    await component.load();
+    assert.equal(component.data.visible, false);
+  });
+
   it('reopens with the saved name so it can be changed', async () => {
     const calls = [];
     const uploads = [];

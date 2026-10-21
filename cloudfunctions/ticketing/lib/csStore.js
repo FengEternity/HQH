@@ -204,17 +204,20 @@ async function readProfile(db, openid) {
   });
 }
 
-async function nicknameOf(db, openid, cache) {
+async function profileOf(db, openid, cache) {
   if (!openid) {
-    return '';
+    return { nickname: '', avatarFileId: '' };
   }
   if (cache.has(openid)) {
     return cache.get(openid);
   }
   const profile = await readProfile(db, openid);
-  const nickname = profile && profile.nickname ? String(profile.nickname) : '';
-  cache.set(openid, nickname);
-  return nickname;
+  const summary = {
+    nickname: profile && profile.nickname ? String(profile.nickname) : '',
+    avatarFileId: profile && profile.avatarFileId ? String(profile.avatarFileId) : '',
+  };
+  cache.set(openid, summary);
+  return summary;
 }
 
 async function csBindProfile(db, { openid, nickname, avatarFileId, now }) {
@@ -348,10 +351,12 @@ async function csAdminList(db, { status = 'active' } = {}) {
     const messages = await getMessages(db, thread._id);
     const attention = attentionMessage(messages);
     const last = attention || messages[messages.length - 1];
+    const profile = await profileOf(db, thread.openid, nicknames);
     threads.push(Object.assign({}, thread, {
       preview: last ? String(last.text || '') : '',
       unread: Boolean(attention && attention.role === 'user'),
-      nickname: await nicknameOf(db, thread.openid, nicknames),
+      nickname: profile.nickname,
+      avatarFileId: profile.avatarFileId,
     }));
   }
   return { ok: true, threads };
@@ -360,10 +365,10 @@ async function csAdminList(db, { status = 'active' } = {}) {
 async function csAdminGet(db, { threadId, now }) {
   let thread = await getThread(db, threadId);
   thread = await markSeen(db, thread, 'operatorSeenAt', now);
-  const nickname = await nicknameOf(db, thread.openid, new Map());
+  const profile = await profileOf(db, thread.openid, new Map());
   return {
     ok: true,
-    thread: Object.assign({}, thread, { nickname }),
+    thread: Object.assign({}, thread, profile),
     messages: await getMessages(db, threadId),
   };
 }

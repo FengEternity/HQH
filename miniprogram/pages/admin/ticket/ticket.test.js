@@ -231,8 +231,13 @@ describe('admin ticket chat', () => {
     assert.equal(wxml.includes('bindtap="close"'), false);
     assert.equal(wxml.includes('holdState === \'mine\''), true);
     assert.equal(wxml.includes('>放开</view>'), true);
-    assert.equal(wxml.includes('>持有</view>'), true);
-    assert.equal(wxml.includes('bindtap="claim"'), true);
+    assert.equal(wxml.includes('你正在回复'), true);
+    assert.equal(wxml.includes('持有并输入'), true);
+    assert.equal(wxml.includes('再检查一次'), true);
+    assert.equal(wxml.includes('回复用户'), true);
+    assert.equal(wxml.includes('bindtap="askHold"'), true);
+    assert.equal(wxml.includes('bindtap="onSend"'), true);
+    assert.equal(wxml.includes('>持有</view>'), false);
     assert.equal(wxml.includes('同事正在回复'), true);
     global.Page = () => {};
     delete require.cache[pagePath];
@@ -304,6 +309,48 @@ describe('admin ticket chat', () => {
     assert.equal(calls.includes('csClaimReply'), true);
     assert.equal(calls.includes('csAdminReply'), true);
     assert.equal(page.data.thread.conversationLabel, '已回复');
+  });
+
+  it('点输入框先确认持有，同事占用时再检查一次', async () => {
+    const calls = [];
+    let phase = 'other';
+    const page = loadPage({
+      ticketingAdmin: async (data) => {
+        calls.push(data.action);
+        if (data.action === 'csClaimReply') {
+          phase = 'mine';
+          return { ok: true };
+        }
+        const claim =
+          phase === 'mine'
+            ? { viewerOpenid: 'wx-a', replyClaimOpenid: 'wx-a', replyClaimAt: Date.now() }
+            : phase === 'other'
+              ? { viewerOpenid: 'wx-a', replyClaimOpenid: 'wx-b', replyClaimAt: Date.now() }
+              : { viewerOpenid: 'wx-a' };
+        return threadResult([{ _id: 'a1', role: 'user', text: '你好', createdAt: 1 }], 'waiting_human', claim);
+      },
+    });
+    page.setData({ threadId: 'thread-1', draft: '收到' });
+    await page.onShow();
+    assert.equal(page.data.holdState, 'other');
+    page.askHold();
+    assert.equal(page.data.holdPrompt, 'busy');
+    await page.recheckHold();
+    assert.equal(page.data.holdPrompt, 'busy');
+
+    phase = 'free';
+    await page.recheckHold();
+    assert.equal(page.data.holdState, 'free');
+    assert.equal(page.data.holdPrompt, 'claim');
+    await page.onSend();
+    assert.equal(calls.includes('csAdminReply'), false);
+    assert.equal(page.data.holdPrompt, 'claim');
+
+    await page.confirmHold();
+    assert.equal(calls.includes('csClaimReply'), true);
+    assert.equal(page.data.holdState, 'mine');
+    assert.equal(page.data.holdPrompt, '');
+    assert.equal(page.data.focusComposer, true);
   });
 
   it('csAdminGet 返回当前运营 OpenID', () => {

@@ -32,6 +32,23 @@ page {
   font-weight: 600;
 }
 
+.chat-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #eef1fc;
+}
+
+.chat-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4b6fdb;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
 .chat-close {
   flex-shrink: 0;
   color: #b42318;
@@ -174,28 +191,106 @@ page {
   border: 1rpx solid #e4e4e7;
 }
 
+.composer-fake {
+  color: #a1a1aa;
+}
+
 .send {
   flex-shrink: 0;
   padding: 16rpx 28rpx;
   font-size: 26rpx;
 }
 
-.hold-line {
-  text-align: right;
-  color: #4b6fdb;
-  font-size: 24rpx;
-  font-weight: 600;
-  padding: 4rpx 8rpx 12rpx;
+.hold-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72rpx;
+  margin-bottom: 12rpx;
+  padding: 0 8rpx;
+  color: #18181b;
+  font-size: 26rpx;
 }
 
-.hold-busy {
-  text-align: center;
+.hold-bar-busy {
+  justify-content: center;
   color: #71717a;
-  font-weight: 400;
 }
 
-.composer-off {
-  color: #a1a1aa;
+.hold-release {
+  min-width: 120rpx;
+  min-height: 64rpx;
+  padding: 0 20rpx;
+  line-height: 64rpx;
+  text-align: center;
+  color: #4b6fdb;
+  font-weight: 600;
+}
+
+.hold-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48rpx;
+  box-sizing: border-box;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.hold-dialog {
+  width: 100%;
+  max-width: 600rpx;
+  padding: 40rpx 36rpx 32rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.hold-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #18181b;
+  text-align: center;
+}
+
+.hold-copy {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  color: #71717a;
+  text-align: center;
+}
+
+.hold-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 32rpx;
+}
+
+.hold-cancel,
+.hold-ok {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  text-align: center;
+  border-radius: 14rpx;
+  font-size: 28rpx;
+}
+
+.hold-cancel {
+  color: #3f3f46;
+  background: #f4f4f5;
+}
+
+.hold-ok {
+  color: #ffffff;
+  background: #4b6fdb;
+  font-weight: 600;
 }
 
 .send-off {

@@ -82,9 +82,11 @@ function holdState(thread, openid, now) {
 }
 
 function mapThread(thread, messages) {
+  const name = thread && String(thread.nickname || '').trim();
   return Object.assign({}, thread, {
     conversationLabel: conversationLabel(thread.status, messages),
     userLabel: userLabel(thread),
+    initial: name ? name.slice(0, 1) : '优',
   });
 }
 
@@ -110,6 +112,8 @@ Page({
     submitting: false,
     viewerOpenid: '',
     holdState: 'free',
+    holdPrompt: '',
+    focusComposer: false,
   },
   onLoad(options) {
     this.setData({ threadId: options.id || '' });
@@ -200,6 +204,48 @@ Page({
   },
   onDraft(e) {
     this.setData({ draft: e.detail.value });
+  },
+  askHold() {
+    if (!this.data.thread || this.data.thread.status === 'closed' || this.data.holdState === 'mine') {
+      return;
+    }
+    this.setData({ holdPrompt: this.data.holdState === 'other' ? 'busy' : 'claim' });
+  },
+  closeHoldPrompt() {
+    this.setData({ holdPrompt: '' });
+  },
+  confirmHold() {
+    return Promise.resolve(this.claim()).then(() => {
+      if (this.data.holdState === 'mine') {
+        this.setData({ holdPrompt: '', focusComposer: true });
+        return;
+      }
+      if (this.data.holdState === 'other') {
+        this.setData({ holdPrompt: 'busy' });
+      }
+    });
+  },
+  recheckHold() {
+    return this.refreshTicket().then(() => {
+      if (this.data.holdState === 'mine') {
+        this.setData({ holdPrompt: '' });
+        return;
+      }
+      this.setData({ holdPrompt: this.data.holdState === 'other' ? 'busy' : 'claim' });
+    });
+  },
+  blurComposer() {
+    if (this.data.focusComposer) {
+      this.setData({ focusComposer: false });
+    }
+  },
+  noop() {},
+  onSend() {
+    if (this.data.holdState !== 'mine') {
+      this.askHold();
+      return;
+    }
+    return this.reply();
   },
   reply() {
     const text = (this.data.draft || '').trim();

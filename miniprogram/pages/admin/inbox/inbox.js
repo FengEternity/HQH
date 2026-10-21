@@ -19,6 +19,11 @@ function userLabel(item) {
   return item && item.openid ? '用户 ' + item.openid.slice(-8) : '未知用户';
 }
 
+function initialOf(nickname) {
+  const name = String(nickname || '').trim();
+  return name ? name.slice(0, 1) : '优';
+}
+
 function pad(n) {
   return String(n).padStart(2, '0');
 }
@@ -149,6 +154,8 @@ Page({
           Object.assign({}, item, {
             timeLabel: formatTime(item.updatedAt),
             userLabel: userLabel(item),
+            avatarFileId: item.avatarFileId || '',
+            initial: initialOf(item.nickname),
           }),
         );
         rememberList(filterId, threads);

@@ -3,6 +3,8 @@
   <block wx:elif="{{thread}}">
     <view class="chat-head">
       <view class="chat-who">
+        <image wx:if="{{thread.avatarFileId}}" class="chat-avatar" src="{{thread.avatarFileId}}" mode="aspectFill" />
+        <view wx:else class="chat-avatar chat-fallback">{{thread.initial}}</view>
         <text class="chat-name">{{thread.userLabel}}</text>
         <text class="chip" wx:if="{{thread.conversationLabel}}">{{thread.conversationLabel}}</text>
       </view>
@@ -41,26 +43,55 @@
     </scroll-view>
 
     <view class="dock" wx:if="{{thread.status !== 'closed'}}">
-      <view wx:if="{{holdState === 'mine'}}" class="hold-line" bindtap="release">放开</view>
-      <view wx:elif="{{holdState === 'other'}}" class="hold-line hold-busy" bindtap="claim">同事正在回复</view>
-      <view wx:else class="hold-line" bindtap="claim">持有</view>
+      <view wx:if="{{holdState === 'mine'}}" class="hold-bar">
+        <text>你正在回复</text>
+        <view class="hold-release" bindtap="release">放开</view>
+      </view>
+      <view wx:elif="{{holdState === 'other'}}" class="hold-bar hold-bar-busy">同事正在回复</view>
       <view class="composer">
+        <view
+          wx:if="{{holdState !== 'mine'}}"
+          class="composer-input composer-fake"
+          bindtap="askHold"
+        >{{holdState === 'other' ? '同事正在回复' : '回复用户'}}</view>
         <input
-          class="composer-input {{holdState === 'mine' ? '' : 'composer-off'}}"
-          placeholder="{{holdState === 'mine' ? '输入回复' : holdState === 'other' ? '同事正在回复' : '先持有再回复'}}"
+          wx:else
+          class="composer-input"
+          placeholder="回复用户"
           value="{{draft}}"
           confirm-type="send"
           maxlength="500"
           cursor-spacing="16"
           adjust-position="{{true}}"
-          disabled="{{holdState !== 'mine'}}"
+          focus="{{focusComposer}}"
+          bindblur="blurComposer"
           bindinput="onDraft"
           bindconfirm="reply"
         />
-        <view class="btn send {{holdState === 'mine' ? '' : 'send-off'}}" bindtap="reply">{{submitting ? '发送中' : '发送'}}</view>
+        <view class="btn send {{holdState === 'mine' ? '' : 'send-off'}}" bindtap="onSend">发送</view>
       </view>
     </view>
     <view wx:else class="dock dock-closed">会话已关闭。用户再次发消息会新开一段</view>
+    <view wx:if="{{holdPrompt}}" class="hold-mask" catchtouchmove="noop">
+      <view class="hold-dialog">
+        <block wx:if="{{holdPrompt === 'claim'}}">
+          <view class="hold-title">持有这段会话？</view>
+          <view class="hold-copy">持有后 10 分钟内只有你能回复。</view>
+          <view class="hold-actions">
+            <view class="hold-cancel" bindtap="closeHoldPrompt">取消</view>
+            <view class="hold-ok" bindtap="confirmHold">持有并输入</view>
+          </view>
+        </block>
+        <block wx:else>
+          <view class="hold-title">同事正在回复</view>
+          <view class="hold-copy">这段会话暂时不能同时回复。</view>
+          <view class="hold-actions">
+            <view class="hold-cancel" bindtap="closeHoldPrompt">取消</view>
+            <view class="hold-ok" bindtap="recheckHold">再检查一次</view>
+          </view>
+        </block>
+      </view>
+    </view>
   </block>
   <view wx:else class="empty">工单不存在。</view>
 </view>

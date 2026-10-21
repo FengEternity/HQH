@@ -51,19 +51,20 @@
 }
 
 .avatar-btn {
-  width: 150rpx;
-  height: 150rpx;
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+  min-width: 160rpx;
+  min-height: 160rpx;
   margin: 0;
   padding: 0;
+  border: 0;
   border-radius: 50%;
   background: #f4f6fc;
-  border: 4rpx solid #eef1fc;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  line-height: 160rpx;
+  font-size: 0;
   overflow: hidden;
   box-sizing: border-box;
-  transition: transform 0.15s ease;
 }
 
 .avatar-btn:active {
@@ -75,8 +76,11 @@
 }
 
 .avatar-img {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 160rpx;
+  height: 160rpx;
   border-radius: 50%;
   display: block;
 }

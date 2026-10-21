@@ -6,7 +6,12 @@
     </view>
 
     <view class="avatar-section">
-      <button class="avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+      <button
+        class="avatar-btn"
+        style="width:160rpx;height:160rpx;padding:0;margin:0;border-radius:50%;overflow:hidden;line-height:0;"
+        open-type="chooseAvatar"
+        bindchooseavatar="onChooseAvatar"
+      >
         <image wx:if="{{avatarUrl}}" class="avatar-img" src="{{avatarUrl}}" mode="aspectFill" />
         <view wx:else class="avatar-placeholder">
           <view class="avatar-camera-icon">

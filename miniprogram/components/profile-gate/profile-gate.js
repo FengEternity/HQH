@@ -14,6 +14,12 @@ function isLocalAvatar(filePath) {
 }
 
 Component({
+  properties: {
+    prompt: {
+      type: Boolean,
+      value: true,
+    },
+  },
   data: {
     visible: false,
     canDismiss: false,
@@ -48,9 +54,17 @@ Component({
             this.triggerEvent('bound', { nickname, avatarFileId });
             return;
           }
+          if (this.properties && this.properties.prompt === false) {
+            this.setData({ visible: false });
+            return;
+          }
           this.setData({ visible: true, canDismiss: false, nicknameDraft: '', avatarUrl: '' });
         })
         .catch(() => {
+          if (this.properties && this.properties.prompt === false) {
+            this.setData({ visible: false });
+            return;
+          }
           this.setData({ visible: true, canDismiss: false });
         });
     },
