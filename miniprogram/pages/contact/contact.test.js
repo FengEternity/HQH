@@ -12,7 +12,7 @@ const pagePath = require.resolve('./contact');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
-function loadPage({ ticketing, storage = {}, replyTplId = '' }) {
+function loadPage({ ticketing, storage = {}, replyTplId = '', wechatSubscribePaused = false }) {
   delete require.cache[pagePath];
   const api = require(apiPath);
   const originalTicketing = api.ticketing;
@@ -20,6 +20,7 @@ function loadPage({ ticketing, storage = {}, replyTplId = '' }) {
 
   const config = require(configPath);
   config.contact.replyTplId = replyTplId;
+  config.contact.wechatSubscribePaused = wechatSubscribePaused;
 
   let definition;
   const subscriptionRequests = [];
@@ -350,6 +351,28 @@ describe('contact page', () => {
     );
     assert.equal(page.data.messages.length, 1);
     assert.equal(page.data.messages[0]._id, 'server-1');
+  });
+
+  it('does not ask for a WeChat subscription while that channel is paused', async () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../config.js'), 'utf8');
+    assert.match(source, /wechatSubscribePaused:\s*true/);
+    const { page, subscriptionRequests } = loadPage({
+      replyTplId: 'reply-template',
+      wechatSubscribePaused: true,
+      ticketing: async () => ({
+        ok: true,
+        thread: { _id: 'thread-1', status: 'waiting_human' },
+        messages: [],
+      }),
+    });
+    page.data.thread = { _id: 'thread-1', status: 'open' };
+    page.data.nickname = '测试';
+    page.data.draft = '型号问题';
+
+    await page.askFaq({ currentTarget: { dataset: { id: 'missing' } } });
+    await page.send();
+
+    assert.equal(subscriptionRequests.length, 0);
   });
 
   it('empty replyTplId does not request subscription', async () => {

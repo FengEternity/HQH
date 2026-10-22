@@ -4,6 +4,7 @@ module.exports = {
     phone: '',
     qrImage: '',
     hours: '工作日 9:00–18:00',
+    wechatSubscribePaused: true,
     replyTplId: 'koefKstxVkqMs2cgBD1cUBxVsF0-R1pshOFL99ljZ8M',
     newTicketTplId: 'koefKstxVkqMs2cgBD1cUBxVsF0-R1pshOFL99ljZ8M',
     welcome:

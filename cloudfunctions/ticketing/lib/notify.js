@@ -1,5 +1,11 @@
 'use strict';
 
+const WECHAT_SUBSCRIBE_PAUSED = true;
+
+function subscribePaused(options) {
+  return WECHAT_SUBSCRIBE_PAUSED && !(options && options.allowWhilePaused === true);
+}
+
 function formatLocalTime(ms) {
   const d = new Date(Number(ms) + 8 * 60 * 60 * 1000);
   const y = d.getUTCFullYear();
@@ -67,30 +73,30 @@ function readNewTicketTemplateId(env) {
   return String((env && env.CS_NEW_TICKET_TPL) || '').trim();
 }
 
-async function notifyNewTicket({ send, templateId, tousers, page, now }) {
-  const list = tousers || [];
-  if (!templateId) {
-    return { ok: true, sent: 0, skipped: list.length };
+async function notifyNewTicket(options) {
+  const tousers = (options && options.tousers) || [];
+  if (subscribePaused(options) || !options.templateId) {
+    return { ok: true, sent: 0, skipped: tousers.length };
   }
   return sendToUsers({
-    send,
-    templateId,
-    tousers: list,
-    page,
-    data: ticketCard('待处理', now),
+    send: options.send,
+    templateId: options.templateId,
+    tousers,
+    page: options.page,
+    data: ticketCard('待处理', options.now),
   });
 }
 
-async function notifyReplied({ send, templateId, touser, page, now }) {
-  if (!templateId || !touser) {
+async function notifyReplied(options) {
+  if (subscribePaused(options) || !options.templateId || !options.touser) {
     return { ok: true, sent: 0, skipped: 1 };
   }
   return sendToUsers({
-    send,
-    templateId,
-    tousers: [touser],
-    page,
-    data: ticketCard('已回复', now),
+    send: options.send,
+    templateId: options.templateId,
+    tousers: [options.touser],
+    page: options.page,
+    data: ticketCard('已回复', options.now),
   });
 }
 
