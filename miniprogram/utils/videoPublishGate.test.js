@@ -30,5 +30,7 @@ describe('videoPublishGate', () => {
     );
     assert.equal(isReadyToPublish({ ...ready, ingest: undefined }), false);
     assert.equal(isReadyToPublish({ ...ready, media: {} }), false);
+    assert.equal(isReadyToPublish({ ...ready, introReview: 'pending' }), false);
+    assert.equal(isReadyToPublish({ ...ready, introReview: 'confirmed' }), true);
   });
 });

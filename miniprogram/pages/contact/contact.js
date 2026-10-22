@@ -163,8 +163,9 @@ Page({
       });
   },
   requestReplySubscription() {
-    const tmplId = contactCfg().replyTplId;
-    if (!tmplId) {
+    const cfg = contactCfg();
+    const tmplId = cfg.replyTplId;
+    if (cfg.wechatSubscribePaused || !tmplId) {
       return Promise.resolve();
     }
     return new Promise((resolve) => {

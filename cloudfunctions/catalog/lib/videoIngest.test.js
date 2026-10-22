@@ -10,6 +10,7 @@ const {
   planAdminSave,
   planWorkerComplete,
   planRunningIntro,
+  confirmOperatorIntro,
   resolveNextVideoFileId,
 } = require('./videoIngest');
 
@@ -668,5 +669,205 @@ describe('planWorkerComplete', () => {
       assert.equal(out.ingest.errorCode, errorCode);
       assert.equal(out.ingest.phase, 'failed');
     }
+  });
+
+  it('stores a rejected intro on an unpublished video', () => {
+    const out = planWorkerComplete({
+      prevIngest: base,
+      prevIntro: PLACEHOLDER_INTRO,
+      prevIntroSource: 'placeholder',
+      prevStatus: 'draft',
+      complete: {
+        mediaRevision: 3,
+        outcome: 'ready',
+        asr: 'ready',
+        intro: '华测RTK支持四参数计算。',
+        introGate: { ok: false, reason: 'term 四参数' },
+      },
+      now: 9,
+    });
+    assert.equal(out.intro, '华测RTK支持四参数计算。');
+    assert.equal(out.autoIntro, '华测RTK支持四参数计算。');
+    assert.equal(out.introReview, 'pending');
+    assert.deepEqual(out.introGate, { ok: false, reason: 'term 四参数' });
+    assert.equal(out.introRevisions.length, 1);
+    assert.deepEqual(out.introRevisions[0], {
+      version: 1,
+      kind: 'ai',
+      text: '华测RTK支持四参数计算。',
+      gateOk: false,
+      gateReason: 'term 四参数',
+      createdAt: 9,
+    });
+  });
+
+  it('ignores a placeholder or empty intro from the worker', () => {
+    const placeholder = planWorkerComplete({
+      prevIngest: base,
+      prevIntro: PLACEHOLDER_INTRO,
+      prevIntroSource: 'placeholder',
+      complete: {
+        mediaRevision: 3,
+        outcome: 'ready',
+        asr: 'ready',
+        intro: PLACEHOLDER_INTRO,
+        introGate: { ok: false, reason: 'placeholder' },
+      },
+      now: 9,
+    });
+    assert.equal(placeholder.intro, PLACEHOLDER_INTRO);
+    assert.equal(placeholder.autoIntro, '');
+    assert.equal(placeholder.introGate, undefined);
+    assert.equal(placeholder.introRevisions, undefined);
+
+    const empty = planWorkerComplete({
+      prevIngest: base,
+      prevIntro: PLACEHOLDER_INTRO,
+      prevIntroSource: 'placeholder',
+      complete: {
+        mediaRevision: 3,
+        outcome: 'ready',
+        asr: 'ready',
+        intro: '   ',
+      },
+      now: 9,
+    });
+    assert.equal(empty.intro, PLACEHOLDER_INTRO);
+    assert.equal(empty.introRevisions, undefined);
+  });
+
+  it('keeps the public intro of a published video and a handwritten intro', () => {
+    const published = planWorkerComplete({
+      prevIngest: { ...base, introSource: 'auto' },
+      prevIntro: '已上架简介。',
+      prevIntroSource: 'auto',
+      prevAutoIntro: '已上架简介。',
+      prevHumanIntro: '',
+      prevStatus: 'published',
+      complete: {
+        mediaRevision: 3,
+        outcome: 'ready',
+        asr: 'ready',
+        intro: '新的自动稿。',
+        introGate: { ok: true, reason: '' },
+      },
+      now: 9,
+    });
+    assert.equal(published.intro, '已上架简介。');
+    assert.equal(published.autoIntro, '新的自动稿。');
+    assert.equal(published.introReview, 'pending');
+
+    const handwritten = planWorkerComplete({
+      prevIngest: { ...base, introSource: 'human' },
+      prevIntro: '人手写。',
+      prevIntroSource: 'human',
+      prevHumanIntro: '人手写。',
+      prevStatus: 'draft',
+      complete: {
+        mediaRevision: 3,
+        outcome: 'ready',
+        asr: 'ready',
+        intro: '自动生成应被忽略。',
+        introGate: { ok: false, reason: 'term 四参数' },
+      },
+      now: 9,
+    });
+    assert.equal(handwritten.intro, '人手写。');
+    assert.equal(handwritten.autoIntro, '自动生成应被忽略。');
+    assert.equal(handwritten.introReview, 'confirmed');
+  });
+
+  it('keeps a single ai revision when the same text is noted and then completed', () => {
+    const noted = planRunningIntro({
+      prevIngest: { phase: 'running', mediaRevision: 3, introSource: 'placeholder' },
+      prevIntro: PLACEHOLDER_INTRO,
+      prevIntroSource: 'placeholder',
+      prevHumanIntro: '',
+      prevAutoIntro: '',
+      prevStatus: 'draft',
+      intro: '同一段自动稿。',
+      introGate: { ok: false, reason: 'term 四参数' },
+      now: 4,
+    });
+    const completed = planWorkerComplete({
+      prevIngest: base,
+      prevIntro: noted.intro,
+      prevIntroSource: 'auto',
+      prevAutoIntro: noted.autoIntro,
+      prevHumanIntro: '',
+      prevRevisions: noted.introRevisions,
+      prevStatus: 'draft',
+      complete: {
+        mediaRevision: 3,
+        outcome: 'ready',
+        asr: 'ready',
+        intro: '同一段自动稿。',
+        introGate: { ok: true, reason: '' },
+      },
+      now: 9,
+    });
+    assert.equal(completed.introRevisions.length, 1);
+    assert.equal(completed.introRevisions[0].kind, 'ai');
+    assert.deepEqual(completed.introGate, { ok: true, reason: '' });
+  });
+});
+
+describe('confirmOperatorIntro', () => {
+  it('confirms a non-placeholder save and appends a human revision only when the text changes', () => {
+    const accepted = confirmOperatorIntro({
+      intro: '自动稿。',
+      revisions: [{
+        version: 1,
+        kind: 'ai',
+        text: '自动稿。',
+        gateOk: false,
+        gateReason: 'term 四参数',
+        createdAt: 1,
+      }],
+      now: 2,
+    });
+    assert.equal(accepted.introReview, 'confirmed');
+    assert.equal(accepted.introRevisions.length, 1);
+
+    const edited = confirmOperatorIntro({
+      intro: '改写后的简介。',
+      revisions: accepted.introRevisions,
+      now: 3,
+    });
+    assert.equal(edited.introReview, 'confirmed');
+    assert.equal(edited.introRevisions[1].kind, 'human');
+    assert.equal(edited.introRevisions[1].text, '改写后的简介。');
+    assert.equal(edited.introRevisions[1].gateOk, null);
+    assert.equal(edited.introRevisions[1].gateReason, '');
+  });
+
+  it('stays pending without a revision when the intro is still the placeholder', () => {
+    const out = confirmOperatorIntro({
+      intro: PLACEHOLDER_INTRO,
+      revisions: [],
+      now: 1,
+    });
+    assert.equal(out.introReview, 'pending');
+    assert.deepEqual(out.introRevisions, []);
+  });
+
+  it('keeps the newest 50 revisions and continues the version numbers', () => {
+    const revisions = Array.from({ length: 50 }, (_, index) => ({
+      version: index + 1,
+      kind: 'human',
+      text: `旧${index + 1}`,
+      gateOk: null,
+      gateReason: '',
+      createdAt: index,
+    }));
+    const out = confirmOperatorIntro({
+      intro: '新的第51条',
+      revisions,
+      now: 51,
+    });
+    assert.equal(out.introRevisions.length, 50);
+    assert.equal(out.introRevisions[0].version, 2);
+    assert.equal(out.introRevisions[49].version, 51);
+    assert.equal(out.introRevisions[49].version > out.introRevisions[0].version, true);
   });
 });

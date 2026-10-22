@@ -1,5 +1,6 @@
 const { admin } = require('../../../utils/api');
 const { decodeQueryName } = require('../../../utils/decodeQueryName');
+const { listIngestLabel } = require('../../../utils/introReview');
 const { isReadyToPublish } = require('../../../utils/videoPublishGate');
 const { withPosterUrls } = require('../../../utils/videoMedia');
 
@@ -11,27 +12,6 @@ function statusLabel(status) {
     return '已下架';
   }
   return '草稿';
-}
-
-function ingestLabel(ingest) {
-  const phase = (ingest && ingest.phase) || 'idle';
-  const asr = (ingest && ingest.asr) || 'pending';
-  if (phase === 'queued') {
-    return '排队';
-  }
-  if (phase === 'running') {
-    return '正在转';
-  }
-  if (phase === 'failed') {
-    return '失败';
-  }
-  if (phase === 'ready') {
-    if (asr === 'skipped') {
-      return '无音轨';
-    }
-    return '待核对';
-  }
-  return '';
 }
 
 Page({
@@ -51,7 +31,22 @@ Page({
     }
   },
   onShow() {
+    this.pageVisible = true;
     this.load();
+  },
+  onHide() {
+    this.pageVisible = false;
+    this.stopListPoll();
+  },
+  onUnload() {
+    this.pageVisible = false;
+    this.stopListPoll();
+  },
+  stopListPoll() {
+    if (this.listTimer) {
+      clearInterval(this.listTimer);
+      this.listTimer = null;
+    }
   },
   load() {
     if (!this.data.brandId) {
@@ -63,13 +58,25 @@ Page({
         const videos = withPosterUrls(res.videos || []).map((item) =>
           Object.assign({}, item, {
             statusLabel: statusLabel(item.status),
-            ingestLabel: ingestLabel(item.ingest),
+            ingestLabel: listIngestLabel(item),
             canPublish: item.status !== 'published' && isReadyToPublish(item),
             canUnpublish: item.status === 'published',
             initial: String(item.title || '片').slice(0, 1),
           }),
         );
+        const busy = videos.some((item) => {
+          const phase = item.ingest && item.ingest.phase;
+          return phase === 'queued' || phase === 'running';
+        });
         this.setData({ videos });
+        if (busy && this.pageVisible && !this.listTimer) {
+          this.listTimer = setInterval(() => {
+            this.load();
+          }, 8000);
+        } else if (!busy && this.listTimer) {
+          clearInterval(this.listTimer);
+          this.listTimer = null;
+        }
       })
       .catch((err) => {
         if (err.code === 'UNAUTHORIZED') {

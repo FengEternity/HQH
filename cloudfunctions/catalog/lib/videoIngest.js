@@ -269,12 +269,123 @@ function planAdminSave({
   return { ingest, enqueue: false, clearTranscript: false, clearPlayback: false };
 }
 
+const MAX_INTRO_REVISIONS = 50;
+
+function revisionList(value) {
+  return Array.isArray(value) ? value.filter((item) => item && typeof item === 'object') : [];
+}
+
+function nextRevisionVersion(revisions) {
+  return revisions.reduce((max, item) => Math.max(max, Number(item.version) || 0), 0) + 1;
+}
+
+function trimIntroRevisions(revisions) {
+  if (revisions.length <= MAX_INTRO_REVISIONS) {
+    return revisions;
+  }
+  return revisions.slice(revisions.length - MAX_INTRO_REVISIONS);
+}
+
+function resolveIntroReview(doc) {
+  const review = doc && doc.introReview;
+  if (review === 'pending' || review === 'confirmed') {
+    return review;
+  }
+  const intro = cleanText(doc && doc.intro);
+  if (intro && intro !== PLACEHOLDER_INTRO) {
+    return 'confirmed';
+  }
+  return 'pending';
+}
+
+function normalizeIntroGate(introGate) {
+  if (introGate && introGate.ok === false) {
+    return {
+      ok: false,
+      reason: typeof introGate.reason === 'string' ? introGate.reason : '',
+    };
+  }
+  return { ok: true, reason: '' };
+}
+
+function recordGeneratedIntro({
+  prevIntro,
+  humanIntro,
+  status,
+  revisions,
+  generated,
+  introGate,
+  now,
+}) {
+  const text = withoutPlaceholder(generated);
+  if (!text) {
+    return null;
+  }
+  const human = withoutPlaceholder(humanIntro);
+  const previousIntro = cleanText(prevIntro) || PLACEHOLDER_INTRO;
+  let intro = previousIntro;
+  let nextReview = human ? 'confirmed' : 'pending';
+  if (!human && status !== 'published') {
+    intro = text;
+  }
+  if (human) {
+    intro = cleanText(humanIntro) || previousIntro;
+  }
+  const gate = normalizeIntroGate(introGate);
+  const list = revisionList(revisions);
+  const latestAi = [...list].reverse().find((item) => item.kind === 'ai');
+  let introRevisions = list;
+  if (!latestAi || latestAi.text !== text) {
+    introRevisions = trimIntroRevisions(list.concat([{
+      version: nextRevisionVersion(list),
+      kind: 'ai',
+      text,
+      gateOk: gate.ok,
+      gateReason: gate.reason,
+      createdAt: Number(now) || 0,
+    }]));
+  }
+  return {
+    intro,
+    autoIntro: text,
+    humanIntro: human,
+    introReview: nextReview,
+    introGate: gate,
+    introRevisions,
+    introSource: introSourceFromCopies(human, text),
+    previousIntro,
+  };
+}
+
+function confirmOperatorIntro({ intro, revisions, now }) {
+  const text = withoutPlaceholder(intro);
+  const list = revisionList(revisions);
+  if (!text) {
+    return { introReview: 'pending', introRevisions: list };
+  }
+  const latest = list.length > 0 ? list[list.length - 1] : null;
+  let introRevisions = list;
+  if (!latest || latest.text !== text) {
+    introRevisions = trimIntroRevisions(list.concat([{
+      version: nextRevisionVersion(list),
+      kind: 'human',
+      text,
+      gateOk: null,
+      gateReason: '',
+      createdAt: Number(now) || 0,
+    }]));
+  }
+  return { introReview: 'confirmed', introRevisions };
+}
+
 function planWorkerComplete({
   prevIngest,
   prevIntro,
   prevIntroSource,
   prevHumanIntro,
   prevAutoIntro,
+  prevStatus,
+  prevRevisions,
   complete,
   now,
 }) {
@@ -320,16 +431,31 @@ function planWorkerComplete({
       : '';
   ingest.finishedAt = now;
 
-  const generated = withoutPlaceholder(complete.intro);
-  if (generated) {
-    autoIntro = generated;
+  const recorded = recordGeneratedIntro({
+    prevIntro,
+    humanIntro,
+    status: prevStatus,
+    revisions: prevRevisions,
+    generated: complete.intro,
+    introGate: complete.introGate,
+    now,
+  });
+  if (!recorded) {
+    ingest.introSource = introSourceFromCopies(humanIntro, autoIntro);
+    return { ingest, intro, autoIntro, humanIntro, applyIntro };
   }
-  const nextIntro = effectiveIntro(humanIntro, autoIntro);
-  applyIntro = nextIntro !== intro;
-  intro = nextIntro;
-  ingest.introSource = introSourceFromCopies(humanIntro, autoIntro);
-
-  return { ingest, intro, autoIntro, humanIntro, applyIntro };
+  ingest.introSource = recorded.introSource;
+  applyIntro = recorded.intro !== intro;
+  return {
+    ingest,
+    intro: recorded.intro,
+    autoIntro: recorded.autoIntro,
+    humanIntro: recorded.humanIntro,
+    applyIntro,
+    introReview: recorded.introReview,
+    introGate: recorded.introGate,
+    introRevisions: recorded.introRevisions,
+  };
 }
 
 function planRunningIntro({
@@ -338,7 +464,11 @@ function planRunningIntro({
   prevIntroSource,
   prevHumanIntro,
   prevAutoIntro,
+  prevStatus,
+  prevRevisions,
   intro,
+  introGate,
+  now,
 }) {
   const stored = splitVideoCopies({
     intro: prevIntro,
@@ -350,21 +480,29 @@ function planRunningIntro({
         }
       : {}),
   });
-  const generated = withoutPlaceholder(intro);
-  if (!generated) {
+  const recorded = recordGeneratedIntro({
+    prevIntro,
+    humanIntro: stored.humanIntro,
+    status: prevStatus,
+    revisions: prevRevisions,
+    generated: intro,
+    introGate,
+    now,
+  });
+  if (!recorded) {
     return null;
   }
-  const humanIntro = stored.humanIntro;
-  const autoIntro = generated;
-  const nextIntro = effectiveIntro(humanIntro, autoIntro);
   return {
     ingest: {
       ...prevIngest,
-      introSource: introSourceFromCopies(humanIntro, autoIntro),
+      introSource: recorded.introSource,
     },
-    intro: nextIntro,
-    autoIntro,
-    humanIntro,
+    intro: recorded.intro,
+    autoIntro: recorded.autoIntro,
+    humanIntro: recorded.humanIntro,
+    introReview: recorded.introReview,
+    introGate: recorded.introGate,
+    introRevisions: recorded.introRevisions,
   };
 }
 
@@ -377,6 +515,8 @@ module.exports = {
   planAdminSave,
   planWorkerComplete,
   planRunningIntro,
+  confirmOperatorIntro,
+  resolveIntroReview,
   resolveNextVideoFileId,
   resolveStoredCopies,
   splitVideoCopies,

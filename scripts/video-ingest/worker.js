@@ -454,8 +454,17 @@ function createJobDependencies({
           placeholderIntro: PLACEHOLDER_INTRO,
         });
         log(`tencent intro: ${intro}`);
-        log(verdict.ok ? 'tencent intro accepted' : `tencent intro rejected ${verdict.reason || 'unknown'}`);
-        return { segments, intro: verdict.intro, grounded: verdict.ok === true };
+        log(verdict.ok
+          ? 'tencent intro accepted'
+          : `tencent intro kept, gate rejected ${verdict.reason || 'unknown'}`);
+        const kept = verdict.intro && verdict.intro !== PLACEHOLDER_INTRO ? verdict.intro : '';
+        return {
+          segments,
+          intro: kept,
+          grounded: verdict.ok === true,
+          gateOk: verdict.ok === true,
+          gateReason: verdict.ok ? '' : (verdict.reason || ''),
+        };
       }
       : undefined,
     now: Date.now,

@@ -9,6 +9,24 @@ function jobIdentity(claimed) {
   };
 }
 
+function generatedIntroFields(resolved, placeholderIntro) {
+  if (!resolved || typeof resolved !== 'object') {
+    return {};
+  }
+  const text = String(resolved.intro || '').replace(/\s+/g, ' ').trim();
+  if (!text || text === placeholderIntro) {
+    return {};
+  }
+  const ok = resolved.gateOk === true || (resolved.gateOk == null && resolved.grounded === true);
+  return {
+    intro: text,
+    introGate: {
+      ok,
+      reason: ok ? '' : String(resolved.gateReason || ''),
+    },
+  };
+}
+
 function mediaPayload(probe) {
   return {
     durationSec: probe.durationSec,
@@ -90,6 +108,7 @@ async function runOnce({
   transcodeIfNeeded,
   createCover,
   recognizeSpeech,
+  placeholderIntro,
   deleteCloudFiles = async () => {},
   warn = () => {},
 }) {
@@ -130,11 +149,12 @@ async function runOnce({
       warn(`tencent skipped: ${error && error.message ? error.message : 'failed'}`);
       remoteSpeech = null;
     }
-    if (remoteSpeech && remoteSpeech.grounded && typeof catalog.noteIntro === 'function') {
+    const earlyIntro = generatedIntroFields(remoteSpeech, placeholderIntro);
+    if (earlyIntro.intro && typeof catalog.noteIntro === 'function') {
       try {
         await catalog.noteIntro({
           ...jobIdentity(claimed),
-          intro: remoteSpeech.intro,
+          ...earlyIntro,
         });
       } catch (error) {
         warn(`intro note skipped: ${error && error.message ? error.message : 'failed'}`);
@@ -241,8 +261,8 @@ async function runOnce({
     });
   }
 
-  const resolvedIntro = remoteSpeech && remoteSpeech.grounded
-    ? { grounded: true, intro: remoteSpeech.intro }
+  const resolvedIntro = remoteSpeech && typeof remoteSpeech === 'object'
+    ? remoteSpeech
     : { grounded: false };
 
   return completePrepared({
@@ -253,11 +273,12 @@ async function runOnce({
     ...mediaPayload(probe),
     ...transcoded,
     ...cover,
-    ...(resolvedIntro.grounded ? { intro: resolvedIntro.intro } : {}),
+    ...generatedIntroFields(resolvedIntro, placeholderIntro),
   });
 }
 
 module.exports = {
   fitSegmentsToDuration,
+  generatedIntroFields,
   runOnce,
 };

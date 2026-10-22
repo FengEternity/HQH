@@ -624,12 +624,42 @@ describe('runOnce', () => {
     assert.equal(completes[0].intro, '打开项目。');
   });
 
-  it('腾讯云没有通过检查的简介时仍回写字幕且不带 intro', async () => {
+  it('未通过检查的腾讯云简介仍然回写，并带上原因', async () => {
+    const notes = [];
+    const segments = [{ startSec: 0, endSec: 1, text: '打开项目。' }];
+    const { deps, completes } = createDeps({
+      catalog: {
+        claim: async () => claimedJob(),
+        noteIntro: async (payload) => {
+          notes.push(payload);
+        },
+        complete: async (payload) => {
+          completes.push(payload);
+        },
+      },
+      recognizeSpeech: async () => ({
+        grounded: false,
+        gateOk: false,
+        gateReason: 'term 四参数',
+        intro: '华测RTK支持四参数计算。',
+        segments,
+      }),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(notes[0].intro, '华测RTK支持四参数计算。');
+    assert.deepEqual(notes[0].introGate, { ok: false, reason: 'term 四参数' });
+    assert.equal(completes[0].intro, '华测RTK支持四参数计算。');
+    assert.deepEqual(completes[0].introGate, { ok: false, reason: 'term 四参数' });
+    assert.deepEqual(completes[0].transcriptSegments, segments);
+  });
+
+  it('腾讯云没有简介正文时仍回写字幕且不带 intro', async () => {
     const segments = [{ startSec: 0, endSec: 1, text: '打开项目。' }];
     const { deps, completes } = createDeps({
       recognizeSpeech: async () => ({
         grounded: false,
-        intro: '未取证的句子。',
+        intro: '',
         segments,
       }),
     });

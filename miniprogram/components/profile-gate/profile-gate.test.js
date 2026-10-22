@@ -136,6 +136,15 @@ describe('profile gate', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'profile-gate.wxml'), 'utf8');
     assert.equal(wxml.includes('type="nickname"'), true);
     assert.equal(wxml.includes('chooseAvatar'), true);
+    assert.equal(/line-height:\s*0/.test(wxml), false);
+    const wxss = fs.readFileSync(path.join(__dirname, 'profile-gate.wxss'), 'utf8');
+    const tipRule = wxss.match(/\.avatar-tip\s*\{([^}]*)\}/);
+    assert.ok(tipRule);
+    assert.match(tipRule[1], /line-height:\s*28rpx/);
+    const placeholderRule = wxss.match(/\.avatar-placeholder\s*\{([^}]*)\}/);
+    assert.ok(placeholderRule);
+    assert.match(placeholderRule[1], /flex-direction:\s*column/);
+    assert.match(placeholderRule[1], /height:\s*100%/);
     for (const page of ['index/index', 'contact/contact', 'mine/mine', 'player/player']) {
       const source = fs.readFileSync(
         path.join(__dirname, '../../pages', page + '.wxml'),

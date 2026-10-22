@@ -57,10 +57,18 @@ describe('deriveVideoUi', () => {
     );
     assert.equal(
       apply(video({ ingest: { ...video().ingest, phase: 'failed' } })).ingestHint,
+      '没有生成简介，请手写后再保存上架。',
+    );
+    assert.equal(
+      apply(video({
+        humanIntro: '已有简介',
+        intro: '已有简介',
+        ingest: { ...video().ingest, phase: 'failed' },
+      })).ingestHint,
       '视频处理失败，请重试',
     );
     assert.equal(
-      apply(video({ media: {} })).ingestHint,
+      apply(video({ humanIntro: '已有简介', intro: '已有简介', media: {} })).ingestHint,
       '视频未通过播放检查',
     );
   });
@@ -70,13 +78,73 @@ describe('deriveVideoUi', () => {
       autoIntro: '千寻本期讲解如何打开项目。',
       ingest: { ...video().ingest, phase: 'running' },
     }));
-    assert.equal(data.ingestHint, '简介已出，播放文件仍在处理');
+    assert.equal(data.ingestHint, '自动简介已填入，请核对。保存后才能上架。播放文件仍在处理');
     assert.equal(data.autoIntro, '千寻本期讲解如何打开项目。');
     assert.equal(data.ingestBusy, true);
   });
 
-  it('asks for a handwritten intro and shows retry when the auto intro was rejected', () => {
+  it('offers a handwritten intro after fifteen minutes without a draft', () => {
     const data = apply(video({
+      intro: '讲解处理中，完成后请核对简介。',
+      ingest: {
+        ...video().ingest,
+        phase: 'running',
+        introSource: 'placeholder',
+        queuedAt: Date.now() - 16 * 60 * 1000,
+      },
+    }));
+    assert.equal(
+      data.ingestHint,
+      '处理时间较长，可先手写简介。自动稿出来后留在对照里，不会盖掉你写的。',
+    );
+  });
+
+  it('waits longer before offering a handwritten intro for a long video', () => {
+    const ingest = {
+      ...video().ingest,
+      phase: 'running',
+      introSource: 'placeholder',
+      queuedAt: Date.now() - 16 * 60 * 1000,
+    };
+    const early = apply(video({
+      intro: '讲解处理中，完成后请核对简介。',
+      durationSec: 20 * 60,
+      ingest,
+    }));
+    assert.equal(early.ingestHint, '等待视频处理');
+
+    const due = apply(video({
+      intro: '讲解处理中，完成后请核对简介。',
+      durationSec: 20 * 60,
+      ingest: { ...ingest, queuedAt: Date.now() - 30 * 60 * 1000 },
+    }));
+    assert.equal(
+      due.ingestHint,
+      '处理时间较长，可先手写简介。自动稿出来后留在对照里，不会盖掉你写的。',
+    );
+  });
+
+  it('asks for a handwritten intro and shows retry when the auto intro was rejected', () => {
+    const rejected = apply(video({
+      autoIntro: '华测RTK支持四参数计算。',
+      intro: '华测RTK支持四参数计算。',
+      introReview: 'pending',
+      introGate: { ok: false, reason: 'term 四参数' },
+      ingest: {
+        phase: 'ready',
+        videoFileId: 'cloud://processed',
+        asr: 'ready',
+        introSource: 'auto',
+      },
+    }));
+    assert.equal(
+      rejected.ingestHint,
+      '自动简介已填入，但未通过检查（四参数未在口播里出现）。请核对修改，保存后才能上架。',
+    );
+    assert.equal(rejected.showRetryIngest, true);
+    assert.equal(rejected.canRetryIngest, true);
+
+    const missing = apply(video({
       ingest: {
         phase: 'ready',
         videoFileId: 'cloud://processed',
@@ -84,9 +152,7 @@ describe('deriveVideoUi', () => {
         introSource: 'placeholder',
       },
     }));
-    assert.equal(data.ingestHint, '自动简介未通过，请手写简介');
-    assert.equal(data.showRetryIngest, true);
-    assert.equal(data.canRetryIngest, true);
+    assert.equal(missing.ingestHint, '没有生成简介，请手写后再保存上架。');
   });
 
   it('asks for a handwritten intro when transcription failed after playback was ready', () => {
@@ -98,7 +164,7 @@ describe('deriveVideoUi', () => {
         introSource: 'placeholder',
       },
     }));
-    assert.equal(data.ingestHint, '转写失败，播放文件已更新，请手写简介后再上架');
+    assert.equal(data.ingestHint, '没有生成简介，请手写后再保存上架。');
     assert.equal(data.canPublish, true);
   });
 
@@ -147,6 +213,16 @@ describe('deriveVideoUi', () => {
     assert.equal(data.introText, '人工简介');
     assert.equal(data.canReplaceTitle, true);
     assert.equal(data.canReplaceIntro, true);
+    assert.equal(
+      apply(video({
+        autoIntro: '自动简介',
+        humanIntro: '人工简介',
+        intro: '人工简介',
+        introReview: 'confirmed',
+        introGate: { ok: false, reason: 'term 四参数' },
+      })).ingestHint,
+      '待核对后上架 未通过检查（四参数未在口播里出现）',
+    );
   });
 
   it('shows the generated title and intro when nothing was written by hand', () => {

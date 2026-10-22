@@ -16,6 +16,21 @@ describe('notify', () => {
     assert.equal(readNewTicketTemplateId({}), '');
   });
 
+  it('does not send a WeChat subscribe message while that channel is paused', async () => {
+    let calls = 0;
+    const res = await notifyReplied({
+      send: async () => {
+        calls += 1;
+      },
+      templateId: 'tpl',
+      touser: 'user-1',
+      page: 'pages/contact/contact',
+      now: 0,
+    });
+    assert.equal(calls, 0);
+    assert.equal(res.sent, 0);
+  });
+
   it('skips when template id is missing', async () => {
     let calls = 0;
     const send = async () => {
@@ -27,6 +42,7 @@ describe('notify', () => {
       tousers: ['a'],
       page: 'pages/admin/inbox/inbox',
       now: Date.parse('2026-09-20T12:00:00+08:00'),
+      allowWhilePaused: true,
     });
     assert.equal(calls, 0);
     assert.equal(res.ok, true);
@@ -42,6 +58,7 @@ describe('notify', () => {
       tousers: ['admin-1'],
       page: 'pages/admin/inbox/inbox',
       now,
+      allowWhilePaused: true,
     });
     await notifyReplied({
       send: async (payload) => sent.push(payload),
@@ -49,6 +66,7 @@ describe('notify', () => {
       touser: 'user-1',
       page: 'pages/contact/contact',
       now,
+      allowWhilePaused: true,
     });
 
     const time = sent[0].data.time16.value;
@@ -89,6 +107,7 @@ describe('notify', () => {
       touser: 'user1',
       page: 'pages/contact/contact',
       now: 0,
+      allowWhilePaused: true,
     });
     assert.equal(res.ok, true);
     assert.equal(res.skipped, 1);

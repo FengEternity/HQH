@@ -6,6 +6,7 @@ const {
   effectiveTitle,
   introSourceFromCopies,
   normalizeIngest,
+  confirmOperatorIntro,
   planAdminSave,
   planRunningIntro,
   planWorkerComplete,
@@ -93,6 +94,8 @@ function applyCompleteToVideo({ prevData, complete, now }) {
     prevIntroSource: prevIngest.introSource,
     prevHumanIntro: copies.humanIntro,
     prevAutoIntro: copies.autoIntro,
+    prevStatus: previous.status,
+    prevRevisions: previous.introRevisions,
     complete,
     now,
   });
@@ -137,6 +140,9 @@ function applyCompleteToVideo({ prevData, complete, now }) {
     intro: planned.intro,
     autoIntro: planned.autoIntro,
     humanIntro: planned.humanIntro,
+    ...(planned.introReview ? { introReview: planned.introReview } : {}),
+    ...(planned.introGate ? { introGate: planned.introGate } : {}),
+    ...(planned.introRevisions ? { introRevisions: planned.introRevisions } : {}),
     transcriptSegments: knowledge.transcriptSegments,
     transcript: knowledge.transcript,
     durationSec: mediaMeta.durationSec,
@@ -231,6 +237,11 @@ function createVideoIngestActions({
         copies.autoIntro = '';
       }
       const intro = effectiveIntro(copies.humanIntro, copies.autoIntro);
+      const confirmed = confirmOperatorIntro({
+        intro,
+        revisions: prevData && prevData.introRevisions,
+        now: timestamp,
+      });
       const planned = buildUpsertIngestPatch({
         prevData,
         nextVideoFileId,
@@ -284,6 +295,8 @@ function createVideoIngestActions({
         autoIntro: copies.autoIntro,
         humanIntro: copies.humanIntro,
         intro,
+        introReview: confirmed.introReview,
+        introRevisions: confirmed.introRevisions,
         ...cover,
         videoFileId: nextVideoFileId,
         transcript: knowledge.transcript,
@@ -450,7 +463,7 @@ function createVideoIngestActions({
     });
   }
 
-  async function noteRunningIntro({ videoId, mediaRevision, intro }) {
+  async function noteRunningIntro({ videoId, mediaRevision, intro, introGate }) {
     if (!videoId) {
       throw badInput('videoId 必填');
     }
@@ -474,7 +487,11 @@ function createVideoIngestActions({
         prevIntroSource: ingest.introSource,
         prevHumanIntro: copies.humanIntro,
         prevAutoIntro: copies.autoIntro,
+        prevStatus: video.status,
+        prevRevisions: video.introRevisions,
         intro,
+        introGate,
+        now: now(),
       });
       if (!planned) {
         throw badInput('简介为空');
@@ -484,6 +501,9 @@ function createVideoIngestActions({
         intro: planned.intro,
         autoIntro: planned.autoIntro,
         humanIntro: planned.humanIntro,
+        introReview: planned.introReview,
+        introGate: planned.introGate,
+        introRevisions: planned.introRevisions,
         ingest: planned.ingest,
       };
       await transaction.updateVideo(videoId, {
