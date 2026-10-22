@@ -20,6 +20,9 @@ describe('ensureCollections', () => {
       'shop_products',
       'video_shop_links',
       'video_ingest_jobs',
+      'admin_users',
+      'admin_invites',
+      'admin_config',
     ]) {
       assert.ok(CATALOG_COLLECTIONS.includes(name), name);
     }
