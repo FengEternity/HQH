@@ -54,6 +54,19 @@ function presentStaff(item) {
   };
 }
 
+function staffRank(item) {
+  if (!item.enabled) return 2;
+  return item.role === 'admin' ? 0 : 1;
+}
+
+function sortStaff(staff) {
+  return staff.slice().sort((left, right) => {
+    const rankDifference = staffRank(left) - staffRank(right);
+    if (rankDifference !== 0) return rankDifference;
+    return (left.createdAt || 0) - (right.createdAt || 0);
+  });
+}
+
 Page({
   data: {
     loading: true,
@@ -68,7 +81,7 @@ Page({
       .then((result) => {
         this.setData({
           loading: false,
-          staff: (result.staff || []).map(presentStaff),
+          staff: sortStaff((result.staff || []).map(presentStaff)),
         });
       })
       .catch((error) => {
@@ -76,14 +89,17 @@ Page({
         this.handleError(error);
       });
   },
-  openActions(event) {
+  async openActions(event) {
+    if (this.actionBusy) return;
     const id = event.currentTarget.dataset.id;
     const target = this.data.staff.find((item) => item.id === id);
-    if (!target || target.isSelf) return Promise.resolve();
+    if (!target || target.isSelf) return;
 
-    const roleAction = target.role === 'admin' ? '设为运营' : '设为管理员';
-    const statusAction = target.enabled ? '停用' : '启用';
-    return showActionSheet([roleAction, statusAction]).then(async (selection) => {
+    this.actionBusy = true;
+    try {
+      const roleAction = target.role === 'admin' ? '设为运营' : '设为管理员';
+      const statusAction = target.enabled ? '停用' : '启用';
+      const selection = await showActionSheet([roleAction, statusAction]);
       if (!selection) return;
       if (selection.tapIndex === 0) {
         const role = target.role === 'admin' ? 'operator' : 'admin';
@@ -93,7 +109,9 @@ Page({
       if (selection.tapIndex !== 1) return;
       if (target.enabled && !(await confirmDisable())) return;
       await this.updateStaff(target, { enabled: !target.enabled });
-    });
+    } finally {
+      this.actionBusy = false;
+    }
   },
   updateStaff(target, changes) {
     const role = changes.role || target.role;
@@ -106,14 +124,16 @@ Page({
       enabled,
     })
       .then((result) => {
-        const staff = this.data.staff.map((item) =>
-          item.id === target.id
-            ? presentStaff({
-                ...item,
-                role: result.role,
-                enabled: result.enabled,
-              })
-            : item,
+        const staff = sortStaff(
+          this.data.staff.map((item) =>
+            item.id === target.id
+              ? presentStaff({
+                  ...item,
+                  role: result.role,
+                  enabled: result.enabled,
+                })
+              : item,
+          ),
         );
         this.setData({ staff });
       })
@@ -121,24 +141,30 @@ Page({
         this.handleError(error);
       });
   },
-  createInvite() {
-    return showActionSheet(['运营', '管理员']).then((selection) => {
+  async createInvite() {
+    if (this.actionBusy) return;
+    this.actionBusy = true;
+    try {
+      const selection = await showActionSheet(['运营', '管理员']);
       if (!selection) return;
       const role = selection.tapIndex === 1 ? 'admin' : 'operator';
-      return admin({ action: 'adminCreateInvite', role })
-        .then((result) => {
-          if (!result.generated) {
-            wx.showToast({ title: '发布后才能生成小程序码', icon: 'none' });
-            return;
-          }
-          return saveInviteImage(result.imageBase64).catch(() => {
-            wx.showToast({ title: '保存失败', icon: 'none' });
-          });
-        })
-        .catch((error) => {
-          this.handleError(error);
-        });
-    });
+      try {
+        const result = await admin({ action: 'adminCreateInvite', role });
+        if (!result.generated) {
+          wx.showToast({ title: '发布后才能生成小程序码', icon: 'none' });
+          return;
+        }
+        try {
+          await saveInviteImage(result.imageBase64);
+        } catch (error) {
+          wx.showToast({ title: '保存失败', icon: 'none' });
+        }
+      } catch (error) {
+        this.handleError(error);
+      }
+    } finally {
+      this.actionBusy = false;
+    }
   },
   handleError(error) {
     if (error && error.code === 'UNAUTHORIZED') {

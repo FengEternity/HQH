@@ -10,6 +10,16 @@ const pagePath = require.resolve('./staff');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function loadPage(admin) {
   delete require.cache[pagePath];
   const api = require(apiPath);
@@ -82,6 +92,8 @@ describe('admin staff page', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'staff.wxml'), 'utf8');
     assert.equal(/openid|OpenID/i.test(wxml), false);
     assert.equal(wxml.includes('data-id="{{item.id}}"'), true);
+    const visibleWxml = wxml.replace('data-id="{{item.id}}"', '');
+    assert.equal(/item\.(?:id|openid)/i.test(visibleWxml), false);
     assert.equal(wxml.includes('wx:if="{{!item.isSelf}}"'), true);
 
     global.wx = wxStub([]);
@@ -152,6 +164,109 @@ describe('admin staff page', () => {
     assert.equal(events.filter((item) => item[0] === 'modal').length, 1);
   });
 
+  it('reorders the visible list after a role or enabled update', async () => {
+    const events = [];
+    global.wx = wxStub(events, [0, 1], [true]);
+    const page = loadPage(async (data) => {
+      if (data.action === 'adminListStaff') {
+        return {
+          ok: true,
+          staff: [
+            {
+              id: 'admin-late',
+              nickname: '后加入管理员',
+              role: 'admin',
+              enabled: true,
+              createdAt: 30,
+              isSelf: false,
+            },
+            {
+              id: 'operator-early',
+              nickname: '早加入运营',
+              role: 'operator',
+              enabled: true,
+              createdAt: 10,
+              isSelf: false,
+            },
+            {
+              id: 'operator-late',
+              nickname: '后加入运营',
+              role: 'operator',
+              enabled: true,
+              createdAt: 20,
+              isSelf: false,
+            },
+          ],
+        };
+      }
+      return { ok: true, role: data.role, enabled: data.enabled };
+    });
+    await page.onShow();
+
+    await page.openActions({ currentTarget: { dataset: { id: 'operator-late' } } });
+    assert.deepEqual(
+      page.data.staff.map((item) => item.id),
+      ['operator-late', 'admin-late', 'operator-early'],
+    );
+
+    await page.openActions({ currentTarget: { dataset: { id: 'operator-late' } } });
+    assert.deepEqual(
+      page.data.staff.map((item) => item.id),
+      ['admin-late', 'operator-early', 'operator-late'],
+    );
+  });
+
+  it('blocks a second staff update while the first action is pending', async () => {
+    const update = deferred();
+    const calls = [];
+    global.wx = wxStub([], [0, 0]);
+    const page = loadPage(async (data) => {
+      if (data.action === 'adminListStaff') {
+        return {
+          ok: true,
+          staff: [
+            { id: 'other', nickname: '小王', role: 'operator', enabled: true, isSelf: false },
+          ],
+        };
+      }
+      calls.push(data);
+      return update.promise;
+    });
+    await page.onShow();
+
+    const first = page.openActions({ currentTarget: { dataset: { id: 'other' } } });
+    const second = page.openActions({ currentTarget: { dataset: { id: 'other' } } });
+    await Promise.resolve();
+
+    assert.equal(calls.length, 1);
+    update.resolve({ ok: true, role: 'admin', enabled: true });
+    await Promise.all([first, second]);
+  });
+
+  it('releases the staff action lock after failure so a retry can run', async () => {
+    let updateCount = 0;
+    global.wx = wxStub([], [0, 0]);
+    const page = loadPage(async (data) => {
+      if (data.action === 'adminListStaff') {
+        return {
+          ok: true,
+          staff: [
+            { id: 'other', nickname: '小王', role: 'operator', enabled: true, isSelf: false },
+          ],
+        };
+      }
+      updateCount += 1;
+      if (updateCount === 1) throw new Error('update failed');
+      return { ok: true, role: data.role, enabled: data.enabled };
+    });
+    await page.onShow();
+
+    await page.openActions({ currentTarget: { dataset: { id: 'other' } } });
+    await page.openActions({ currentTarget: { dataset: { id: 'other' } } });
+
+    assert.equal(updateCount, 2);
+  });
+
   it('does not open controls for the self row', async () => {
     const events = [];
     global.wx = wxStub(events);
@@ -194,6 +309,90 @@ describe('admin staff page', () => {
         ['save', '/tmp/user-data/admin-invite.png'],
       ],
     );
+  });
+
+  it('creates an admin invite when the administrator role is selected', async () => {
+    const calls = [];
+    global.wx = wxStub([], [1]);
+    const page = loadPage(async (data) => {
+      calls.push(data);
+      return { ok: true, generated: false };
+    });
+
+    await page.createInvite();
+
+    assert.deepEqual(calls, [{ action: 'adminCreateInvite', role: 'admin' }]);
+  });
+
+  it('does not create on cancel and releases the invite lock for retry', async () => {
+    const calls = [];
+    global.wx = wxStub([], [undefined, 0]);
+    const page = loadPage(async (data) => {
+      calls.push(data);
+      return { ok: true, generated: false };
+    });
+
+    await page.createInvite();
+    assert.deepEqual(calls, []);
+
+    await page.createInvite();
+    assert.deepEqual(calls, [{ action: 'adminCreateInvite', role: 'operator' }]);
+  });
+
+  it('blocks a second invite while creation and saving are pending', async () => {
+    const creation = deferred();
+    let createCount = 0;
+    global.wx = wxStub([], [0, 0]);
+    const page = loadPage(async () => {
+      createCount += 1;
+      return creation.promise;
+    });
+
+    const first = page.createInvite();
+    const second = page.createInvite();
+    await Promise.resolve();
+
+    assert.equal(createCount, 1);
+    creation.resolve({ ok: true, generated: false });
+    await Promise.all([first, second]);
+  });
+
+  it('keeps the invite lock until the generated image finishes saving', async () => {
+    let finishSave;
+    let createCount = 0;
+    const wx = wxStub([], [0, 0]);
+    wx.saveImageToPhotosAlbum = ({ success }) => {
+      finishSave = success;
+    };
+    global.wx = wx;
+    const page = loadPage(async () => {
+      createCount += 1;
+      return { ok: true, generated: true, imageBase64: 'image' };
+    });
+
+    const first = page.createInvite();
+    await new Promise((resolve) => setImmediate(resolve));
+    const second = page.createInvite();
+
+    assert.equal(createCount, 1);
+    assert.equal(typeof finishSave, 'function');
+    finishSave();
+    await Promise.all([first, second]);
+  });
+
+  it('releases the invite lock after failure so a retry can run', async () => {
+    let createCount = 0;
+    global.wx = wxStub([], [0, 0]);
+    const page = loadPage(async () => {
+      createCount += 1;
+      if (createCount === 1) throw new Error('create failed');
+      return { ok: true, generated: false };
+    });
+
+    await page.createInvite();
+    await page.createInvite();
+
+    assert.equal(createCount, 2);
   });
 
   it('keeps the invite and explains when no QR image was generated', async () => {
