@@ -7,5 +7,9 @@
       <view class="tile-title">{{nickname || '未设置昵称'}}</view>
     </view>
   </view>
+  <view wx:if="{{showAdmin}}" class="hub-item" bindtap="openAdmin">
+    <view class="tile-title">运营工作台</view>
+    <text class="muted">进入</text>
+  </view>
   <view class="muted version-foot">{{version}}</view>
 </view>

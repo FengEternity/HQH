@@ -45,6 +45,11 @@ describe('mine page', () => {
     assert.equal(wxml.includes('prompt="{{false}}"'), true);
     assert.equal(wxml.includes('修改头像与昵称'), false);
     assert.equal(wxml.includes('bindtap="editProfile"'), true);
+    assert.equal(wxml.includes('运营工作台'), true);
+    assert.equal(wxml.includes('wx:if="{{showAdmin}}"'), true);
+    assert.equal(wxml.includes('bindtap="openAdmin"'), true);
+    assert.equal(wxml.includes('class="hub-item"'), true);
+    assert.equal(wxml.indexOf('运营工作台') < wxml.indexOf('version-foot'), true);
     const footer = wxml.slice(wxml.indexOf('version-foot'));
     assert.equal(footer.includes('bindtap'), false);
   });
@@ -64,5 +69,38 @@ describe('mine page', () => {
     page.editProfile();
     assert.deepEqual(edited, [{ nickname: '张三', avatarFileId: 'cloud://a' }]);
     assert.equal(page.openAbout, undefined);
+  });
+
+  function wxForMine({ ticket, urls }) {
+    return {
+      getStorageSync(key) {
+        return key === 'hqh_admin_ticket' ? ticket : '';
+      },
+      cloud: {
+        callFunction() {
+          return Promise.resolve({ result: { ok: true } });
+        },
+      },
+      navigateTo({ url }) {
+        urls.push(url);
+      },
+    };
+  }
+
+  it('hides the ops row when this device has no admin ticket', async () => {
+    const page = loadPage();
+    global.wx = wxForMine({ ticket: '', urls: [] });
+    await page.onShow();
+    assert.equal(page.data.showAdmin, false);
+  });
+
+  it('shows the ops row and opens admin login when a ticket is stored', async () => {
+    const urls = [];
+    const page = loadPage();
+    global.wx = wxForMine({ ticket: 'expired.sig', urls });
+    await page.onShow();
+    assert.equal(page.data.showAdmin, true);
+    page.openAdmin();
+    assert.deepEqual(urls, ['/pages/admin/login/login']);
   });
 });
