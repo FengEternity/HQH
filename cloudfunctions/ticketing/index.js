@@ -24,6 +24,7 @@ const { verifyTicket } = require('./lib/ticket');
 const { createWecomClient, createNotifyBinder } = require('./lib/wecomClient');
 const { deliverWecomAdminNotifications } = require('./lib/wecomDelivery');
 const { handleWecomCallback } = require('./lib/wecomCallback');
+const { attachAvatarUrls } = require('./lib/resolveAvatarUrls');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -144,14 +145,19 @@ async function dispatch(event) {
         notifyAdminsFn: (thread, message) => notifyAdmins(now, thread, message),
       });
     }
-    case 'csAdminList':
+    case 'csAdminList': {
       requireAdmin(event.ticket);
-      return csAdminList(db, { status: event.status, now });
-    case 'csAdminGet':
+      const listed = await csAdminList(db, { status: event.status, now });
+      // 服务端换临时链，绕过客户端「仅创建者可读写」存储权限
+      const threads = await attachAvatarUrls(listed.threads, (payload) => cloud.getTempFileURL(payload));
+      return Object.assign({}, listed, { threads });
+    }
+    case 'csAdminGet': {
       requireAdmin(event.ticket);
-      return Object.assign({}, await csAdminGet(db, { threadId: event.threadId, now }), {
-        viewerOpenid: openid,
-      });
+      const detail = await csAdminGet(db, { threadId: event.threadId, now });
+      const [thread] = await attachAvatarUrls([detail.thread], (payload) => cloud.getTempFileURL(payload));
+      return Object.assign({}, detail, { thread, viewerOpenid: openid });
+    }
     case 'csAdminReply':
       requireAdmin(event.ticket);
       await checkText(event.text);

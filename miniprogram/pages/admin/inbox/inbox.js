@@ -115,6 +115,7 @@ Page({
             timeLabel: formatTime(item.updatedAt),
             userLabel: userLabel(item),
             avatarFileId: item.avatarFileId || '',
+            avatarUrl: item.avatarUrl || '',
             initial: initialOf(item.nickname),
           }),
         );

@@ -3,7 +3,7 @@
   <block wx:elif="{{thread}}">
     <view class="chat-head">
       <view class="chat-who">
-        <image wx:if="{{thread.avatarFileId}}" class="chat-avatar" src="{{thread.avatarFileId}}" mode="aspectFill" />
+        <image wx:if="{{thread.avatarUrl}}" class="chat-avatar" src="{{thread.avatarUrl}}" mode="aspectFill" />
         <view wx:else class="chat-avatar chat-fallback">{{thread.initial}}</view>
         <text class="chat-name">{{thread.userLabel}}</text>
         <text class="chip" wx:if="{{thread.conversationLabel}}">{{thread.conversationLabel}}</text>

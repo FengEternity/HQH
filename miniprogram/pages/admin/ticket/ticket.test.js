@@ -239,6 +239,8 @@ describe('admin ticket chat', () => {
     assert.equal(wxml.includes('bindtap="onSend"'), true);
     assert.equal(wxml.includes('>持有</view>'), false);
     assert.equal(wxml.includes('同事正在回复'), true);
+    assert.equal(wxml.includes('src="{{thread.avatarUrl}}"'), true);
+    assert.equal(wxml.includes('thread.avatarFileId'), false);
     global.Page = () => {};
     delete require.cache[pagePath];
     const { conversationLabel, holdState, userLabel } = require(pagePath);

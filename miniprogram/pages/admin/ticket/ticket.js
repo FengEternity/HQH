@@ -86,6 +86,7 @@ function mapThread(thread, messages) {
   return Object.assign({}, thread, {
     conversationLabel: conversationLabel(thread.status, messages),
     userLabel: userLabel(thread),
+    avatarUrl: (thread && thread.avatarUrl) || '',
     initial: name ? name.slice(0, 1) : '优',
   });
 }
