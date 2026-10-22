@@ -1,7 +1,7 @@
 'use strict';
 
 const cloud = require('wx-server-sdk');
-const { verifyTicket } = require('./lib/ticket');
+const { requireStaff } = require('./lib/adminStaff');
 const { assertShopProductPublishable } = require('./lib/shopPublishGate');
 const { assertLinkIds, linkKey } = require('./lib/videoShopLink');
 const { ensureCollections, runWithCollections } = require('./lib/ensureShopCollections');
@@ -49,13 +49,8 @@ function publicVideoBrief(doc) {
   };
 }
 
-async function requireAdmin(ticket) {
-  const pin = process.env.ADMIN_PIN;
-  if (!verifyTicket(pin, ticket)) {
-    const err = new Error('UNAUTHORIZED');
-    err.code = 'UNAUTHORIZED';
-    throw err;
-  }
+async function requireAdmin(db, openid) {
+  await requireStaff(db, openid);
 }
 
 function parsePriceFen(value) {
@@ -112,7 +107,7 @@ async function replaceLinksForShopProduct(shopProductId, videoIds) {
   }
 }
 
-async function dispatch(event) {
+async function dispatch(event, openid) {
   const action = event && event.action;
   switch (action) {
     case 'ping':
@@ -126,13 +121,13 @@ async function dispatch(event) {
     case 'listLinkedVideos':
       return await listLinkedVideos(event);
     case 'upsertShopProduct':
-      return await upsertShopProduct(event);
+      return await upsertShopProduct(event, openid);
     case 'setShopProductStatus':
-      return await setShopProductStatus(event);
+      return await setShopProductStatus(event, openid);
     case 'setVideoShopLinks':
-      return await setVideoShopLinks(event);
+      return await setVideoShopLinks(event, openid);
     case 'listShopAdmin':
-      return await listShopAdmin(event);
+      return await listShopAdmin(event, openid);
     default: {
       const err = new Error('UNKNOWN_ACTION');
       err.code = 'UNKNOWN_ACTION';
@@ -143,11 +138,12 @@ async function dispatch(event) {
 
 exports.main = async (event) => {
   try {
+    const openid = cloud.getWXContext().OPENID || '';
     const action = event && event.action;
     if (action === 'ping') {
-      return await dispatch(event);
+      return await dispatch(event, openid);
     }
-    return await runWithCollections(db, () => dispatch(event));
+    return await runWithCollections(db, () => dispatch(event, openid));
   } catch (error) {
     return {
       ok: false,
@@ -219,8 +215,8 @@ async function listLinkedVideos(event) {
   return { ok: true, videos };
 }
 
-async function upsertShopProduct(event) {
-  await requireAdmin(event.ticket);
+async function upsertShopProduct(event, openid) {
+  await requireAdmin(db, openid);
   const name = String(event.name || '').trim();
   const detail = String(event.detail || '').trim();
   const coverFileId = String(event.coverFileId || '').trim();
@@ -277,8 +273,8 @@ async function upsertShopProduct(event) {
   return { ok: true, id };
 }
 
-async function setShopProductStatus(event) {
-  await requireAdmin(event.ticket);
+async function setShopProductStatus(event, openid) {
+  await requireAdmin(db, openid);
   const id = String(event.id || '').trim();
   let status = String(event.status || '').trim();
   if (status !== 'published' && status !== 'unpublished') {
@@ -308,8 +304,8 @@ async function setShopProductStatus(event) {
   return { ok: true };
 }
 
-async function setVideoShopLinks(event) {
-  await requireAdmin(event.ticket);
+async function setVideoShopLinks(event, openid) {
+  await requireAdmin(db, openid);
   const videoId = String(event.videoId || '').trim();
   if (!videoId) {
     const err = new Error('videoId 必填');
@@ -334,8 +330,8 @@ async function setVideoShopLinks(event) {
   return { ok: true };
 }
 
-async function listShopAdmin(event) {
-  await requireAdmin(event.ticket);
+async function listShopAdmin(event, openid) {
+  await requireAdmin(db, openid);
   const [productRes, linkRes, videoRes] = await Promise.all([
     db.collection('shop_products').orderBy('updatedAt', 'desc').limit(200).get(),
     db.collection('video_shop_links').limit(1000).get(),
