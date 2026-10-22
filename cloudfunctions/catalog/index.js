@@ -1,8 +1,18 @@
 'use strict';
 
+const crypto = require('crypto');
 const cloud = require('wx-server-sdk');
 const { buildSearchBlob, searchPublished } = require('./lib/catalogSearch');
-const { issueTicket, verifyTicket } = require('./lib/ticket');
+const { issueTicket } = require('./lib/ticket');
+const { requireCatalogAccess } = require('./lib/adminAccess');
+const {
+  getAdminState,
+  bootstrapAdmin,
+  listStaff,
+  updateStaff,
+  createInvite,
+  claimInvite,
+} = require('./lib/adminStaff');
 const {
   assertVideoDraftFields,
   nextStatusAfterSave,
@@ -33,15 +43,6 @@ const TICKET_TTL_MS = 12 * 60 * 60 * 1000;
 
 function withCoverPosters(videos) {
   return attachPosterUrls(videos, (payload) => cloud.getTempFileURL(payload));
-}
-
-async function requireAdmin(ticket) {
-  const pin = process.env.ADMIN_PIN;
-  if (!verifyTicket(pin, ticket)) {
-    const err = new Error('UNAUTHORIZED');
-    err.code = 'UNAUTHORIZED';
-    throw err;
-  }
 }
 
 function withoutId(record) {
@@ -174,7 +175,7 @@ async function checkText(content) {
   }
 }
 
-async function dispatch(event) {
+async function dispatch(event, openid) {
   const action = event && event.action;
   switch (action) {
     case 'ping':
@@ -182,13 +183,23 @@ async function dispatch(event) {
     case 'initDb':
       return await initDb();
     case 'adminLogin':
-      return await adminLogin(event);
+      return await adminLogin(event, openid);
+    case 'adminMe':
+      return await adminMe(openid);
+    case 'adminListStaff':
+      return await adminListStaff(event, openid);
+    case 'adminUpdateStaff':
+      return await adminUpdateStaff(event, openid);
+    case 'adminCreateInvite':
+      return await adminCreateInvite(event, openid);
+    case 'adminClaimInvite':
+      return await adminClaimInvite(event, openid);
     case 'listBrands':
       return await listBrands();
     case 'listHome':
       return await listHome();
     case 'adminListBrands':
-      return await adminListBrands(event);
+      return await adminListBrands(event, openid);
     case 'listPublished':
       return await listPublished(event);
     case 'getVideo':
@@ -196,45 +207,45 @@ async function dispatch(event) {
     case 'search':
       return await search(event);
     case 'adminListVideos':
-      return await adminListVideos(event);
+      return await adminListVideos(event, openid);
     case 'adminGetVideo':
-      return await adminGetVideo(event);
+      return await adminGetVideo(event, openid);
     case 'upsertBrand':
-      return await upsertBrand(event);
+      return await upsertBrand(event, openid);
     case 'deleteBrand':
-      return await deleteBrand(event);
+      return await deleteBrand(event, openid);
     case 'upsertProduct':
-      return await upsertProduct(event);
+      return await upsertProduct(event, openid);
     case 'upsertSynonym':
-      return await upsertSynonym(event);
+      return await upsertSynonym(event, openid);
     case 'upsertVideo':
-      return await upsertVideo(event);
+      return await upsertVideo(event, openid);
     case 'replacePlaybackMedia':
-      return await replacePlaybackMedia(event);
+      return await replacePlaybackMedia(event, openid);
     case 'enqueueVideoIngest':
-      return await enqueueVideoIngest(event);
+      return await enqueueVideoIngest(event, openid);
     case 'enqueueNoncompliantVideos':
-      return await enqueueNoncompliantVideos(event);
+      return await enqueueNoncompliantVideos(event, openid);
     case 'getIngestProgress':
-      return await getIngestProgress(event);
+      return await getIngestProgress(event, openid);
     case 'claimVideoIngest':
-      return await claimVideoIngest(event);
+      return await claimVideoIngest(event, openid);
     case 'completeVideoIngest':
-      return await completeVideoIngest(event);
+      return await completeVideoIngest(event, openid);
     case 'noteVideoIntro':
-      return await noteVideoIntro(event);
+      return await noteVideoIntro(event, openid);
     case 'publishVideo':
-      return await publishVideo(event);
+      return await publishVideo(event, openid);
     case 'unpublishVideo':
-      return await unpublishVideo(event);
+      return await unpublishVideo(event, openid);
     case 'deleteVideo':
-      return await deleteVideo(event);
+      return await deleteVideo(event, openid);
     case 'submitSupport':
       return await submitSupport(event);
     case 'adminListSupport':
-      return await adminListSupport(event);
+      return await adminListSupport(event, openid);
     case 'adminReadSupport':
-      return await adminReadSupport(event);
+      return await adminReadSupport(event, openid);
     default: {
       const err = new Error('UNKNOWN_ACTION');
       err.code = 'UNKNOWN_ACTION';
@@ -248,11 +259,12 @@ exports.main = async (event) => {
     if (event && event.Type === 'timer') {
       return await runWithCollections(db, () => wakeIfIngestPending());
     }
+    const openid = cloud.getWXContext().OPENID || '';
     const action = event && event.action;
     if (action === 'ping' || action === 'initDb') {
-      return await dispatch(event);
+      return await dispatch(event, openid);
     }
-    return await runWithCollections(db, () => dispatch(event));
+    return await runWithCollections(db, () => dispatch(event, openid));
   } catch (error) {
     return {
       ok: false,
@@ -280,14 +292,128 @@ async function initDb() {
   return { ok: true, created: result.created, existed: result.existed };
 }
 
-async function adminLogin(event) {
+async function adminLogin(event, openid) {
   const pin = process.env.ADMIN_PIN;
+  if (openid) {
+    await bootstrapAdmin(db, {
+      openid,
+      pin: event.pin,
+      expectedPin: pin,
+      now: Date.now(),
+    });
+    return { ok: true };
+  }
   if (!pin || event.pin !== pin) {
     const err = new Error('口令不正确');
     err.code = 'BAD_PIN';
     throw err;
   }
   return { ok: true, ticket: issueTicket(pin, TICKET_TTL_MS) };
+}
+
+async function adminMe(openid) {
+  return { ok: true, ...(await getAdminState(db, openid)) };
+}
+
+async function adminListStaff(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
+  const records = await listStaff(db, { openid });
+  const staff = await Promise.all(
+    records.map(async (record) => {
+      const id = record.openid || record._id;
+      let profile = null;
+      try {
+        const result = await db.collection('cs_profiles').doc(id).get();
+        profile = result && result.data;
+        if (Array.isArray(profile)) {
+          profile = profile[0] || null;
+        }
+      } catch (error) {
+        profile = null;
+      }
+      return {
+        id,
+        nickname: profile && profile.nickname ? String(profile.nickname) : '',
+        role: record.role,
+        enabled: Boolean(record.enabled),
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        isSelf: id === openid,
+      };
+    }),
+  );
+  return { ok: true, staff };
+}
+
+async function adminUpdateStaff(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
+  const record = await updateStaff(db, {
+    openid,
+    targetOpenid: event.id,
+    role: event.role,
+    enabled: event.enabled,
+    now: Date.now(),
+  });
+  return { ok: true, role: record.role, enabled: record.enabled };
+}
+
+async function adminCreateInvite(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
+  const code = crypto.randomBytes(18).toString('base64url');
+  await createInvite(db, {
+    openid,
+    role: event.role,
+    code,
+    now: Date.now(),
+  });
+  try {
+    const result = await cloud.openapi.wxacode.get({
+      path: `pages/admin/join/join?invite=${code}`,
+      width: 430,
+    });
+    return {
+      ok: true,
+      generated: true,
+      imageBase64: result.buffer.toString('base64'),
+      contentType: 'image/jpeg',
+      message: '',
+    };
+  } catch (error) {
+    return {
+      ok: true,
+      generated: false,
+      imageBase64: '',
+      contentType: '',
+      message: '发布后才能生成小程序码',
+    };
+  }
+}
+
+async function adminClaimInvite(event, openid) {
+  const record = await claimInvite(db, {
+    openid,
+    code: event.code,
+    now: Date.now(),
+  });
+  return { ok: true, role: record.role };
 }
 
 async function listBrands() {
@@ -302,8 +428,14 @@ async function listHome() {
   });
 }
 
-async function adminListBrands(event) {
-  await requireAdmin(event.ticket);
+async function adminListBrands(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const [brandRes, videoRes] = await Promise.all([
     db.collection('brands').orderBy('sort', 'asc').get(),
     db.collection('videos').field({ brandId: true }).limit(1000).get(),
@@ -417,8 +549,14 @@ async function search(event) {
   return { ok: true, videos: await withCoverPosters(hits.map(publicVideo)) };
 }
 
-async function adminListVideos(event) {
-  await requireAdmin(event.ticket);
+async function adminListVideos(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const brandId = String(event.brandId || '').trim();
   if (!brandId) {
     const err = new Error('请选择品牌');
@@ -455,8 +593,14 @@ async function adminListVideos(event) {
   return { ok: true, videos: await withCoverPosters(res.data) };
 }
 
-async function adminGetVideo(event) {
-  await requireAdmin(event.ticket);
+async function adminGetVideo(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const snap = await db.collection('videos').doc(event.id).get();
   const doc = snap.data;
   if (!doc) {
@@ -468,8 +612,14 @@ async function adminGetVideo(event) {
   return { ok: true, video };
 }
 
-async function upsertBrand(event) {
-  await requireAdmin(event.ticket);
+async function upsertBrand(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const name = String(event.name || '').trim();
   if (!name) {
     const err = new Error('品牌名必填');
@@ -515,8 +665,14 @@ async function syncBrandName(brandId, name) {
   }
 }
 
-async function deleteBrand(event) {
-  await requireAdmin(event.ticket);
+async function deleteBrand(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const id = String(event.id || '').trim();
   const snap = await db.collection('brands').doc(id).get();
   if (!snap.data) {
@@ -538,8 +694,14 @@ async function deleteBrand(event) {
   return { ok: true };
 }
 
-async function upsertProduct(event) {
-  await requireAdmin(event.ticket);
+async function upsertProduct(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const name = String(event.name || '').trim();
   const brandId = String(event.brandId || '').trim();
   if (!name || !brandId) {
@@ -556,8 +718,14 @@ async function upsertProduct(event) {
   return { ok: true, id: added._id };
 }
 
-async function upsertSynonym(event) {
-  await requireAdmin(event.ticket);
+async function upsertSynonym(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const alias = String(event.alias || '').trim();
   const canonical = String(event.canonical || '').trim();
   if (!alias || !canonical) {
@@ -574,8 +742,14 @@ async function upsertSynonym(event) {
   return { ok: true, id: added._id };
 }
 
-async function upsertVideo(event) {
-  await requireAdmin(event.ticket);
+async function upsertVideo(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const title = String(event.title || '').trim();
   const brandId = String(event.brandId || '').trim();
   const intro = String(event.intro || '').trim();
@@ -618,8 +792,14 @@ async function upsertVideo(event) {
   return saved;
 }
 
-async function enqueueVideoIngest(event) {
-  await requireAdmin(event.ticket);
+async function enqueueVideoIngest(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const id = String(event.id || '').trim();
   const saved = await videoIngestActions.enqueueVideo({ id });
   if (saved.enqueued) {
@@ -628,20 +808,38 @@ async function enqueueVideoIngest(event) {
   return saved;
 }
 
-async function enqueueNoncompliantVideos(event) {
-  await requireAdmin(event.ticket);
+async function enqueueNoncompliantVideos(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const saved = await videoIngestActions.enqueueNoncompliantVideos();
   const woke = await wakeVideoIngest((options) => cloud.callContainer(options));
   return { ...saved, woke };
 }
 
-async function getIngestProgress(event) {
-  await requireAdmin(event.ticket);
+async function getIngestProgress(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   return await videoIngestActions.getIngestProgress();
 }
 
-async function replacePlaybackMedia(event) {
-  await requireAdmin(event.ticket);
+async function replacePlaybackMedia(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   return await videoIngestActions.replacePlaybackMedia({
     id: event.id,
     expectedVideoFileId: event.expectedVideoFileId,
@@ -651,14 +849,26 @@ async function replacePlaybackMedia(event) {
   });
 }
 
-async function claimVideoIngest(event) {
-  await requireAdmin(event.ticket);
+async function claimVideoIngest(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const workerId = String(event.workerId || '').trim();
   return await videoIngestActions.claimVideo({ workerId });
 }
 
-async function noteVideoIntro(event) {
-  await requireAdmin(event.ticket);
+async function noteVideoIntro(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   return await videoIngestActions.noteRunningIntro({
     videoId: String(event.videoId || '').trim(),
     mediaRevision: event.mediaRevision,
@@ -667,16 +877,28 @@ async function noteVideoIntro(event) {
   });
 }
 
-async function completeVideoIngest(event) {
-  await requireAdmin(event.ticket);
+async function completeVideoIngest(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   return await videoIngestActions.completeVideo({
     ...event,
     videoId: String(event.videoId || '').trim(),
   });
 }
 
-async function publishVideo(event) {
-  await requireAdmin(event.ticket);
+async function publishVideo(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   return await publishReadyVideo({
     repository: videoIngestRepository,
     id: event.id,
@@ -685,8 +907,14 @@ async function publishVideo(event) {
   });
 }
 
-async function unpublishVideo(event) {
-  await requireAdmin(event.ticket);
+async function unpublishVideo(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const snap = await db.collection('videos').doc(event.id).get();
   if (!snap.data) {
     const err = new Error('NOT_FOUND');
@@ -702,8 +930,14 @@ async function unpublishVideo(event) {
   return { ok: true };
 }
 
-async function deleteVideo(event) {
-  await requireAdmin(event.ticket);
+async function deleteVideo(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const doc = await videoIngestActions.deleteVideo({
     videoId: String(event.id || '').trim(),
   });
@@ -745,8 +979,14 @@ async function submitSupport(event) {
   return { ok: true, id: added._id };
 }
 
-async function adminListSupport(event) {
-  await requireAdmin(event.ticket);
+async function adminListSupport(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const res = await db.collection('support_messages').orderBy('createdAt', 'desc').limit(100).get();
   const messages = res.data || [];
   return {
@@ -756,8 +996,14 @@ async function adminListSupport(event) {
   };
 }
 
-async function adminReadSupport(event) {
-  await requireAdmin(event.ticket);
+async function adminReadSupport(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
   const snap = await db.collection('support_messages').doc(event.id).get();
   if (!snap.data) {
     const err = new Error('NOT_FOUND');
