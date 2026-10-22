@@ -27,6 +27,13 @@
   font-size: 28rpx;
 }
 
+.player-inline-error {
+  padding: 16rpx 24rpx 0;
+  color: #71717a;
+  font-size: 26rpx;
+  background: #ffffff;
+}
+
 .player-empty {
   min-height: 100vh;
   display: flex;

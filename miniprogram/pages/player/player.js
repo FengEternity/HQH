@@ -18,8 +18,12 @@ Page({
     const id = String((query && query.id) || '').trim();
     this._currentTimeSec = 0;
     this.setData({ videoId: id });
-    catalog({ action: 'getVideo', id })
-      .then((res) => {
+    const videoTask = catalog({ action: 'getVideo', id });
+    const shopTask = shop({ action: 'listLinkedShopProducts', videoId: id }).catch(() => ({
+      products: [],
+    }));
+    return Promise.all([videoTask, shopTask])
+      .then(([res, shopRes]) => {
         const video = withPosterUrl(res.video);
         if (video && video.title) {
           wx.setNavigationBarTitle({ title: video.title });
@@ -29,33 +33,29 @@ Page({
           ? Object.assign({}, video, {
               tags: Array.isArray(video.tags) ? video.tags : [],
             })
-          : video;
-        if (!src) {
-          this.setData({
-            video: nextVideo,
-            error:
-              video && video.videoFileId
-                ? '视频地址未返回。请重新上传部署 catalog 云函数后再试'
-                : '',
-          });
-        } else {
-          this.setData({
-            video: nextVideo,
-            src,
-          });
-        }
-        return shop({ action: 'listLinkedShopProducts', videoId: id }).catch(() => ({
-          products: [],
-        }));
-      })
-      .then((shopRes) => {
+          : null;
         const shopProducts = (shopRes.products || []).map((item) =>
           Object.assign({}, item, {
             priceYuan: formatPriceYuan(item.priceFen),
           }),
         );
-        this.setData({ shopProducts });
-        return this.resolveShopCovers(shopProducts);
+        const patch = {
+          video: nextVideo,
+          shopProducts,
+          error: '',
+        };
+        if (!src) {
+          patch.error =
+            nextVideo && nextVideo.videoFileId
+              ? '视频地址未返回。请重新上传部署 catalog 云函数后再试'
+              : '暂无视频文件';
+        } else {
+          patch.src = src;
+        }
+        return this.attachShopCovers(shopProducts).then((covered) => {
+          patch.shopProducts = covered;
+          this.setData(patch);
+        });
       })
       .catch((err) => {
         this.setData({ error: err.message || '无法播放' });
@@ -82,27 +82,29 @@ Page({
     // 预留：agent({ profile: 'video_doc', message, videoId, currentTimeSec })
     wx.showToast({ title: '本片问答即将开放', icon: 'none' });
   },
-  resolveShopCovers(products) {
+  attachShopCovers(products) {
     const cloudIds = (products || [])
       .map((item) => item.coverFileId)
       .filter((id) => String(id || '').indexOf('cloud://') === 0);
-    if (!cloudIds.length) {
-      return Promise.resolve();
+    if (!cloudIds.length || !wx.cloud || typeof wx.cloud.getTempFileURL !== 'function') {
+      return Promise.resolve(products);
     }
-    return wx.cloud.getTempFileURL({ fileList: cloudIds }).then((fileRes) => {
-      const map = Object.create(null);
-      for (const row of (fileRes && fileRes.fileList) || []) {
-        if (row.fileID && row.tempFileURL) {
-          map[row.fileID] = row.tempFileURL;
+    return wx.cloud
+      .getTempFileURL({ fileList: cloudIds })
+      .then((fileRes) => {
+        const map = Object.create(null);
+        for (const row of (fileRes && fileRes.fileList) || []) {
+          if (row.fileID && row.tempFileURL) {
+            map[row.fileID] = row.tempFileURL;
+          }
         }
-      }
-      const shopProducts = (this.data.shopProducts || []).map((item) =>
-        Object.assign({}, item, {
-          coverUrl: map[item.coverFileId] || item.coverFileId || '',
-        }),
-      );
-      this.setData({ shopProducts });
-    });
+        return (products || []).map((item) =>
+          Object.assign({}, item, {
+            coverUrl: map[item.coverFileId] || '',
+          }),
+        );
+      })
+      .catch(() => products);
   },
   openShopProduct(e) {
     const id = e.currentTarget.dataset.id;

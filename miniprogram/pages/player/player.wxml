@@ -1,27 +1,26 @@
 <view class="player-page">
   <profile-gate />
-  <view wx:if="{{error}}" class="player-empty">{{error}}</view>
-  <block wx:elif="{{video}}">
-    <view class="player-stage">
-      <video
-        wx:if="{{src}}"
-        id="player"
-        class="player-video"
-        src="{{src}}"
-        poster="{{video.posterUrl}}"
-        autoplay
-        controls
-        show-center-play-btn
-        show-fullscreen-btn
-        object-fit="contain"
-        enable-progress-gesture
-        binderror="onVideoError"
-        bindtimeupdate="onTimeUpdate"
-      ></video>
-      <view wx:else class="player-video player-video-missing">暂无视频文件</view>
-    </view>
+  <view class="player-stage">
+    <video
+      wx:if="{{src}}"
+      id="player"
+      class="player-video"
+      src="{{src}}"
+      poster="{{video.posterUrl}}"
+      autoplay
+      controls
+      show-center-play-btn
+      show-fullscreen-btn
+      object-fit="contain"
+      enable-progress-gesture
+      binderror="onVideoError"
+      bindtimeupdate="onTimeUpdate"
+    ></video>
+    <view wx:else class="player-video player-video-missing">{{error || '正在打开'}}</view>
+  </view>
+  <view wx:if="{{error && src}}" class="player-inline-error">{{error}}</view>
 
-    <view class="player-panel">
+  <view class="player-panel">
       <view class="player-tabs">
         <view
           class="player-tab {{tab === 'intro' ? 'player-tab-on' : ''}}"
@@ -36,6 +35,7 @@
       </view>
 
       <scroll-view wx:if="{{tab === 'intro'}}" class="player-body" scroll-y>
+        <block wx:if="{{video}}">
         <view class="player-title">{{video.title}}</view>
         <view class="player-meta muted">
           <text wx:if="{{video.brandName}}">{{video.brandName}}</text>
@@ -63,6 +63,7 @@
             </view>
           </view>
         </view>
+        </block>
       </scroll-view>
 
       <view wx:else class="player-ask">
@@ -83,6 +84,4 @@
         </view>
       </view>
     </view>
-  </block>
-  <view wx:else class="player-empty">加载中</view>
 </view>
