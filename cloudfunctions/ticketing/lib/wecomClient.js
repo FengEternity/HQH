@@ -142,7 +142,26 @@ function createWecomClient({ fetchImpl = nodeFetch, env, now } = {}) {
     });
   }
 
-  async function sendGroup({ webhookUrl, userIds, now: at }) {
+  function previewText(raw) {
+    const flat = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (flat.length <= 80) {
+      return flat;
+    }
+    return `${flat.slice(0, 80)}…`;
+  }
+
+  function groupContent(time, notice, message) {
+    if (notice === 'test') {
+      return `通知测试\n${time}\n如果你看到这条 @，说明群提醒已接通。`;
+    }
+    if (!message) {
+      return `新消息\n${time}`;
+    }
+    const nickname = String(message.nickname || '').trim() || '未留昵称';
+    return `新消息\n${nickname}\n${previewText(message.text)}\n${time}`;
+  }
+
+  async function sendGroup({ webhookUrl, userIds, now: at, notice, message }) {
     const time = formatLocalTime(resolveNow(at, now));
     const mobiles = [];
     const accounts = [];
@@ -153,7 +172,8 @@ function createWecomClient({ fetchImpl = nodeFetch, env, now } = {}) {
         accounts.push(id);
       }
     });
-    const text = { content: `新消息\n${time}` };
+    const content = groupContent(time, notice, message);
+    const text = { content };
     if (accounts.length) {
       text.mentioned_list = accounts;
     }
@@ -171,4 +191,29 @@ function createWecomClient({ fetchImpl = nodeFetch, env, now } = {}) {
   return { exchangeCode, sendPersonal, sendGroup };
 }
 
-module.exports = { createWecomClient, nodeFetch };
+function createNotifyBinder({ env, client, now } = {}) {
+  return {
+    async sendTest(userId) {
+      const webhookUrl = String((env && env.WECOM_GROUP_WEBHOOK) || '').trim();
+      if (!webhookUrl) {
+        const error = new Error('未配置运营群机器人');
+        error.code = 'TEST_FAILED';
+        throw error;
+      }
+      const json = await client.sendGroup({
+        webhookUrl,
+        userIds: [userId],
+        now: typeof now === 'function' ? now() : now,
+        notice: 'test',
+      });
+      if (!json || json.errcode) {
+        const code = json && json.errcode != null ? json.errcode : '无返回';
+        const error = new Error('已绑定，但测试消息没发到群：' + code);
+        error.code = 'TEST_FAILED';
+        throw error;
+      }
+    },
+  };
+}
+
+module.exports = { createWecomClient, createNotifyBinder, nodeFetch };

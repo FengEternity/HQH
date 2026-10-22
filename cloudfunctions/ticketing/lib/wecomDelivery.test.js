@@ -165,13 +165,37 @@ test('没人开启时不发送，也不写工单通知结果', async () => {
   assert.equal(thread.adminNotifyGroupAt, undefined);
 });
 
-test('有人开启时群按手机号 @，个人通道记为跳过', async () => {
+test('正式通知把昵称和用户原话交给群机器人', async () => {
+  const db = makeMemoryDb();
+  await db.collection('cs_threads').add({ data: { _id: 'thread-1', openid: 'user-1' } });
+  await seed(db, [{ openid: 'a', enabled: true, wecomUserId: '13800000000' }]);
+  let payload;
+  await deliverWecomAdminNotifications(db, {
+    threadId: 'thread-1',
+    now: 100,
+    page: 'pages/admin/ticket/ticket?id=thread-1',
+    env: { WECOM_GROUP_WEBHOOK: 'https://example.test/webhook', WECOM_MINI_APPID: 'wx-app' },
+    message: { nickname: '张三', text: '我想查一下订单' },
+    client: {
+      sendGroup: async (input) => {
+        payload = input;
+        return { errcode: 0 };
+      },
+      sendPersonal: async () => {},
+    },
+  });
+  assert.deepEqual(payload.message, { nickname: '张三', text: '我想查一下订单' });
+  assert.deepEqual(payload.userIds, ['13800000000']);
+});
+
+test('开启的手机号和成员 ID 都会被 @', async () => {
   const db = makeMemoryDb();
   await db.collection('cs_threads').add({ data: { _id: 'thread-1' } });
   await seed(db, [
     { openid: 'a', enabled: true, wecomUserId: '13800000000' },
-    { openid: 'b', enabled: false, wecomUserId: '13900000000' },
+    { openid: 'b', enabled: false, wecomUserId: 'lisi' },
     { openid: 'c', enabled: true, wecomUserId: '' },
+    { openid: 'd', enabled: true, wecomUserId: 'zhangsan' },
   ]);
   const seen = [];
   await deliverWecomAdminNotifications(db, {
@@ -184,7 +208,7 @@ test('有人开启时群按手机号 @，个人通道记为跳过', async () => 
       sendGroup: async (payload) => seen.push(payload.userIds),
     },
   });
-  assert.deepEqual(seen, [['13800000000']]);
+  assert.deepEqual(seen, [['13800000000', 'zhangsan']]);
   const thread = (await db.collection('cs_threads').doc('thread-1').get()).data;
   assert.equal(thread.adminNotifyPersonalResult, 'skipped');
 });
@@ -294,7 +318,7 @@ test('待处理工单 (waiting_human) 用户再发消息时群机器人会再次
   await db.collection('cs_threads').add({
     data: { _id: 'thread-1', status: 'waiting_human' },
   });
-  await seed(db, [{ openid: 'a', enabled: true, wecomUserId: '13800000000' }]);
+  await seed(db, [{ openid: 'a', enabled: true, wecomUserId: 'zhangsan' }]);
   const seen = [];
   const env = { WECOM_GROUP_WEBHOOK: 'https://example.test/webhook', WECOM_MINI_APPID: 'wx-app' };
   const client = {
@@ -327,7 +351,7 @@ test('待处理工单 (waiting_human) 用户再发消息时群机器人会再次
   });
 
   assert.equal(seen.length, 2);
-  assert.deepEqual(seen[1], ['13800000000']);
+  assert.deepEqual(seen[1], ['zhangsan']);
 });
 
 test('未配群机器人时跳过，配置后用户新消息可补发', async () => {
@@ -335,7 +359,7 @@ test('未配群机器人时跳过，配置后用户新消息可补发', async ()
   await db.collection('cs_threads').add({
     data: { _id: 'thread-1', status: 'waiting_human' },
   });
-  await seed(db, [{ openid: 'a', enabled: true, wecomUserId: '13800000000' }]);
+  await seed(db, [{ openid: 'a', enabled: true, wecomUserId: 'zhangsan' }]);
   const seen = [];
 
   // 第一次发送时环境变量尚未配置 WECOM_GROUP_WEBHOOK

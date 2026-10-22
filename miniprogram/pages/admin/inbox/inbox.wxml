@@ -1,24 +1,10 @@
 <view class="page">
-  <view class="hub-item hub-item-notify">
-    <view class="notify-head">
-      <view class="tile-title">接收会话通知</view>
-      <text class="chip notify-chip">{{notifyLabel}}</text>
+  <view class="hub-item notify-entry" bindtap="openNotify">
+    <view class="tile-title">接收会话通知</view>
+    <view class="notify-entry-side">
+      <text class="chip">{{notifyLabel}}</text>
+      <text class="muted">设置</text>
     </view>
-    <view class="muted notify-copy">开启后，用户发来消息会在运营群 @ 这个手机号。手机号要和企业微信通讯录里的一致。停止后不再 @ 你。</view>
-    <input
-      wx:if="{{!notifyBound}}"
-      class="notify-mobile"
-      type="number"
-      maxlength="11"
-      placeholder="企业微信手机号"
-      value="{{notifyMobile}}"
-      bindinput="onNotifyMobile"
-    />
-    <view class="notify-switch-row">
-      <text>接收通知</text>
-      <switch checked="{{notifyEnabled}}" bindchange="toggleNotify" />
-    </view>
-    <view wx:if="{{notifyError}}" class="notify-error">{{notifyError}}</view>
   </view>
   <view style="white-space: nowrap">
     <view

@@ -21,7 +21,7 @@ const {
 } = require('./lib/csStore');
 const { notifyReplied, readNewTicketTemplateId } = require('./lib/notify');
 const { verifyTicket } = require('./lib/ticket');
-const { createWecomClient } = require('./lib/wecomClient');
+const { createWecomClient, createNotifyBinder } = require('./lib/wecomClient');
 const { deliverWecomAdminNotifications } = require('./lib/wecomDelivery');
 const { handleWecomCallback } = require('./lib/wecomCallback');
 
@@ -86,12 +86,13 @@ function sendSubscribeMessage(payload) {
   return cloud.openapi.subscribeMessage.send(payload);
 }
 
-function notifyAdmins(now, thread) {
+function notifyAdmins(now, thread, message) {
   const threadId = thread && thread._id;
   return deliverWecomAdminNotifications(db, {
     threadId,
     now,
     page: 'pages/admin/ticket/ticket?id=' + threadId,
+    message,
     env: {
       WECOM_GROUP_WEBHOOK: process.env.WECOM_GROUP_WEBHOOK,
       WECOM_MINI_APPID: process.env.WECOM_MINI_APPID,
@@ -128,7 +129,7 @@ async function dispatch(event) {
         wechatId: process.env.CS_WECHAT_ID || '',
         phone: process.env.CS_PHONE || '',
         now,
-        notifyAdminsFn: (thread) => notifyAdmins(now, thread),
+        notifyAdminsFn: (thread, message) => notifyAdmins(now, thread, message),
       });
     case 'csEscalate': {
       const text = event.text || '转人工';
@@ -140,7 +141,7 @@ async function dispatch(event) {
         wechatId: process.env.CS_WECHAT_ID || '',
         phone: process.env.CS_PHONE || '',
         now,
-        notifyAdminsFn: (thread) => notifyAdmins(now, thread),
+        notifyAdminsFn: (thread, message) => notifyAdmins(now, thread, message),
       });
     }
     case 'csAdminList':
@@ -190,8 +191,9 @@ async function dispatch(event) {
         avatarFileId: event.avatarFileId,
         now,
       });
-    case 'csBindWecom':
+    case 'csBindWecom': {
       requireAdmin(event.ticket);
+      const binder = createNotifyBinder({ env: process.env, client: wecomClient, now });
       return csBindWecom(db, {
         openid,
         code: event.code,
@@ -199,10 +201,19 @@ async function dispatch(event) {
         now,
         expectedCorpId: process.env.WECOM_CORP_ID || '',
         exchangeCode: (code) => wecomClient.exchangeCode(code),
+        sendTest: (userId) => binder.sendTest(userId),
       });
-    case 'csSetNotify':
+    }
+    case 'csSetNotify': {
       requireAdmin(event.ticket);
-      return csSetNotify(db, { openid, enabled: event.enabled === true, now });
+      const binder = createNotifyBinder({ env: process.env, client: wecomClient, now });
+      return csSetNotify(db, {
+        openid,
+        enabled: event.enabled === true,
+        now,
+        sendTest: (userId) => binder.sendTest(userId),
+      });
+    }
     case 'csNotifyConfig':
       requireAdmin(event.ticket);
       return Object.assign({ ok: true }, await readWecomNotifyStatus(db, { openid }));

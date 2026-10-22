@@ -78,7 +78,7 @@ function pendingResults(thread) {
   };
 }
 
-async function deliverGroup(db, threadId, now, env, client, userIds) {
+async function deliverGroup(db, threadId, now, env, client, userIds, message) {
   const url = webhookUrl(env);
   if (!url) {
     await writeGroup(db, threadId, now, 'skipped');
@@ -90,6 +90,7 @@ async function deliverGroup(db, threadId, now, env, client, userIds) {
       webhookUrl: url,
       userIds,
       now,
+      message,
     });
   } catch {
     console.error('cs wecom group send failed');
@@ -132,7 +133,7 @@ async function deliverWecomAdminNotifications(db, input) {
   let groupResult = 'pending';
   let personalResult = 'pending';
   try {
-    groupResult = await deliverGroup(db, threadId, now, env, client, userIds);
+    groupResult = await deliverGroup(db, threadId, now, env, client, userIds, input.message);
     personalResult = await deliverPersonal(db, threadId, now);
   } finally {
     await releaseClaim(db, threadId);

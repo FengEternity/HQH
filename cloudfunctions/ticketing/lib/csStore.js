@@ -317,7 +317,9 @@ async function csSend(db, input) {
   }
   if (plan.notifyAdmins && input.notifyAdminsFn) {
     try {
-      await input.notifyAdminsFn(thread);
+      const profile = await readProfile(db, input.openid);
+      const nickname = profile && profile.nickname ? String(profile.nickname).trim() : '';
+      await input.notifyAdminsFn(thread, { nickname, text: input.text });
     } catch (error) {
       console.error('cs notify admins failed', error);
     }
@@ -668,21 +670,59 @@ function hasWecomUserId(record) {
   return Boolean(record && record.wecomUserId);
 }
 
+function isPhoneUserId(value) {
+  return /^1\d{10}$/.test(String(value || '').trim());
+}
+
+function subscriberMobile(record) {
+  if (!record) {
+    return '';
+  }
+  if (typeof record.mobile === 'string' && record.mobile.trim()) {
+    return record.mobile.trim();
+  }
+  if (isPhoneUserId(record.wecomUserId)) {
+    return String(record.wecomUserId).trim();
+  }
+  return '';
+}
+
+function presentNotify(record, enabled) {
+  const bound = hasWecomUserId(record);
+  const on = typeof enabled === 'boolean' ? enabled : Boolean(record && record.enabled === true);
+  return {
+    ok: true,
+    bound,
+    enabled: on,
+    mobile: subscriberMobile(record),
+  };
+}
+
+const TEST_SENT_MESSAGE = '测试消息已发到运营群，请现在去看有没有 @ 到你。没有的话，请确认你是用企业微信加入该群。';
+
+function testFailureMessage(error) {
+  const message = error && error.message ? String(error.message) : '';
+  if (message.startsWith('已绑定，但测试消息没发到群')) {
+    return message;
+  }
+  if (message === '未配置运营群机器人') {
+    return '已绑定，但测试消息没发到群：未配置运营群机器人';
+  }
+  return '已绑定，但测试消息没发到群：' + (message || '未知错误');
+}
+
 async function readWecomNotifyStatus(db, { openid }) {
   if (!openid) {
     throw codedError('BAD_INPUT');
   }
   const current = await findSubscriber(db, openid);
   if (!current) {
-    return { bound: false, enabled: false };
+    return presentNotify(null, false);
   }
-  return {
-    bound: hasWecomUserId(current),
-    enabled: current.enabled === true,
-  };
+  return presentNotify(current);
 }
 
-async function writeWecomBinding(db, { openid, userId, now }) {
+async function writeWecomBinding(db, { openid, userId, mobile, now }) {
   const current = await findSubscriber(db, openid);
   const fields = {
     wecomUserId: userId,
@@ -690,6 +730,9 @@ async function writeWecomBinding(db, { openid, userId, now }) {
     enabled: true,
     updatedAt: now,
   };
+  if (typeof mobile === 'string') {
+    fields.mobile = mobile;
+  }
   if (!current) {
     await db.collection(SUBSCRIBERS).doc(openid).set({
       data: Object.assign({ openid }, fields),
@@ -697,10 +740,10 @@ async function writeWecomBinding(db, { openid, userId, now }) {
   } else {
     await db.collection(SUBSCRIBERS).doc(current._id).update({ data: fields });
   }
-  return { ok: true, bound: true, enabled: true };
+  return presentNotify(Object.assign({}, current, fields), true);
 }
 
-async function csBindWecom(db, { openid, code, mobile, now, exchangeCode, expectedCorpId }) {
+async function csBindWecom(db, { openid, code, mobile, now, exchangeCode, expectedCorpId, sendTest }) {
   if (!openid) {
     throw codedError('BAD_INPUT');
   }
@@ -709,7 +752,8 @@ async function csBindWecom(db, { openid, code, mobile, now, exchangeCode, expect
     if (!/^1\d{10}$/.test(phone)) {
       throw codedError('BIND_FAILED', '请填写企业微信里的11位手机号');
     }
-    return writeWecomBinding(db, { openid, userId: phone, now });
+    const saved = await writeWecomBinding(db, { openid, userId: phone, mobile: phone, now });
+    return deliverTest(saved, phone, sendTest);
   }
   if (!code) {
     throw codedError('BIND_FAILED', '企业微信没有返回登录码');
@@ -729,7 +773,22 @@ async function csBindWecom(db, { openid, code, mobile, now, exchangeCode, expect
   return writeWecomBinding(db, { openid, userId: userid, now });
 }
 
-async function csSetNotify(db, { openid, enabled, now }) {
+async function deliverTest(saved, target, sendTest) {
+  if (typeof sendTest !== 'function') {
+    return Object.assign(saved, {
+      testSent: false,
+      message: '已绑定，但测试消息没发到群：未配置运营群机器人',
+    });
+  }
+  try {
+    await sendTest(target);
+  } catch (error) {
+    return Object.assign(saved, { testSent: false, message: testFailureMessage(error) });
+  }
+  return Object.assign(saved, { testSent: true, message: TEST_SENT_MESSAGE });
+}
+
+async function csSetNotify(db, { openid, enabled, now, sendTest }) {
   if (!openid) {
     throw codedError('BAD_INPUT');
   }
@@ -741,15 +800,15 @@ async function csSetNotify(db, { openid, enabled, now }) {
     await db.collection(SUBSCRIBERS).doc(current._id).update({
       data: { enabled: true, updatedAt: now },
     });
-    return { ok: true, bound: true, enabled: true };
+    return deliverTest(presentNotify(current, true), current.wecomUserId, sendTest);
   }
   if (!current) {
-    return { ok: true, bound: false, enabled: false };
+    return presentNotify(null, false);
   }
   await db.collection(SUBSCRIBERS).doc(current._id).update({
     data: { enabled: false },
   });
-  return { ok: true, bound: hasWecomUserId(current), enabled: false };
+  return presentNotify(current, false);
 }
 
 async function listNotifyCandidates(db, { templateId }) {

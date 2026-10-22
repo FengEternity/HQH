@@ -15,6 +15,7 @@
     "pages/admin/shop/shop",
     "pages/admin/shop-edit/shop-edit",
     "pages/admin/inbox/inbox",
+    "pages/admin/notify/notify",
     "pages/admin/ticket/ticket",
     "pages/admin/brand/brand",
     "pages/admin/videos/videos",

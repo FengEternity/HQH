@@ -72,82 +72,25 @@ Page({
     threads: [],
     loading: true,
     loadError: '',
-    notifyBound: false,
     notifyLabel: '未开启',
-    notifyEnabled: false,
-    notifyError: '',
-    notifyMobile: '',
   },
   onShow() {
-    return Promise.all([this.load(), this.loadNotifyTemplate()]);
+    return Promise.all([this.load(), this.loadNotifyLabel()]);
   },
-  applyNotify(bound, enabled) {
-    this.setData({
-      notifyBound: Boolean(bound),
-      notifyEnabled: Boolean(enabled),
-      notifyLabel: notifyLabelText(bound, enabled),
-      notifyError: '',
-    });
-  },
-  showBindError(err) {
-    const detail = (err && err.message) || '绑定失败';
-    this.restoreNotifyEnabled();
-    this.setData({ notifyError: detail });
-    wx.showToast({ title: '绑定失败', icon: 'none' });
-  },
-  loadNotifyTemplate() {
+  loadNotifyLabel() {
     return ticketingAdmin({ action: 'csNotifyConfig' })
       .then((result) => {
-        if (result) {
-          this.applyNotify(result.bound, result.enabled);
+        if (!result) {
+          return;
         }
+        this.setData({
+          notifyLabel: notifyLabelText(result.bound, result.enabled),
+        });
       })
       .catch(() => {});
   },
-  restoreNotifyEnabled() {
-    const notifyEnabled = this.data.notifyEnabled;
-    this.setData({ notifyEnabled: !notifyEnabled }, () => {
-      this.setData({ notifyEnabled });
-    });
-  },
-  toggleNotify(e) {
-    const enabled = Boolean(e && e.detail && e.detail.value);
-    if (!this.data.notifyBound) {
-      if (!enabled) {
-        return;
-      }
-      const mobile = String(this.data.notifyMobile || '').trim();
-      if (!/^1\d{10}$/.test(mobile)) {
-        this.restoreNotifyEnabled();
-        this.setData({ notifyError: '请填写企业微信里的11位手机号' });
-        wx.showToast({ title: '绑定失败', icon: 'none' });
-        return;
-      }
-      return ticketingAdmin({
-        action: 'csBindWecom',
-        mobile,
-      })
-        .then((result) => {
-          this.applyNotify(result.bound, result.enabled);
-          wx.showToast({ title: '已开启', icon: 'none' });
-        })
-        .catch((err) => {
-          this.showBindError(err);
-        });
-    }
-    return ticketingAdmin({ action: 'csSetNotify', enabled })
-      .then((result) => {
-        this.applyNotify(result.bound, result.enabled);
-        if (enabled) {
-          wx.showToast({ title: '已开启', icon: 'none' });
-        }
-      })
-      .catch(() => {
-        this.restoreNotifyEnabled();
-        if (!enabled) {
-          wx.showToast({ title: '停止失败', icon: 'none' });
-        }
-      });
+  openNotify() {
+    wx.navigateTo({ url: '/pages/admin/notify/notify' });
   },
   load() {
     const filterId = this.data.filterId === 'closed' ? 'closed' : 'live';
@@ -199,9 +142,6 @@ Page({
     }
     this.setData({ filterId, threads: [], loadError: '' });
     return this.load();
-  },
-  onNotifyMobile(e) {
-    this.setData({ notifyMobile: e.detail.value });
   },
   openTicket(e) {
     const id = e.currentTarget.dataset.id;

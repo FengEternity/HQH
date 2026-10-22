@@ -1,0 +1,28 @@
+<view class="page">
+  <view class="hub-item hub-item-notify">
+    <view class="notify-head">
+      <view class="tile-title">接收会话通知</view>
+      <text class="chip notify-chip">{{notifyLabel}}</text>
+    </view>
+    <view class="muted notify-copy">开启后，用户发来消息会在运营群 @ 你。手机号要和企业微信通讯录里的一致。停止后不再 @ 你。</view>
+    <view class="muted notify-copy">群机器人无法确认 @ 是否生效。收不到时，请确认你是用企业微信加入该群。</view>
+    <view wx:if="{{notifyBoundMobile && !notifyChanging}}" class="notify-mobile-line">{{notifyBoundMobile}}</view>
+    <input
+      wx:if="{{!notifyBound || notifyChanging}}"
+      class="notify-mobile"
+      type="number"
+      maxlength="11"
+      placeholder="企业微信手机号"
+      value="{{notifyMobile}}"
+      bindinput="onNotifyMobile"
+    />
+    <view wx:if="{{notifyBound && !notifyChanging}}" class="notify-action" bindtap="startChangeMobile">更换手机号</view>
+    <view wx:if="{{notifyChanging}}" class="notify-action" bindtap="confirmChangeMobile">确认更换</view>
+    <view class="notify-switch-row">
+      <text>接收通知</text>
+      <switch checked="{{notifyEnabled}}" bindchange="toggleNotify" />
+    </view>
+    <view wx:if="{{notifyHint}}" class="notify-hint">{{notifyHint}}</view>
+    <view wx:if="{{notifyError}}" class="notify-error">{{notifyError}}</view>
+  </view>
+</view>

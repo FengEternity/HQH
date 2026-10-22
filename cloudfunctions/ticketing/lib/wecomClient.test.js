@@ -3,7 +3,7 @@
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { createWecomClient, nodeFetch } = require('./wecomClient');
+const { createWecomClient, createNotifyBinder, nodeFetch } = require('./wecomClient');
 
 const env = {
   WECOM_CORP_ID: 'corp-1',
@@ -84,6 +84,95 @@ test('个人消息走应用，群消息走机器人', async () => {
   assert.deepEqual(mobileCall.body.text.mentioned_mobile_list, ['13800000000']);
   assert.equal(mobileCall.body.text.mentioned_list, undefined);
   assert.equal(group.body.text.content.includes('新消息'), true);
+});
+
+test('正式通知带昵称、原话和时间，过长截断且换行压成空格', async () => {
+  const http = fakeFetch([
+    { match: 'webhook', json: { errcode: 0 } },
+  ]);
+  const client = createWecomClient({ fetchImpl: http.fetchImpl, env, now: () => 1_700_000_000_000 });
+  const webhookUrl = 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=demo';
+  await client.sendGroup({
+    webhookUrl,
+    userIds: ['13800000000'],
+    now: 1_700_000_000_000,
+    message: { nickname: '张三', text: '我想查一下\n订单发到哪了' },
+  });
+  await client.sendGroup({
+    webhookUrl,
+    userIds: ['13800000000'],
+    now: 1_700_000_000_000,
+    message: { nickname: '  ', text: `${'啊'.repeat(81)}尾` },
+  });
+  await client.sendGroup({
+    webhookUrl,
+    userIds: ['13800000000'],
+    now: 1_700_000_000_000,
+    notice: 'test',
+    message: { nickname: '张三', text: '这句不该出现在测试里' },
+  });
+  const calls = http.calls.filter((item) => item.url.includes('webhook'));
+  assert.equal(
+    calls[0].body.text.content,
+    '新消息\n张三\n我想查一下 订单发到哪了\n2023年11月15日 06:13',
+  );
+  assert.equal(
+    calls[1].body.text.content,
+    `新消息\n未留昵称\n${'啊'.repeat(80)}…\n2023年11月15日 06:13`,
+  );
+  assert.equal(calls[1].body.text.content.includes('尾'), false);
+  assert.equal(calls[2].body.text.content.includes('通知测试'), true);
+  assert.equal(calls[2].body.text.content.includes('这句不该出现在测试里'), false);
+});
+
+test('测试提醒标明是测试并按手机号 @', async () => {
+  const http = fakeFetch([
+    { match: 'webhook', json: { errcode: 0 } },
+  ]);
+  const client = createWecomClient({ fetchImpl: http.fetchImpl, env, now: () => 1_700_000_000_000 });
+  await client.sendGroup({
+    webhookUrl: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=demo',
+    userIds: ['13800000000'],
+    now: 1_700_000_000_000,
+    notice: 'test',
+  });
+  const call = http.calls.find((item) => item.url.includes('webhook'));
+  assert.equal(call.body.text.content.includes('通知测试'), true);
+  assert.equal(call.body.text.content.includes('新消息'), false);
+  assert.deepEqual(call.body.text.mentioned_mobile_list, ['13800000000']);
+  assert.equal(call.body.text.mentioned_list, undefined);
+});
+
+test('未配置群机器人时测试提醒直接失败', async () => {
+  const binder = createNotifyBinder({
+    env: { WECOM_GROUP_WEBHOOK: '  ' },
+    client: { sendGroup: async () => { throw new Error('should not send'); } },
+    now: 10,
+  });
+  await assert.rejects(
+    () => binder.sendTest('zhangsan'),
+    (error) => error.message === '未配置运营群机器人',
+  );
+});
+
+test('群机器人拒绝测试提醒时带上错误码', async () => {
+  let payload;
+  const binder = createNotifyBinder({
+    env: { WECOM_GROUP_WEBHOOK: 'https://example.test/webhook' },
+    client: {
+      sendGroup: async (input) => {
+        payload = input;
+        return { errcode: 93000, errmsg: 'invalid' };
+      },
+    },
+    now: 10,
+  });
+  await assert.rejects(
+    () => binder.sendTest('zhangsan'),
+    (error) => error.message === '已绑定，但测试消息没发到群：93000',
+  );
+  assert.equal(payload.notice, 'test');
+  assert.deepEqual(payload.userIds, ['zhangsan']);
 });
 
 test('凭证失败时说明错误码且不带 Secret', async () => {

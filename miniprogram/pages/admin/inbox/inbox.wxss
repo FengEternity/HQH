@@ -1,37 +1,8 @@
-.hub-item-notify {
-  display: block;
-}
-
-.notify-head,
-.notify-switch-row {
+.notify-entry-side {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-}
-
-.notify-chip {
+  gap: 12rpx;
   flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.notify-copy {
-  margin-top: 12rpx;
-  line-height: 1.5;
-}
-
-.notify-mobile {
-  margin-top: 16rpx;
-  padding: 16rpx 20rpx;
-  border: 1rpx solid #e4e4e7;
-  border-radius: 12rpx;
-  font-size: 28rpx;
-}
-
-.notify-switch-row {
-  margin-top: 20rpx;
-  color: #18181b;
-  font-size: 28rpx;
 }
 
 .inbox-row {
@@ -60,20 +31,6 @@
   color: #4b6fdb;
   font-size: 28rpx;
   font-weight: 600;
-}
-
-.notify-error {
-  margin-top: 16rpx;
-  color: #b91c1c;
-  font-size: 24rpx;
-  line-height: 1.45;
-  word-break: break-all;
-}
-
-.notify-stop {
-  margin-top: 12rpx;
-  color: #3f3f46;
-  font-size: 26rpx;
 }
 
 .inbox-preview {

@@ -378,6 +378,32 @@ test('领取账号进入待处理且不自动回复', async () => {
   );
 });
 
+test('通知运营时带上昵称和这句用户原话', async () => {
+  const db = makeMemoryDb();
+  await csBindProfile(db, { openid: 'user-1', nickname: '张三', now: 1 });
+  const notices = [];
+  await csSend(db, {
+    openid: 'user-1',
+    text: '第一行\n第二行',
+    now: 2,
+    notifyAdminsFn: async (_thread, message) => {
+      notices.push(message);
+    },
+  });
+  assert.deepEqual(notices, [{ nickname: '张三', text: '第一行\n第二行' }]);
+
+  const unnamed = [];
+  await csSend(db, {
+    openid: 'user-2',
+    text: '你好',
+    now: 3,
+    notifyAdminsFn: async (_thread, message) => {
+      unnamed.push(message);
+    },
+  });
+  assert.deepEqual(unnamed, [{ nickname: '', text: '你好' }]);
+});
+
 test('运营刚回复的 10 分钟内不再通知，过后用户再发会通知', async () => {
   const db = makeMemoryDb();
   const sent = await csSend(db, {
@@ -967,23 +993,73 @@ test('绑定成功写入 userid 并开启', async () => {
     now: 10,
     exchangeCode: async () => ({ corpid: 'corp-1', userid: 'zhangsan' }),
   });
-  assert.deepEqual(result, { ok: true, bound: true, enabled: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.bound, true);
+  assert.equal(result.enabled, true);
+  assert.equal(result.mobile, '');
   assert.equal((await readWecomNotifyStatus(db, { openid: 'wx-1' })).bound, true);
 });
 
-test('手机号绑定写入并开启', async () => {
+test('手机号绑定后按这个号码发测试提醒', async () => {
+  const db = makeMemoryDb();
+  const tested = [];
+  let looked = false;
+  const result = await csBindWecom(db, {
+    openid: 'wx-1',
+    mobile: '13800000000',
+    now: 10,
+    lookupUserId: async () => {
+      looked = true;
+      return 'zhangsan';
+    },
+    sendTest: async (userId) => {
+      tested.push(userId);
+    },
+    exchangeCode: async () => {
+      throw new Error('should not exchange');
+    },
+  });
+  assert.equal(looked, false);
+  assert.deepEqual(tested, ['13800000000']);
+  assert.equal(result.testSent, true);
+  assert.equal(result.mobile, '13800000000');
+  assert.match(result.message, /请现在去看有没有 @ 到你/);
+  const row = (await db.collection('admin_notify_subscribers').where({ openid: 'wx-1' }).get()).data[0];
+  assert.equal(row.wecomUserId, '13800000000');
+  assert.equal(row.mobile, '13800000000');
+  const status = await readWecomNotifyStatus(db, { openid: 'wx-1' });
+  assert.equal(status.mobile, '13800000000');
+  assert.equal(status.bound, true);
+});
+
+test('测试消息失败时保留手机号绑定并说明原因', async () => {
   const db = makeMemoryDb();
   const result = await csBindWecom(db, {
     openid: 'wx-1',
     mobile: '13800000000',
     now: 10,
-    exchangeCode: async () => {
-      throw new Error('should not exchange');
+    sendTest: async () => {
+      throw new Error('已绑定，但测试消息没发到群：93000');
     },
   });
-  assert.deepEqual(result, { ok: true, bound: true, enabled: true });
+  assert.equal(result.bound, true);
+  assert.equal(result.enabled, true);
+  assert.equal(result.testSent, false);
+  assert.equal(result.message, '已绑定，但测试消息没发到群：93000');
   const row = (await db.collection('admin_notify_subscribers').where({ openid: 'wx-1' }).get()).data[0];
   assert.equal(row.wecomUserId, '13800000000');
+  assert.equal(row.mobile, '13800000000');
+});
+
+test('只存了手机号的旧记录仍会显示并可被 @', async () => {
+  const db = makeMemoryDb();
+  await db.collection('admin_notify_subscribers').add({
+    data: { openid: 'wx-1', enabled: true, wecomUserId: '13800000000' },
+  });
+  const status = await readWecomNotifyStatus(db, { openid: 'wx-1' });
+  assert.equal(status.bound, true);
+  assert.equal(status.enabled, true);
+  assert.equal(status.mobile, '13800000000');
 });
 
 test('空 code 拒绝绑定且不写库', async () => {
@@ -1032,6 +1108,28 @@ test('企业不一致或空 OpenID 不写库', async () => {
     (error) => error.code === 'BAD_INPUT',
   );
   assert.equal(await findSubscriberCount(db, 'wx-1'), 0);
+});
+
+test('再次开启时按已存号码发测试提醒，关闭时不发', async () => {
+  const db = makeMemoryDb();
+  await csBindWecom(db, {
+    openid: 'wx-1',
+    mobile: '13800000000',
+    now: 1,
+    sendTest: async () => {},
+  });
+  const tested = [];
+  const sendTest = async (userId) => {
+    tested.push(userId);
+  };
+  const stopped = await csSetNotify(db, { openid: 'wx-1', enabled: false, now: 2, sendTest });
+  assert.equal(stopped.enabled, false);
+  assert.deepEqual(tested, []);
+  const started = await csSetNotify(db, { openid: 'wx-1', enabled: true, now: 3, sendTest });
+  assert.deepEqual(tested, ['13800000000']);
+  assert.equal(started.enabled, true);
+  assert.equal(started.testSent, true);
+  assert.match(started.message, /请现在去看有没有 @ 到你/);
 });
 
 test('未绑定不能打开，关闭后保留 userid', async () => {
