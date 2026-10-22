@@ -631,6 +631,63 @@ describe('runOnce', () => {
     assert.equal(completes[0].intro, '打开项目。');
   });
 
+  it('闸门拒绝的简介仍然回写，并带上原因', async () => {
+    const segments = [{ startSec: 0, endSec: 1, text: '打开项目。' }];
+    const notes = [];
+    const { deps, completes } = createDeps({
+      catalog: {
+        claim: async () => claimedJob(),
+        noteIntro: async (payload) => {
+          notes.push(payload);
+        },
+        complete: async (payload) => {
+          completes.push(payload);
+        },
+      },
+      transcribe: async () => ({ ok: true, segments, skipped: false }),
+      summarizeIntro: async () => ({
+        grounded: false,
+        gateOk: false,
+        gateReason: 'term 四参数',
+        intro: '华测RTK支持四参数计算。',
+      }),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(completes[0].intro, '华测RTK支持四参数计算。');
+    assert.deepEqual(completes[0].introGate, { ok: false, reason: 'term 四参数' });
+    assert.equal(notes.length, 0);
+  });
+
+  it('未通过的腾讯云简介也会提前回写', async () => {
+    const notes = [];
+    const { deps, completes } = createDeps({
+      catalog: {
+        claim: async () => claimedJob(),
+        noteIntro: async (payload) => {
+          notes.push(payload);
+        },
+        complete: async (payload) => {
+          completes.push(payload);
+        },
+      },
+      recognizeSpeech: async () => ({
+        grounded: false,
+        gateOk: false,
+        gateReason: 'term 四参数',
+        intro: '华测RTK支持四参数计算。',
+        segments: [{ startSec: 0, endSec: 1, text: '打开项目。' }],
+      }),
+      summarizeIntro: async () => ({ grounded: false, intro: PLACEHOLDER_INTRO }),
+    });
+
+    assert.equal(await runOnce(deps), 'processed');
+    assert.equal(notes[0].intro, '华测RTK支持四参数计算。');
+    assert.deepEqual(notes[0].introGate, { ok: false, reason: 'term 四参数' });
+    assert.equal(completes[0].intro, '华测RTK支持四参数计算。');
+    assert.deepEqual(completes[0].introGate, { ok: false, reason: 'term 四参数' });
+  });
+
   it('摘要失败时仍回写字幕且不带 intro', async () => {
     const segments = [{ startSec: 0, endSec: 1, text: '打开项目。' }];
     const { deps, completes } = createDeps({

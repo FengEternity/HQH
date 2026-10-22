@@ -32,6 +32,21 @@ function assertReadyToPublish(doc) {
   if (String((doc && doc.intro) || '').trim() === PLACEHOLDER_INTRO) {
     fail('上架前请先补写简介');
   }
+  if (introReviewState(doc) !== 'confirmed') {
+    fail('上架前请先核对简介并保存');
+  }
+}
+
+function introReviewState(doc) {
+  const review = doc && doc.introReview;
+  if (review === 'pending' || review === 'confirmed') {
+    return review;
+  }
+  const intro = String((doc && doc.intro) || '').trim();
+  if (intro && intro !== PLACEHOLDER_INTRO) {
+    return 'confirmed';
+  }
+  return 'pending';
 }
 
 function isReadyToPublish(doc) {

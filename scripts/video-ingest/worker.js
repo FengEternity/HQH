@@ -689,8 +689,17 @@ function createJobDependencies({
           placeholderIntro: PLACEHOLDER_INTRO,
         });
         log(`tencent intro: ${intro}`);
-        log(verdict.ok ? 'tencent intro accepted' : `tencent intro rejected ${verdict.reason || 'unknown'}`);
-        return { segments, intro: verdict.intro, grounded: verdict.ok === true };
+        log(verdict.ok
+          ? 'tencent intro accepted'
+          : `tencent intro kept, gate rejected ${verdict.reason || 'unknown'}`);
+        const kept = verdict.intro && verdict.intro !== PLACEHOLDER_INTRO ? verdict.intro : '';
+        return {
+          segments,
+          intro: kept,
+          grounded: verdict.ok === true,
+          gateOk: verdict.ok === true,
+          gateReason: verdict.ok ? '' : (verdict.reason || ''),
+        };
       }
       : undefined,
     transcribe: (mediaPath) =>
@@ -731,7 +740,7 @@ function createJobDependencies({
       });
       if (!generated.ok) {
         log('summary skipped: process failed');
-        return { grounded: false, intro: placeholderIntro };
+        return { grounded: false, gateOk: false, gateReason: '', intro: '' };
       }
       const verdict = acceptIntro({
         intro: generated.intro,
@@ -742,14 +751,19 @@ function createJobDependencies({
         brandNames: termDocument.brandNames,
         placeholderIntro,
       });
-      const written = String(generated.intro || '').replace(/\s+/g, ' ').trim();
-      log(`summary intro: ${written}`);
+      const written = verdict.intro && verdict.intro !== placeholderIntro ? verdict.intro : '';
+      log(`summary intro: ${written || String(generated.intro || '').replace(/\s+/g, ' ').trim()}`);
       if (!verdict.ok) {
-        log(`summary skipped: intro rejected ${verdict.reason || 'unknown'}`);
-        return { grounded: false, intro: placeholderIntro };
+        log(`summary intro kept, gate rejected ${verdict.reason || 'unknown'}`);
+        return {
+          grounded: false,
+          gateOk: false,
+          gateReason: verdict.reason || '',
+          intro: written,
+        };
       }
       log('summary accepted');
-      return { grounded: true, intro: verdict.intro };
+      return { grounded: true, gateOk: true, gateReason: '', intro: verdict.intro };
     },
     placeholderIntro: PLACEHOLDER_INTRO,
     now: Date.now,

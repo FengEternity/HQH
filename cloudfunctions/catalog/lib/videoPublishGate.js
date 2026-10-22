@@ -1,6 +1,6 @@
 'use strict';
 
-const { PLACEHOLDER_INTRO } = require('./videoIngest');
+const { PLACEHOLDER_INTRO, resolveIntroReview } = require('./videoIngest');
 
 function fail(message) {
   const err = new Error(message);
@@ -31,6 +31,9 @@ function assertReadyToPublish(doc) {
   if (doc?.media?.playback?.compliant !== true) fail('视频未通过播放规格检查');
   if (String((doc && doc.intro) || '').trim() === PLACEHOLDER_INTRO) {
     fail('上架前请先补写简介');
+  }
+  if (resolveIntroReview(doc) !== 'confirmed') {
+    fail('上架前请先核对简介并保存');
   }
 }
 

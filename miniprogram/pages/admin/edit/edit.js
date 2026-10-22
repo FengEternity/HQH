@@ -1,4 +1,5 @@
 const { admin } = require('../../../utils/api');
+const { emptyIntroHint, gateFailureNote, pendingIntroHint } = require('../../../utils/introReview');
 const { withPosterUrl, displayedPoster, posterUrlFromList, cloudUploadOptions } = require('../../../utils/videoMedia');
 
 function noticeAfterPicker(title) {
@@ -107,29 +108,51 @@ function deriveVideoUi(video) {
   const processedFile = src.videoFileId === source.videoFileId;
   const playbackCompliant = source.media?.playback?.compliant === true;
   const canPublish = phase === 'ready' && processedFile && playbackCompliant;
-  let ingestHint = '';
+  const copies = splitVideoCopies(source);
+  const autoIntro = copies.autoIntro;
+  const humanIntro = copies.humanIntro;
+  let ingestHint = pendingIntroHint({
+    autoIntro,
+    humanIntro,
+    intro: source.intro,
+    introReview: source.introReview,
+    introGate: source.introGate,
+    phase,
+  }) || emptyIntroHint({
+    autoIntro,
+    humanIntro,
+    phase,
+    ingest: src,
+    now: Date.now(),
+    durationSec: source.durationSec,
+  });
 
-  const autoIntro = typeof source.autoIntro === 'string' ? source.autoIntro.trim() : '';
-  if ((phase === 'queued' || phase === 'running') && autoIntro && autoIntro !== PLACEHOLDER_INTRO) {
-    ingestHint = '简介已出，播放文件仍在处理';
-  } else if (phase === 'queued' || phase === 'running') {
-    ingestHint = '等待视频处理';
-  } else if (phase === 'failed') {
-    ingestHint = '视频处理失败，请重试';
-  } else if (phase !== 'ready' || !processedFile) {
-    ingestHint = '等待视频处理';
-  } else if (!playbackCompliant) {
-    ingestHint = '视频未通过播放检查';
-  } else if (phase === 'ready') {
-    if (asr === 'failed') {
-      ingestHint = '转写失败，播放文件已更新，请手写简介后再上架';
-    } else if (asr === 'skipped') {
-      ingestHint = '无音轨，已跳过转写';
-    } else if (asr === 'ready' && introSource === 'placeholder') {
-      ingestHint = '自动简介未通过，请手写简介';
-    } else {
-      ingestHint = '待核对后上架';
+  if (!ingestHint) {
+    if ((phase === 'queued' || phase === 'running') && autoIntro) {
+      ingestHint = '简介已出，播放文件仍在处理';
+    } else if (phase === 'queued' || phase === 'running') {
+      ingestHint = '等待视频处理';
+    } else if (phase === 'failed') {
+      ingestHint = '视频处理失败，请重试';
+    } else if (phase !== 'ready' || !processedFile) {
+      ingestHint = '等待视频处理';
+    } else if (!playbackCompliant) {
+      ingestHint = '视频未通过播放检查';
+    } else if (phase === 'ready') {
+      if (asr === 'failed') {
+        ingestHint = '转写失败，播放文件已更新，请手写简介后再上架';
+      } else if (asr === 'skipped') {
+        ingestHint = '无音轨，已跳过转写';
+      } else if (asr === 'ready' && introSource === 'placeholder') {
+        ingestHint = '自动简介未通过，请手写简介';
+      } else {
+        ingestHint = '待核对后上架';
+      }
     }
+  }
+  const gateNote = gateFailureNote(humanIntro, autoIntro, source.introGate);
+  if (gateNote && !ingestHint.includes(gateNote)) {
+    ingestHint = ingestHint ? `${ingestHint} ${gateNote}` : gateNote;
   }
 
   const showRetryIngest = phase === 'failed' || phase === 'ready';
@@ -397,6 +420,7 @@ Page({
         this.acceptPickedVideo({
           tempFilePath: picked.tempFilePath,
           name: picked.name || '',
+          duration: picked.duration,
         });
       },
       fail: (err) => this.showPickError(err),
@@ -414,6 +438,7 @@ Page({
         this.acceptPickedVideo({
           tempFilePath: picked.path,
           name: picked.name || '',
+          duration: picked.duration,
         });
       },
       fail: (err) => this.showPickError(err),
@@ -427,6 +452,10 @@ Page({
     wx.showToast({ title: '没有选到视频', icon: 'none' });
   },
   acceptPickedVideo(file) {
+    const duration = Number(file && file.duration);
+    const durationSec = Number.isFinite(duration) && duration > 0
+      ? Math.round(duration * 10) / 10
+      : 0;
     const named = titleFromVideoFile(file);
     const autoTitle = named || cleanText(this.data.autoTitle);
     const fields = draftFieldState({
@@ -442,7 +471,7 @@ Page({
         .then(() => this.uploadCloudFile('video', file.tempFilePath, 'mp4'))
         .then((fileID) => new Promise((resolve, reject) => {
           this.setData({ videoFileId: fileID }, () => {
-            this.persistUploadedVideo().then(resolve).catch(reject);
+            this.persistUploadedVideo(durationSec).then(resolve).catch(reject);
           });
         }))
         .then(() => this.reloadVideo())
@@ -470,8 +499,12 @@ Page({
   },
   // 只有刚上传完视频的这一步可以声明换片；其它保存里表单上的 videoFileId 可能已经
   // 被 worker 的转码文件取代，回传旧值会白白清掉字幕并重排一次。
-  persistUploadedVideo() {
-    return this.persist(true, { replaceVideo: true });
+  persistUploadedVideo(durationSec) {
+    const duration = Number(durationSec);
+    return this.persist(true, {
+      replaceVideo: true,
+      ...(Number.isFinite(duration) && duration > 0 ? { durationSec: duration } : {}),
+    });
   },
   persist(silent, options) {
     if (!this.data.brandId) {
@@ -492,6 +525,7 @@ Page({
       coverFileId: this.data.coverFileId,
       videoFileId: this.data.videoFileId,
       replaceVideo: Boolean(options && options.replaceVideo),
+      ...(options && options.durationSec > 0 ? { durationSec: options.durationSec } : {}),
     }).then((res) => {
       this.setData({ id: res.id });
       if (!silent) {

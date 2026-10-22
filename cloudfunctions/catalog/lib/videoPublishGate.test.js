@@ -146,6 +146,12 @@ describe('videoPublishGate', () => {
     );
     assert.equal(isReadyToPublish({ ...base, intro: '对中讲解' }), true);
     assert.equal(isReadyToPublish({ ...base, title: '  ' }), false);
+    assert.equal(isReadyToPublish({ ...base, intro: '对中讲解', introReview: 'pending' }), false);
+    assert.throws(
+      () => assertReadyToPublish({ ...base, intro: '对中讲解', introReview: 'pending' }),
+      (err) => err.code === 'BAD_INPUT' && err.message === '上架前请先核对简介并保存',
+    );
+    assert.equal(isReadyToPublish({ ...base, intro: '对中讲解', introReview: 'confirmed' }), true);
   });
 
   it('keeps the placeholder saveable as a draft', () => {

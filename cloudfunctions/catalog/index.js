@@ -444,6 +444,11 @@ async function adminListVideos(event) {
       updatedAt: true,
       ingest: true,
       media: true,
+      autoIntro: true,
+      humanIntro: true,
+      introReview: true,
+      introGate: true,
+      durationSec: true,
     })
     .limit(100)
     .get();
@@ -658,6 +663,7 @@ async function noteVideoIntro(event) {
     videoId: String(event.videoId || '').trim(),
     mediaRevision: event.mediaRevision,
     intro: event.intro,
+    introGate: event.introGate,
   });
 }
 

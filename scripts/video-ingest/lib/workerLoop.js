@@ -9,6 +9,24 @@ function jobIdentity(claimed) {
   };
 }
 
+function generatedIntroFields(resolved, placeholderIntro) {
+  if (!resolved || typeof resolved !== 'object') {
+    return {};
+  }
+  const text = String(resolved.intro || '').replace(/\s+/g, ' ').trim();
+  if (!text || text === placeholderIntro) {
+    return {};
+  }
+  const ok = resolved.gateOk === true || (resolved.gateOk == null && resolved.grounded === true);
+  return {
+    intro: text,
+    introGate: {
+      ok,
+      reason: ok ? '' : String(resolved.gateReason || ''),
+    },
+  };
+}
+
 function mediaPayload(probe) {
   return {
     durationSec: probe.durationSec,
@@ -133,11 +151,12 @@ async function runOnce({
       warn(`tencent skipped: ${error && error.message ? error.message : 'failed'}`);
       remoteSpeech = null;
     }
-    if (remoteSpeech && remoteSpeech.grounded && typeof catalog.noteIntro === 'function') {
+    const earlyIntro = generatedIntroFields(remoteSpeech, placeholderIntro);
+    if (earlyIntro.intro && typeof catalog.noteIntro === 'function') {
       try {
         await catalog.noteIntro({
           ...jobIdentity(claimed),
-          intro: remoteSpeech.intro,
+          ...earlyIntro,
         });
       } catch (error) {
         warn(`intro note skipped: ${error && error.message ? error.message : 'failed'}`);
@@ -273,7 +292,7 @@ async function runOnce({
 
   let resolvedIntro = { grounded: false };
   if (remoteSpeech && remoteSpeech.grounded) {
-    resolvedIntro = { grounded: true, intro: remoteSpeech.intro };
+    resolvedIntro = remoteSpeech;
   } else try {
     resolvedIntro = await summarizeIntro({
       title: typeof claimed.title === 'string' ? claimed.title : '',
@@ -284,6 +303,9 @@ async function runOnce({
   } catch {
     resolvedIntro = { grounded: false };
   }
+  if (!generatedIntroFields(resolvedIntro, placeholderIntro).intro && remoteSpeech) {
+    resolvedIntro = remoteSpeech;
+  }
 
   return completePrepared({
     ...jobIdentity(claimed),
@@ -293,11 +315,12 @@ async function runOnce({
     ...mediaPayload(probe),
     ...transcoded,
     ...cover,
-    ...(resolvedIntro.grounded ? { intro: resolvedIntro.intro } : {}),
+    ...generatedIntroFields(resolvedIntro, placeholderIntro),
   });
 }
 
 module.exports = {
   fitSegmentsToDuration,
+  generatedIntroFields,
   runOnce,
 };
