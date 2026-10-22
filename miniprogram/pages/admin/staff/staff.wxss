@@ -1,0 +1,7 @@
+.staff-intro {
+  margin-bottom: 24rpx;
+}
+
+.staff-invite {
+  margin-top: 12rpx;
+}

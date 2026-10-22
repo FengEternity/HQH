@@ -1,0 +1,7 @@
+<view class="page join-page">
+  <view class="card join-result">
+    <view class="h1">领取运营邀请</view>
+    <view wx:if="{{loading}}" class="muted">正在验证邀请…</view>
+    <view wx:else class="join-message">{{result}}</view>
+  </view>
+</view>
