@@ -52,6 +52,13 @@ function assertRole(role) {
   }
 }
 
+function enabledAdminOpenids(config) {
+  const openids = config && Array.isArray(config.enabledAdminOpenids)
+    ? config.enabledAdminOpenids
+    : [];
+  return [...new Set(openids.filter(isValidDocumentId))];
+}
+
 async function getAdminState(db, openid) {
   const [config, record] = await Promise.all([
     getDocument(db, ADMIN_CONFIG, STAFF_CONFIG_ID),
@@ -103,6 +110,8 @@ async function bootstrapAdmin(db, { openid, pin, expectedPin, now }) {
         initialized: true,
         initializedAt: now,
         initializedBy: openid,
+        enabledAdminOpenids: [openid],
+        updatedAt: now,
       },
     });
     return record;
@@ -148,18 +157,20 @@ async function updateStaff(db, { openid, targetOpenid, role, enabled, now }) {
       throw domainError('INVALID_STAFF', '人员不存在');
     }
 
-    const removesEnabledAdmin =
-      target.enabled &&
-      target.role === 'admin' &&
-      (!enabled || role !== 'admin');
-    if (removesEnabledAdmin) {
-      const countResult = await transaction
-        .collection(ADMIN_USERS)
-        .where({ role: 'admin', enabled: true })
-        .count();
-      if (!countResult || countResult.total <= 1) {
+    const wasEnabledAdmin = target.enabled && target.role === 'admin';
+    const willBeEnabledAdmin = Boolean(enabled) && role === 'admin';
+    let nextEnabledAdminOpenids = enabledAdminOpenids(config);
+    if (wasEnabledAdmin && !willBeEnabledAdmin) {
+      nextEnabledAdminOpenids = nextEnabledAdminOpenids.filter(
+        (adminOpenid) => adminOpenid !== targetOpenid,
+      );
+      if (nextEnabledAdminOpenids.length === 0) {
         throw domainError('LAST_ADMIN', '至少保留一名管理员');
       }
+    } else if (!wasEnabledAdmin && willBeEnabledAdmin) {
+      nextEnabledAdminOpenids = [
+        ...new Set([...nextEnabledAdminOpenids, targetOpenid]),
+      ];
     }
 
     const changes = { role, enabled: Boolean(enabled), updatedAt: now };
@@ -167,7 +178,11 @@ async function updateStaff(db, { openid, targetOpenid, role, enabled, now }) {
       data: changes,
     });
     await transaction.collection(ADMIN_CONFIG).doc(STAFF_CONFIG_ID).set({
-      data: { ...(config || {}), updatedAt: now },
+      data: {
+        ...(config || {}),
+        enabledAdminOpenids: nextEnabledAdminOpenids,
+        updatedAt: now,
+      },
     });
     return { ...target, ...changes };
   });
@@ -227,6 +242,19 @@ async function claimInvite(db, { openid, code, now }) {
       createdAt: now,
       updatedAt: now,
     };
+    if (invite.role === 'admin') {
+      const config = await getDocument(transaction, ADMIN_CONFIG, STAFF_CONFIG_ID);
+      const nextEnabledAdminOpenids = [
+        ...new Set([...enabledAdminOpenids(config), openid]),
+      ];
+      await transaction.collection(ADMIN_CONFIG).doc(STAFF_CONFIG_ID).set({
+        data: {
+          ...(config || {}),
+          enabledAdminOpenids: nextEnabledAdminOpenids,
+          updatedAt: now,
+        },
+      });
+    }
     await transaction.collection(ADMIN_USERS).doc(openid).set({ data: record });
     await transaction.collection(ADMIN_INVITES).doc(code).update({
       data: { usedBy: openid },

@@ -58,6 +58,11 @@ Page({
         this.finishBind(result);
       })
       .catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          this.restoreNotifyEnabled();
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
         this.showBindError(err);
       });
   },
@@ -74,7 +79,11 @@ Page({
           this.applyNotify(result);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+        }
+      });
   },
   restoreNotifyEnabled() {
     const notifyEnabled = this.data.notifyEnabled;
@@ -125,8 +134,12 @@ Page({
         }
         this.applyNotify(result);
       })
-      .catch(() => {
+      .catch((err) => {
         this.restoreNotifyEnabled();
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
         if (!enabled) {
           wx.showToast({ title: '停止失败', icon: 'none' });
         }

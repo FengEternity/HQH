@@ -214,7 +214,13 @@ Page({
         }
         this.applyVideo(payload.video, brandId);
       })
-      .catch((err) => wx.showToast({ title: err.message || '加载失败', icon: 'none' }));
+      .catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
+        wx.showToast({ title: err.message || '加载失败', icon: 'none' });
+      });
   },
   applyVideo(found, brandId, options) {
     const video = withPosterUrl(found);
@@ -269,7 +275,11 @@ Page({
     const listed = this.data.brandId && this.data.id
       ? admin({ action: 'adminListVideos', brandId: this.data.brandId })
         .then((res) => applyUrl(posterUrlFromList(res && res.videos, this.data.id)))
-        .catch(() => {})
+        .catch((err) => {
+          if (err.code === 'UNAUTHORIZED') {
+            wx.switchTab({ url: '/pages/mine/mine' });
+          }
+        })
       : Promise.resolve();
     listed.then(() => {
       if (this.data.posterUrl || typeof wx === 'undefined' || !wx.cloud || !wx.cloud.getTempFileURL) {
@@ -320,6 +330,10 @@ Page({
       autoIntro: this.data.autoIntro,
     }), () => {
       this.persist(true).catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
         wx.showToast({ title: err.message || '替换失败', icon: 'none' });
       });
     });
@@ -335,6 +349,10 @@ Page({
       autoIntro: this.data.autoIntro,
     }), () => {
       this.persist(true).catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
         wx.showToast({ title: err.message || '替换失败', icon: 'none' });
       });
     });
@@ -478,7 +496,13 @@ Page({
         .then(() => {
           wx.showToast({ title: '视频已保存，封面将在后台补齐', icon: 'none' });
         })
-        .catch((err) => wx.showToast({ title: err.message || '上传失败', icon: 'none' }));
+        .catch((err) => {
+          if (err.code === 'UNAUTHORIZED') {
+            wx.switchTab({ url: '/pages/mine/mine' });
+            return;
+          }
+          wx.showToast({ title: err.message || '上传失败', icon: 'none' });
+        });
     });
   },
   retryIngest() {
@@ -490,10 +514,20 @@ Page({
         wx.showToast({ title: '已重新排队' });
         return this.reloadVideo();
       })
-      .catch((err) => wx.showToast({ title: err.message || '重试失败', icon: 'none' }));
+      .catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
+        wx.showToast({ title: err.message || '重试失败', icon: 'none' });
+      });
   },
   save() {
     this.persist(false).catch((err) => {
+      if (err.code === 'UNAUTHORIZED') {
+        wx.switchTab({ url: '/pages/mine/mine' });
+        return;
+      }
       wx.showToast({ title: err.message || '保存失败', icon: 'none' });
     });
   },

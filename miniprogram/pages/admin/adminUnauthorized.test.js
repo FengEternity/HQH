@@ -14,10 +14,31 @@ const affectedPages = new Map([
   ['shop-edit/shop-edit.js', 2],
   ['inbox/inbox.js', 2],
   ['ticket/ticket.js', 3],
+  ['edit/edit.js', 7],
+  ['notify/notify.js', 3],
 ]);
 
 function readPage(relativePath) {
   return fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
+}
+
+function unauthorizedBlocks(source) {
+  const starts = [...source.matchAll(/if\s*\([^)]*\.code\s*===\s*['"]UNAUTHORIZED['"][^)]*\)\s*\{/g)];
+  return starts.map((match) => {
+    const openingBrace = match.index + match[0].lastIndexOf('{');
+    let depth = 0;
+    for (let index = openingBrace; index < source.length; index += 1) {
+      if (source[index] === '{') {
+        depth += 1;
+      } else if (source[index] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          return source.slice(openingBrace + 1, index);
+        }
+      }
+    }
+    throw new Error('unterminated UNAUTHORIZED branch');
+  });
 }
 
 describe('admin unauthorized fallback', () => {
@@ -31,6 +52,8 @@ describe('admin unauthorized fallback', () => {
       'shop-edit/shop-edit.js',
       'inbox/inbox.js',
       'ticket/ticket.js',
+      'edit/edit.js',
+      'notify/notify.js',
     ]);
   });
 
@@ -45,6 +68,14 @@ describe('admin unauthorized fallback', () => {
         source,
         /redirectTo\(\{\s*url:\s*['"]\/pages\/admin\/login\/login['"]\s*\}\)/,
       );
+      const branches = unauthorizedBlocks(source);
+      assert.equal(branches.length, expectedRoutes);
+      for (const branch of branches) {
+        assert.match(
+          branch,
+          /switchTab\(\{\s*url:\s*['"]\/pages\/mine\/mine['"]\s*\}\)/,
+        );
+      }
       assert.equal((mineRoutes || []).length, expectedRoutes);
     });
   }

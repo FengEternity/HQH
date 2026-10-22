@@ -29,6 +29,11 @@
 
 `initDb` 幂等创建 `admin_users` 和 `admin_invites`。权限仍是仅管理端可读写，小程序只通过云函数访问。
 
+`admin_config/staff` 保存 `initialized` 和 `enabledAdminOpenids`。其中
+`enabledAdminOpenids` 是启用中管理员 OpenID 的去重数组，也是人员更新事务判断和串行化
+“至少保留一名管理员”的权威来源；首名管理员绑定、管理员邀请领取、管理员角色或启用状态变化
+都在写人员记录的同一事务内同步更新该数组。
+
 ## 3. 谁能操作
 
 三个云函数里现有的管理接口不再接受「只凭票据」。每次都查当前 OpenID：

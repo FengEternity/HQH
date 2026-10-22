@@ -96,6 +96,34 @@ function createMemoryDb(seed = {}) {
     };
   }
 
+  function transactionCollection(name) {
+    const documents = documentsFor(name);
+
+    return {
+      doc(id) {
+        if (typeof id !== 'string' || !id.trim()) {
+          throw new TypeError(`invalid document id: ${String(id)}`);
+        }
+        return {
+          async get() {
+            return { data: clone(documents.get(id) || null) };
+          },
+          async set({ data }) {
+            documents.set(id, clone(data));
+            return { stats: { created: 1 } };
+          },
+          async update({ data }) {
+            if (!documents.has(id)) {
+              throw new Error(`missing document: ${name}/${id}`);
+            }
+            documents.set(id, { ...documents.get(id), ...clone(data) });
+            return { stats: { updated: 1 } };
+          },
+        };
+      },
+    };
+  }
+
   return {
     collection,
     async runTransaction(callback) {
@@ -114,7 +142,7 @@ function createMemoryDb(seed = {}) {
         ),
       );
       try {
-        return await callback({ collection });
+        return await callback({ collection: transactionCollection });
       } catch (error) {
         collections.clear();
         for (const [name, documents] of Object.entries(snapshot)) {
@@ -165,6 +193,8 @@ describe('adminStaff', () => {
       initialized: true,
       initializedAt: 100,
       initializedBy: 'first',
+      enabledAdminOpenids: ['first'],
+      updatedAt: 100,
     });
   });
 
@@ -275,6 +305,42 @@ describe('adminStaff', () => {
 
   it('does not allow removing the last enabled admin', async () => {
     const db = createMemoryDb({
+      admin_config: {
+        staff: {
+          initialized: true,
+          enabledAdminOpenids: ['first'],
+        },
+      },
+      admin_users: {
+        owner: staff('owner', 'admin', true),
+        first: staff('first', 'admin', true),
+      },
+    });
+
+    await assert.rejects(
+      updateStaff(db, {
+        openid: 'owner',
+        targetOpenid: 'first',
+        role: 'operator',
+        enabled: true,
+        now: 10,
+      }),
+      assertCode('LAST_ADMIN'),
+    );
+    assert.deepEqual(
+      db.dump('admin_config', 'staff').enabledAdminOpenids,
+      ['first'],
+    );
+  });
+
+  it('serializes mutual demotion and preserves one enabled admin', async () => {
+    const db = createMemoryDb({
+      admin_config: {
+        staff: {
+          initialized: true,
+          enabledAdminOpenids: ['first', 'second'],
+        },
+      },
       admin_users: {
         first: staff('first', 'admin', true),
         second: staff('second', 'admin', true),
@@ -307,6 +373,7 @@ describe('adminStaff', () => {
       ).length,
       1,
     );
+    assert.equal(db.dump('admin_config', 'staff').enabledAdminOpenids.length, 1);
     assert.equal(db.dump('admin_config', 'staff').updatedAt, 10);
   });
 
@@ -317,7 +384,10 @@ describe('adminStaff', () => {
     ]) {
       const db = createMemoryDb({
         admin_config: {
-          staff: { initialized: true },
+          staff: {
+            initialized: true,
+            enabledAdminOpenids: ['owner', 'caller'],
+          },
         },
         admin_users: {
           owner: staff('owner', 'admin', true),
@@ -436,6 +506,12 @@ describe('adminStaff', () => {
 
   it('claims an invite with its selected role', async () => {
     const db = createMemoryDb({
+      admin_config: {
+        staff: {
+          initialized: true,
+          enabledAdminOpenids: ['creator', 'creator'],
+        },
+      },
       admin_invites: {
         code: {
           code: 'code',
@@ -457,6 +533,111 @@ describe('adminStaff', () => {
     assert.deepEqual(result, staff('new-admin', 'admin', true, 100));
     assert.deepEqual(db.dump('admin_users', 'new-admin'), result);
     assert.equal(db.dump('admin_invites', 'code').usedBy, 'new-admin');
+    assert.deepEqual(
+      db.dump('admin_config', 'staff').enabledAdminOpenids,
+      ['creator', 'new-admin'],
+    );
+    assert.equal(db.dump('admin_config', 'staff').updatedAt, 100);
+  });
+
+  it('keeps enabledAdminOpenids correct across role and status changes', async () => {
+    const db = createMemoryDb({
+      admin_config: {
+        staff: {
+          initialized: true,
+          enabledAdminOpenids: ['owner', 'owner'],
+        },
+      },
+      admin_users: {
+        owner: staff('owner', 'admin', true),
+        target: staff('target', 'operator', true),
+      },
+    });
+
+    await updateStaff(db, {
+      openid: 'owner',
+      targetOpenid: 'target',
+      role: 'admin',
+      enabled: true,
+      now: 10,
+    });
+    assert.deepEqual(
+      db.dump('admin_config', 'staff').enabledAdminOpenids,
+      ['owner', 'target'],
+    );
+
+    await updateStaff(db, {
+      openid: 'owner',
+      targetOpenid: 'target',
+      role: 'operator',
+      enabled: true,
+      now: 11,
+    });
+    assert.deepEqual(
+      db.dump('admin_config', 'staff').enabledAdminOpenids,
+      ['owner'],
+    );
+
+    await updateStaff(db, {
+      openid: 'owner',
+      targetOpenid: 'target',
+      role: 'admin',
+      enabled: true,
+      now: 12,
+    });
+    await updateStaff(db, {
+      openid: 'owner',
+      targetOpenid: 'target',
+      role: 'admin',
+      enabled: false,
+      now: 13,
+    });
+    assert.deepEqual(
+      db.dump('admin_config', 'staff').enabledAdminOpenids,
+      ['owner'],
+    );
+
+    await updateStaff(db, {
+      openid: 'owner',
+      targetOpenid: 'target',
+      role: 'admin',
+      enabled: true,
+      now: 14,
+    });
+    assert.deepEqual(
+      db.dump('admin_config', 'staff').enabledAdminOpenids,
+      ['owner', 'target'],
+    );
+    assert.equal(db.dump('admin_config', 'staff').updatedAt, 14);
+  });
+
+  it('leaves enabledAdminOpenids unchanged for operator-only updates', async () => {
+    const db = createMemoryDb({
+      admin_config: {
+        staff: {
+          initialized: true,
+          enabledAdminOpenids: ['owner'],
+        },
+      },
+      admin_users: {
+        owner: staff('owner', 'admin', true),
+        target: staff('target', 'operator', true),
+      },
+    });
+
+    await updateStaff(db, {
+      openid: 'owner',
+      targetOpenid: 'target',
+      role: 'operator',
+      enabled: false,
+      now: 10,
+    });
+
+    assert.deepEqual(
+      db.dump('admin_config', 'staff').enabledAdminOpenids,
+      ['owner'],
+    );
+    assert.equal(db.dump('admin_config', 'staff').updatedAt, 10);
   });
 
   it('rejects expired and already used invites', async () => {
