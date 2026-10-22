@@ -143,7 +143,11 @@ Page({
         threadId: this.data.threadId,
       })
         .then((result) => this.applyResult(result))
-        .catch(() => {});
+        .catch((err) => {
+          if (err.code === 'UNAUTHORIZED') {
+            wx.switchTab({ url: '/pages/mine/mine' });
+          }
+        });
     }, 4000);
     if (timer && typeof timer.unref === 'function') {
       timer.unref();
@@ -198,7 +202,7 @@ Page({
   showError(err) {
     this.setData({ loading: false, submitting: false });
     if (err.code === 'UNAUTHORIZED') {
-      wx.redirectTo({ url: '/pages/admin/login/login' });
+      wx.switchTab({ url: '/pages/mine/mine' });
       return;
     }
     wx.showToast({ title: err.message || '请求失败', icon: 'none' });
@@ -358,8 +362,12 @@ Page({
       threadId: this.data.threadId,
     })
       .then(() => this.refreshTicket())
-      .catch(() => {
+      .catch((err) => {
         this.setData({ submitting: false });
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
         wx.showToast({ title: '放开失败', icon: 'none' });
       });
   },

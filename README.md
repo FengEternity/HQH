@@ -22,19 +22,18 @@
 
 1. 安装[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)，用真实 AppID 导入本仓库根目录（含 `project.config.json`）。游客模式不能开通云开发、不能上传视频。
 2. 开通云开发并创建环境，设为当前环境。
-3. 对云函数 `catalog`、`shop`、`ticketing` 右键文件夹 → **上传并部署：云端安装依赖**（不要选「不上传 node_modules / 仅上传代码」；否则会报 `Cannot find module 'wx-server-sdk'` / `-504002`。缺函数时是 `-501000`）。环境变量设置 `ADMIN_PIN`（运营口令，这些函数都要配且必须相同）。`catalog` 另设内容安全所需的 `security.msgSecCheck`；`ticketing` 另设 `CS_NEW_TICKET_TPL`、`CS_REPLIED_TPL`。本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。若云端还留着旧函数 `cs`，上传 `ticketing` 后可删掉。
-4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`、`cs_threads`、`cs_messages`、`admin_notify_subscribers`、`shop_products`、`video_shop_links`、`video_ingest_jobs`。也可在云函数测试里传入 `{ "action": "initDb" }`。
+3. 对云函数 `catalog`、`shop`、`ticketing` 右键文件夹 → **上传并部署：云端安装依赖**（不要选「不上传 node_modules / 仅上传代码」；否则会报 `Cannot find module 'wx-server-sdk'` / `-504002`。缺函数时是 `-501000`）。三个函数都继续配置同一个 `ADMIN_PIN`：小程序端只在绑定首名管理员时使用；没有微信 OpenID 的服务端视频导入、转码和媒体替换脚本可用它向 `catalog` 换取服务票据，`shop`、`ticketing` 不接受服务票据。`catalog` 另设内容安全所需的 `security.msgSecCheck`；`ticketing` 另设 `CS_NEW_TICKET_TPL`、`CS_REPLIED_TPL`。本地调试可临时设 `SKIP_CONTENT_CHECK=1`（不要用于正式环境）。若云端还留着旧函数 `cs`，上传 `ticketing` 后可删掉。
+4. 启动小程序会调用 `initDb`，幂等创建 `brands`、`products`、`videos`、`synonyms`、`support_messages`、`cs_threads`、`cs_messages`、`admin_notify_subscribers`、`shop_products`、`video_shop_links`、`video_ingest_jobs`、`admin_users`、`admin_invites`、`admin_config`。也可在云函数测试里传入 `{ "action": "initDb" }`。
 5. 集合出现后，在云开发控制台把这些集合权限都改成 **仅管理端可读写**。封面和视频文件在云存储，记录里只存 `coverFileId` / `videoFileId`。云存储可保持 **仅创建者可读写**（免费环境改「全员可读」常要升级）；播放由云函数 `getVideo` 服务端换临时 HTTPS，客户端不再调 `getTempFileURL`。
 
 企业主体在 [微信公众平台](https://mp.weixin.qq.com) 注册小程序：主体名称填「优度（杭州）智能装备有限公司」。通过后在「开发 → 开发管理 → 开发设置」复制 AppID，填进 `project.config.json`。
 
 ## 运营入口
 
-- 三条路都进 `pages/admin/login/login`：
-  - 已发布版本：小程序码或能指定页面路径的小程序链接，路径填 `pages/admin/login/login`，只发给运营。这种码打开的是已发布代码。公众平台的码若不能填路径，就用能指定路径的链接。
-  - 本机「我的」：这台微信成功登录过运营后，资料卡和版本之间出现「运营工作台」。票据过期后这一行仍在，点进去重新输口令。清除小程序缓存后，要再用码或连点登录，这一行才回来。
-  - 首页标题连点 8 次。体验版在对应正式版发布前用这一条。
-- 口令是云函数环境变量 `ADMIN_PIN`。登录后进入工作台，再选「内容运营」「商品运营」或「客服工单」；工单角标显示待处理数量，可按待处理、处理中、已关闭筛选并回复或关闭。
+- 尚无管理员时，首名管理员打开既有路径 `pages/admin/login/login` 一次，输入 `ADMIN_PIN` 完成初始化。
+- 后续人员由管理员在工作台「人员」页选择角色并生成小程序码；对方扫码领取后加入名单。
+- 已加入且启用的人员在本机「我的」页看到「运营工作台」，可直接进入。普通用户和已停用人员不显示该入口。
+- 进入工作台后可选「内容运营」「商品运营」或「客服工单」；工单角标显示待处理数量，可按待处理、处理中、已关闭筛选并回复或关闭。
 - 内容运营：品牌列表（点行进视频、点编辑改品牌）→ 某品牌下的视频 → 编辑（标题、简介必填，型号与标签可选，上传封面和视频）。上架必须封面和视频都已传。未选手动封面时，云托管处理视频后会用 ffmpeg 生成 16:9 自动封面；人工封面不会被覆盖。可下架；删除会二次确认。
 - 商品运营：可售 SKU（`shop_products`，与目录型号集合分离）入库、上架、勾选关联讲解视频；C 端商城与播放页只展示已上架商品。
 - 品牌改名会同步刷新该品牌下视频里的 `brandName` 和搜索索引；品牌下还有视频时不允许删除，先把视频删干净。
@@ -62,7 +61,11 @@ node --test \
   miniprogram/pages/admin/home/home.test.js \
   miniprogram/pages/admin/edit/edit.test.js \
   miniprogram/pages/admin/ticket/ticket.test.js \
+  miniprogram/pages/admin/staff/staff.test.js \
+  miniprogram/pages/admin/join/join.test.js \
+  miniprogram/pages/admin/adminUnauthorized.test.js \
   miniprogram/pages/index/index.test.js \
+  miniprogram/pages/mine/mine.test.js \
   scripts/video-ingest/*.test.js \
   scripts/video-ingest/lib/*.test.js
 python3 -m unittest scripts/video-ingest/test_transcribe.py

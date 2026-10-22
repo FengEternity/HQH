@@ -87,7 +87,11 @@ Page({
           notifyLabel: notifyLabelText(result.bound, result.enabled),
         });
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+        }
+      });
   },
   openNotify() {
     wx.navigateTo({ url: '/pages/admin/notify/notify' });
@@ -130,7 +134,7 @@ Page({
         const loadError = (this.data.threads || []).length ? '' : visibleListError(err);
         this.setData({ loading: false, loadError });
         if (err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
+          wx.switchTab({ url: '/pages/mine/mine' });
           return;
         }
         wx.showToast({ title: loadError || err.message || '加载失败', icon: 'none' });

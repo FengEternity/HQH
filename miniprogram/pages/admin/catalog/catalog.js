@@ -30,7 +30,7 @@ Page({
       })
       .catch((err) => {
         if (err && err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
+          wx.switchTab({ url: '/pages/mine/mine' });
           return;
         }
         this.setData({
@@ -60,7 +60,7 @@ Page({
       .catch((err) => {
         this.setData({ loading: false });
         if (err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
+          wx.switchTab({ url: '/pages/mine/mine' });
           return;
         }
         wx.showToast({ title: err.message || '加载失败', icon: 'none' });
