@@ -9,14 +9,19 @@ const pagePath = require.resolve('./mine');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
-function loadPage() {
+function loadPage({ ticketing, adminMe } = {}) {
   delete require.cache[pagePath];
+  const api = require('../../utils/api');
+  const originals = { ticketing: api.ticketing, adminMe: api.adminMe };
+  api.ticketing = ticketing || (async () => ({ ok: true }));
+  api.adminMe = adminMe || (async () => ({ ok: true, enabled: false }));
   let definition;
   global.Page = (value) => {
     definition = value;
   };
   global.wx = {};
   require(pagePath);
+  Object.assign(api, originals);
   return Object.assign({}, definition, {
     data: JSON.parse(JSON.stringify(definition.data)),
     setData(next) {
@@ -71,36 +76,44 @@ describe('mine page', () => {
     assert.equal(page.openAbout, undefined);
   });
 
-  function wxForMine({ ticket, urls }) {
+  function wxForMine(urls) {
     return {
-      getStorageSync(key) {
-        return key === 'hqh_admin_ticket' ? ticket : '';
-      },
-      cloud: {
-        callFunction() {
-          return Promise.resolve({ result: { ok: true } });
-        },
-      },
       navigateTo({ url }) {
         urls.push(url);
       },
     };
   }
 
-  it('hides the ops row when this device has no admin ticket', async () => {
-    const page = loadPage();
-    global.wx = wxForMine({ ticket: '', urls: [] });
-    await page.onShow();
-    assert.equal(page.data.showAdmin, false);
+  it('hides the ops row for disabled staff and unknown identity', async () => {
+    const disabled = loadPage({
+      adminMe: async () => ({ ok: true, enabled: false }),
+    });
+    global.wx = wxForMine([]);
+    await disabled.onShow();
+    assert.equal(disabled.data.showAdmin, false);
+
+    const unknown = loadPage({
+      adminMe: async () => {
+        throw new Error('identity unavailable');
+      },
+    });
+    global.wx = wxForMine([]);
+    await unknown.onShow();
+    assert.equal(unknown.data.showAdmin, false);
   });
 
-  it('shows the ops row and opens admin login when a ticket is stored', async () => {
+  it('shows the ops row for enabled staff even when profile loading fails', async () => {
     const urls = [];
-    const page = loadPage();
-    global.wx = wxForMine({ ticket: 'expired.sig', urls });
+    const page = loadPage({
+      ticketing: async () => {
+        throw new Error('profile unavailable');
+      },
+      adminMe: async () => ({ ok: true, enabled: true, role: 'operator' }),
+    });
+    global.wx = wxForMine(urls);
     await page.onShow();
     assert.equal(page.data.showAdmin, true);
     page.openAdmin();
-    assert.deepEqual(urls, ['/pages/admin/login/login']);
+    assert.deepEqual(urls, ['/pages/admin/home/home']);
   });
 });

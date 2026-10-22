@@ -77,32 +77,61 @@ describe('ticketing', () => {
   });
 });
 
-describe('ticketingAdmin', () => {
-  it('adds the stored admin ticket without mutating the request', async () => {
+describe('admin identity wrappers', () => {
+  it('calls adminMe through raw catalog without reading legacy storage', async () => {
     const calls = [];
     global.wx = {
       cloud: {
         callFunction(input) {
           calls.push(input);
-          return Promise.resolve({ result: { ok: true, threads: [] } });
+          return Promise.resolve({
+            result: { ok: true, initialized: true, enabled: true, role: 'admin' },
+          });
         },
       },
-      getStorageSync(key) {
-        return key === 'hqh_admin_ticket' ? 'ticket-1' : '';
+      getStorageSync() {
+        throw new Error('must not read legacy ticket');
       },
       setStorageSync() {},
     };
-    const { ticketingAdmin } = require('./api');
-    const data = { action: 'csAdminList' };
 
-    await ticketingAdmin(data);
+    const { adminMe } = require('./api');
+    const result = await adminMe();
 
-    assert.deepEqual(data, { action: 'csAdminList' });
-    assert.deepEqual(calls, [
-      {
-        name: 'ticketing',
-        data: { ticket: 'ticket-1', action: 'csAdminList' },
+    assert.deepEqual(calls, [{ name: 'catalog', data: { action: 'adminMe' } }]);
+    assert.equal(result.role, 'admin');
+  });
+
+  it('passes admin requests unchanged and never reads or sends the legacy ticket', async () => {
+    const calls = [];
+    global.wx = {
+      cloud: {
+        callFunction(input) {
+          calls.push(input);
+          return Promise.resolve({ result: { ok: true } });
+        },
       },
+      getStorageSync() {
+        throw new Error('must not read legacy ticket');
+      },
+      setStorageSync() {},
+    };
+    const { admin, shopAdmin, ticketingAdmin } = require('./api');
+    const catalogData = { action: 'adminListBrands' };
+    const shopData = { action: 'adminListProducts' };
+    const ticketingData = { action: 'csAdminList' };
+
+    await Promise.all([
+      admin(catalogData),
+      shopAdmin(shopData),
+      ticketingAdmin(ticketingData),
     ]);
+
+    assert.deepEqual(calls, [
+      { name: 'catalog', data: catalogData },
+      { name: 'shop', data: shopData },
+      { name: 'ticketing', data: ticketingData },
+    ]);
+    assert.equal(calls.some((call) => Object.hasOwn(call.data, 'ticket')), false);
   });
 });

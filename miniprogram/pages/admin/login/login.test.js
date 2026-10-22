@@ -1,29 +1,24 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { afterEach, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 const apiPath = require.resolve('../../../utils/api');
-const configPath = require.resolve('../../../config.js');
 const pagePath = require.resolve('./login');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
-function loadPage({ templateId, catalog, ticketingAdmin }) {
+function loadPage({ catalog, adminMe }) {
   delete require.cache[pagePath];
   const api = require(apiPath);
   const originals = {
     catalog: api.catalog,
-    ticketingAdmin: api.ticketingAdmin,
-    setTicket: api.setTicket,
+    adminMe: api.adminMe,
   };
-  const tickets = [];
   api.catalog = catalog;
-  api.ticketingAdmin = ticketingAdmin;
-  api.setTicket = (ticket) => tickets.push(ticket);
-
-  const config = require(configPath);
-  config.contact.newTicketTplId = templateId;
+  api.adminMe = adminMe;
 
   let definition;
   global.Page = (value) => {
@@ -32,15 +27,12 @@ function loadPage({ templateId, catalog, ticketingAdmin }) {
   require(pagePath);
 
   Object.assign(api, originals);
-  return {
-    page: Object.assign({}, definition, {
-      data: Object.assign({}, definition.data),
-      setData(next) {
-        this.data = Object.assign({}, this.data, next);
-      },
-    }),
-    tickets,
-  };
+  return Object.assign({}, definition, {
+    data: Object.assign({}, definition.data),
+    setData(next) {
+      this.data = Object.assign({}, this.data, next);
+    },
+  });
 }
 
 afterEach(() => {
@@ -49,57 +41,85 @@ afterEach(() => {
   global.wx = originalWx;
 });
 
-it('logs in without requesting or registering notifications', async () => {
+it('shows the PIN only before initialization', async () => {
+  const wxml = fs.readFileSync(path.join(__dirname, 'login.wxml'), 'utf8');
+  assert.equal(wxml.includes('wx:if="{{showPin}}"'), true);
+
   const events = [];
   global.wx = {
-    requestSubscribeMessage() {
-      events.push(['subscribe']);
-      return Promise.resolve({ 'new-ticket-template': 'accept' });
+    redirectTo({ url }) {
+      events.push(['redirect', url]);
     },
+    switchTab({ url }) {
+      events.push(['switchTab', url]);
+    },
+    showToast() {},
+  };
+  const page = loadPage({
+    catalog: async () => ({ ok: true }),
+    adminMe: async () => ({ ok: true, initialized: false, enabled: false }),
+  });
+
+  await page.onShow();
+
+  assert.equal(page.data.showPin, true);
+  assert.deepEqual(events, []);
+});
+
+it('sends enabled staff home and initialized non-staff back to Mine', async () => {
+  const events = [];
+  global.wx = {
+    redirectTo({ url }) {
+      events.push(['redirect', url]);
+    },
+    switchTab({ url }) {
+      events.push(['switchTab', url]);
+    },
+    showToast() {},
+  };
+  const staffPage = loadPage({
+    catalog: async () => ({ ok: true }),
+    adminMe: async () => ({ ok: true, initialized: true, enabled: true }),
+  });
+  await staffPage.onShow();
+
+  const userPage = loadPage({
+    catalog: async () => ({ ok: true }),
+    adminMe: async () => ({ ok: true, initialized: true, enabled: false }),
+  });
+  await userPage.onShow();
+
+  assert.deepEqual(events, [
+    ['redirect', '/pages/admin/home/home'],
+    ['switchTab', '/pages/mine/mine'],
+  ]);
+  assert.equal(staffPage.data.showPin, false);
+  assert.equal(userPage.data.showPin, false);
+});
+
+it('bootstraps the first admin without storing a legacy ticket', async () => {
+  const calls = [];
+  const events = [];
+  global.wx = {
     redirectTo({ url }) {
       events.push(['redirect', url]);
     },
     showToast() {},
-  };
-  const { page, tickets } = loadPage({
-    templateId: 'new-ticket-template',
-    catalog: async () => ({ ok: true, ticket: 'ticket-1' }),
-    ticketingAdmin: async (data) => {
-      events.push(['register', data.action]);
-      return { ok: true };
+    setStorageSync() {
+      throw new Error('must not store legacy ticket');
     },
+  };
+  const page = loadPage({
+    catalog: async (data) => {
+      calls.push(data);
+      return { ok: true, role: 'admin' };
+    },
+    adminMe: async () => ({ ok: true, initialized: false, enabled: false }),
   });
-  page.data.pin = '1234';
+  page.data.pin = ' 1234 ';
 
   await page.onLogin();
 
-  assert.deepEqual(tickets, ['ticket-1']);
+  assert.deepEqual(calls, [{ action: 'adminLogin', pin: '1234' }]);
   assert.deepEqual(events, [['redirect', '/pages/admin/home/home']]);
-});
-
-it('redirects after notification registration fails without showing login failure', async () => {
-  const events = [];
-  global.wx = {
-    redirectTo({ url }) {
-      events.push(['redirect', url]);
-    },
-    showToast({ title }) {
-      events.push(['toast', title]);
-    },
-  };
-  const { page, tickets } = loadPage({
-    templateId: '',
-    catalog: async () => ({ ok: true, ticket: 'ticket-2' }),
-    ticketingAdmin: async () => {
-      throw new Error('register failed');
-    },
-  });
-  page.data.pin = '5678';
-
-  await page.onLogin();
-
-  assert.deepEqual(tickets, ['ticket-2']);
-  assert.deepEqual(events, [
-    ['redirect', '/pages/admin/home/home'],
-  ]);
 });

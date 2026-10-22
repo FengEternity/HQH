@@ -1,6 +1,6 @@
 const release = require('../../data/appRelease');
 const { normalizeDoc } = require('../../utils/appRelease');
-const { ticketing, getTicket } = require('../../utils/api');
+const { ticketing, adminMe } = require('../../utils/api');
 
 function initialOf(nickname) {
   const name = String(nickname || '').trim();
@@ -19,11 +19,17 @@ Page({
     const doc = normalizeDoc(release);
     this.setData({
       version: doc.version,
-      showAdmin: Boolean(getTicket()),
+      showAdmin: false,
     });
-    return ticketing({ action: 'csGetProfile' })
+    const profile = ticketing({ action: 'csGetProfile' })
       .then((result) => this.applyProfile(result))
       .catch(() => {});
+    const identity = adminMe()
+      .then((result) => {
+        this.setData({ showAdmin: Boolean(result.enabled) });
+      })
+      .catch(() => {});
+    return Promise.all([profile, identity]);
   },
   onProfileBound(e) {
     this.applyProfile(e && e.detail);
@@ -46,7 +52,7 @@ Page({
     });
   },
   openAdmin() {
-    wx.navigateTo({ url: '/pages/admin/login/login' });
+    wx.navigateTo({ url: '/pages/admin/home/home' });
   },
 });
 

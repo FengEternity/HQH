@@ -1,4 +1,4 @@
-const { getTicket } = require('../../utils/api');
+const { adminMe } = require('../../utils/api');
 const release = require('../../data/appRelease');
 const {
   buildAboutView,
@@ -20,16 +20,29 @@ Page({
   },
   onLoad(query) {
     const staff = isStaffMode(query);
-    if (staff && !getTicket()) {
-      wx.redirectTo({ url: '/pages/admin/login/login' });
+    if (!staff) {
+      this.applyView(false);
       return;
     }
+    return adminMe()
+      .then((identity) => {
+        if (!identity.enabled) {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
+        this.applyView(true);
+      })
+      .catch(() => {
+        wx.switchTab({ url: '/pages/mine/mine' });
+      });
+  },
+  applyView(staff) {
     const view = buildAboutView({
       doc: release,
       accountInfo: wx.getAccountInfoSync(),
-      staff: staff,
+      staff,
     });
-    this.setData(Object.assign({ staff: staff }, view));
+    this.setData(Object.assign({ staff }, view));
   },
   copyVersion() {
     const text = clipboardText({

@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { afterEach, beforeEach, describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -191,18 +193,12 @@ describe('home catalog failures', () => {
 });
 
 describe('admin entry gesture', () => {
-  it('opens admin login on the eighth title tap', () => {
-    const urls = [];
+  it('never exposes title-tap navigation', () => {
     const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
-    global.wx = {
-      navigateTo({ url }) {
-        urls.push(url);
-      },
-    };
-    for (let i = 0; i < 7; i += 1) page.onTitleTap();
-    assert.deepEqual(urls, []);
-    page.onTitleTap();
-    assert.deepEqual(urls, ['/pages/admin/login/login']);
-    assert.equal(page.tapCount, 0);
+    const wxml = fs.readFileSync(path.join(__dirname, 'index.wxml'), 'utf8');
+
+    assert.equal(page.onTitleTap, undefined);
+    assert.equal(Object.hasOwn(page, 'tapCount'), false);
+    assert.equal(wxml.includes('bindtap="onTitleTap"'), false);
   });
 });

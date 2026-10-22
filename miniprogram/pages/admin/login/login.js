@@ -1,22 +1,24 @@
-const {
-  catalog,
-  setTicket,
-  getTicket,
-  admin,
-} = require('../../../utils/api');
+const { catalog, adminMe } = require('../../../utils/api');
 
 Page({
-  data: { pin: '' },
+  data: { pin: '', showPin: false },
   onShow() {
-    const ticket = getTicket();
-    if (!ticket) {
-      return;
-    }
-    admin({ action: 'adminListBrands' })
-      .then(() => {
-        wx.redirectTo({ url: '/pages/admin/home/home' });
+    this.setData({ showPin: false });
+    return adminMe()
+      .then((result) => {
+        if (result.enabled) {
+          wx.redirectTo({ url: '/pages/admin/home/home' });
+          return;
+        }
+        if (result.initialized) {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
+        this.setData({ showPin: true });
       })
-      .catch(() => {});
+      .catch(() => {
+        wx.switchTab({ url: '/pages/mine/mine' });
+      });
   },
   onPin(e) {
     this.setData({ pin: e.detail.value });
@@ -28,8 +30,7 @@ Page({
       return;
     }
     return catalog({ action: 'adminLogin', pin })
-      .then((res) => {
-        setTicket(res.ticket);
+      .then(() => {
         wx.redirectTo({ url: '/pages/admin/home/home' });
       })
       .catch((err) => {

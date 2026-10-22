@@ -20,5 +20,12 @@
     </view>
     <text class="chip">{{pendingLabel}}</text>
   </view>
+  <view wx:if="{{role === 'admin'}}" class="hub-item" bindtap="openStaff">
+    <view>
+      <view class="tile-title">人员</view>
+      <view class="muted">管理员与运营</view>
+    </view>
+    <text class="muted">进入</text>
+  </view>
   <view class="muted hub-footer" bindtap="openAbout">{{aboutHint}}</view>
 </view>

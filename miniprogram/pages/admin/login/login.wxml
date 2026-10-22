@@ -4,7 +4,9 @@
     <view class="login-title">运营后台</view>
     <view class="muted">优度 · 仪器讲解资料馆</view>
   </view>
-  <input class="input" password placeholder="请输入运营口令" bindinput="onPin" confirm-type="done" bindconfirm="onLogin" />
-  <view class="btn" bindtap="onLogin">登录</view>
+  <block wx:if="{{showPin}}">
+    <input class="input" password placeholder="请输入运营口令" bindinput="onPin" confirm-type="done" bindconfirm="onLogin" />
+    <view class="btn" bindtap="onLogin">登录</view>
+  </block>
   <view class="legal">优度（杭州）智能装备有限公司</view>
 </view>

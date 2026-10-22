@@ -10,15 +10,18 @@ const pagePath = require.resolve('./home');
 const originalPage = global.Page;
 const originalWx = global.wx;
 
-function loadPage({ ticketingAdmin, admin }) {
+function loadPage({ ticketingAdmin, admin, adminMe }) {
   delete require.cache[pagePath];
   const api = require(apiPath);
   const originals = {
     ticketingAdmin: api.ticketingAdmin,
     admin: api.admin,
+    adminMe: api.adminMe,
   };
   api.ticketingAdmin = ticketingAdmin;
   api.admin = admin || (async () => ({ ok: true, running: 0, queued: 0, failed: 0 }));
+  api.adminMe =
+    adminMe || (async () => ({ ok: true, enabled: true, role: 'operator' }));
 
   let definition;
   global.Page = (value) => {
@@ -46,6 +49,9 @@ function wxStub(events) {
     redirectTo({ url }) {
       events.push(['redirect', url]);
     },
+    switchTab({ url }) {
+      events.push(['switchTab', url]);
+    },
     showToast({ title }) {
       events.push(['toast', title]);
     },
@@ -71,14 +77,21 @@ describe('admin home workbench', () => {
     assert.equal(wxml.includes('内容运营'), true);
     assert.equal(wxml.includes('商品运营'), true);
     assert.equal(wxml.includes('客服工单'), true);
+    assert.equal(wxml.includes('人员'), true);
+    assert.equal(wxml.includes('管理员与运营'), true);
+    assert.equal(wxml.includes('wx:if="{{role === \'admin\'}}"'), true);
     assert.equal(wxml.includes('openAbout'), true);
   });
 
-  it('opens each daily job and the staff changelog', async () => {
+  it('checks identity before daily jobs and lets only admins open staff', async () => {
     const events = [];
     global.wx = wxStub(events);
     const actions = [];
     const page = loadPage({
+      adminMe: async () => {
+        actions.push('adminMe');
+        return { ok: true, enabled: true, role: 'admin' };
+      },
       ticketingAdmin: async (data) => {
         actions.push(data.action);
         return { ok: true, threads: [{ _id: 'a', unread: true }] };
@@ -93,8 +106,10 @@ describe('admin home workbench', () => {
     page.openCatalog();
     page.openShop();
     page.openInbox();
+    page.openStaff();
     page.openAbout();
 
+    assert.equal(page.data.role, 'admin');
     assert.equal(page.data.aboutHint, '开发版 · 0.2.5');
     assert.equal(page.data.pendingLabel, '1 条未读');
     assert.equal(page.data.ingestLabel, '进入');
@@ -104,11 +119,41 @@ describe('admin home workbench', () => {
         ['nav', '/pages/admin/catalog/catalog'],
         ['nav', '/pages/admin/shop/shop'],
         ['nav', '/pages/admin/inbox/inbox'],
+        ['nav', '/pages/admin/staff/staff'],
         ['nav', '/pages/about/about?staff=1'],
       ],
     );
+    assert.equal(actions[0], 'adminMe');
     assert.deepEqual(actions.filter((action) => action.indexOf('cs') === 0), ['csAdminList']);
     assert.equal(events.some((item) => item[0] === 'subscribe'), false);
+
+    const navigationCount = events.filter((item) => item[0] === 'nav').length;
+    page.setData({ role: 'operator' });
+    page.openStaff();
+    assert.equal(events.filter((item) => item[0] === 'nav').length, navigationCount);
+  });
+
+  it('returns non-staff to Mine without loading protected jobs', async () => {
+    const events = [];
+    const actions = [];
+    global.wx = wxStub(events);
+    const page = loadPage({
+      adminMe: async () => ({ ok: true, enabled: false }),
+      ticketingAdmin: async () => {
+        actions.push('ticketing');
+        return { ok: true, threads: [] };
+      },
+      admin: async () => {
+        actions.push('catalog');
+        return { ok: true };
+      },
+    });
+
+    await page.onShow();
+
+    assert.deepEqual(actions, []);
+    assert.deepEqual(events, [['switchTab', '/pages/mine/mine']]);
+    assert.equal(page.data.role, '');
   });
 
   it('shows the ingest state on content ops and clears it when the read fails', async () => {

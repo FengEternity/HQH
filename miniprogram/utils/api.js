@@ -51,24 +51,20 @@ function ticketing(data) {
     });
 }
 
-function getTicket() {
-  return wx.getStorageSync('hqh_admin_ticket') || '';
-}
-
-function setTicket(ticket) {
-  wx.setStorageSync('hqh_admin_ticket', ticket);
-}
-
 function admin(data) {
-  return catalog(Object.assign({ ticket: getTicket() }, data));
+  return catalog(data);
 }
 
 function ticketingAdmin(data) {
-  return ticketing(Object.assign({ ticket: getTicket() }, data));
+  return ticketing(data);
 }
 
 function shopAdmin(data) {
-  return shop(Object.assign({ ticket: getTicket() }, data));
+  return shop(data);
+}
+
+function adminMe() {
+  return catalog({ action: 'adminMe' });
 }
 
 module.exports = {
@@ -78,6 +74,5 @@ module.exports = {
   admin,
   ticketingAdmin,
   shopAdmin,
-  getTicket,
-  setTicket,
+  adminMe,
 };

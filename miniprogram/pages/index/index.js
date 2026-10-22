@@ -18,7 +18,6 @@ Page({
     loading: true,
     error: '',
   },
-  tapCount: 0,
   onLoad() {
     whenCloudReady(getApp()).then(() => this.load({ showLoading: true }));
   },
@@ -136,12 +135,5 @@ Page({
   onVideoTap(e) {
     const id = e.currentTarget.dataset.id;
     wx.navigateTo({ url: `/pages/player/player?id=${id}` });
-  },
-  onTitleTap() {
-    this.tapCount += 1;
-    if (this.tapCount >= 8) {
-      this.tapCount = 0;
-      wx.navigateTo({ url: '/pages/admin/login/login' });
-    }
   },
 });
