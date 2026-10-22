@@ -1,6 +1,6 @@
 const release = require('../../data/appRelease');
 const { normalizeDoc } = require('../../utils/appRelease');
-const { ticketing } = require('../../utils/api');
+const { ticketing, getTicket } = require('../../utils/api');
 
 function initialOf(nickname) {
   const name = String(nickname || '').trim();
@@ -13,10 +13,14 @@ Page({
     nickname: '',
     avatarFileId: '',
     initial: '优',
+    showAdmin: false,
   },
   onShow() {
     const doc = normalizeDoc(release);
-    this.setData({ version: doc.version });
+    this.setData({
+      version: doc.version,
+      showAdmin: Boolean(getTicket()),
+    });
     return ticketing({ action: 'csGetProfile' })
       .then((result) => this.applyProfile(result))
       .catch(() => {});
@@ -40,6 +44,9 @@ Page({
       nickname: this.data.nickname,
       avatarFileId: this.data.avatarFileId,
     });
+  },
+  openAdmin() {
+    wx.navigateTo({ url: '/pages/admin/login/login' });
   },
 });
 
