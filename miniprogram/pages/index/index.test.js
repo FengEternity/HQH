@@ -189,3 +189,20 @@ describe('home catalog failures', () => {
     ]);
   });
 });
+
+describe('admin entry gesture', () => {
+  it('opens admin login on the eighth title tap', () => {
+    const urls = [];
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
+    global.wx = {
+      navigateTo({ url }) {
+        urls.push(url);
+      },
+    };
+    for (let i = 0; i < 7; i += 1) page.onTitleTap();
+    assert.deepEqual(urls, []);
+    page.onTitleTap();
+    assert.deepEqual(urls, ['/pages/admin/login/login']);
+    assert.equal(page.tapCount, 0);
+  });
+});
