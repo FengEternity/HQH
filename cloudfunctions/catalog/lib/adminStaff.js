@@ -23,10 +23,21 @@ function isMissingDocumentError(error) {
   );
 }
 
+function isValidDocumentId(id) {
+  return typeof id === 'string' && id.trim().length > 0;
+}
+
 async function getDocument(container, collectionName, id) {
+  if (!isValidDocumentId(id)) {
+    return null;
+  }
   try {
     const result = await container.collection(collectionName).doc(id).get();
-    return result && result.data ? result.data : null;
+    const data = result && result.data;
+    if (Array.isArray(data)) {
+      return data.length ? data[0] : null;
+    }
+    return data || null;
   } catch (error) {
     if (isMissingDocumentError(error)) {
       return null;
@@ -120,16 +131,21 @@ async function listStaff(db, { openid }) {
 }
 
 async function updateStaff(db, { openid, targetOpenid, role, enabled, now }) {
-  await requireAdminRole(db, openid);
-  if (openid === targetOpenid) {
-    throw domainError('CANNOT_EDIT_SELF', '不能修改自己');
+  if (!isValidDocumentId(targetOpenid)) {
+    throw domainError('INVALID_STAFF', '人员不存在');
   }
   assertRole(role);
 
   return await db.runTransaction(async (transaction) => {
+    await requireAdminRole(transaction, openid);
+    if (openid === targetOpenid) {
+      throw domainError('CANNOT_EDIT_SELF', '不能修改自己');
+    }
+
+    const config = await getDocument(transaction, ADMIN_CONFIG, STAFF_CONFIG_ID);
     const target = await getDocument(transaction, ADMIN_USERS, targetOpenid);
     if (!target) {
-      throw domainError('STAFF_NOT_FOUND', '人员不存在');
+      throw domainError('INVALID_STAFF', '人员不存在');
     }
 
     const removesEnabledAdmin =
@@ -150,6 +166,9 @@ async function updateStaff(db, { openid, targetOpenid, role, enabled, now }) {
     await transaction.collection(ADMIN_USERS).doc(targetOpenid).update({
       data: changes,
     });
+    await transaction.collection(ADMIN_CONFIG).doc(STAFF_CONFIG_ID).set({
+      data: { ...(config || {}), updatedAt: now },
+    });
     return { ...target, ...changes };
   });
 }
@@ -157,6 +176,9 @@ async function updateStaff(db, { openid, targetOpenid, role, enabled, now }) {
 async function createInvite(db, { openid, role, code, now }) {
   await requireAdminRole(db, openid);
   assertRole(role);
+  if (!isValidDocumentId(code)) {
+    throw domainError('INVALID_INVITE', '邀请无效');
+  }
   const invite = {
     code,
     role,
@@ -170,6 +192,9 @@ async function createInvite(db, { openid, role, code, now }) {
 }
 
 async function claimInvite(db, { openid, code, now }) {
+  if (!isValidDocumentId(code)) {
+    throw domainError('INVALID_INVITE', '邀请无效');
+  }
   return await db.runTransaction(async (transaction) => {
     const invite = await getDocument(transaction, ADMIN_INVITES, code);
     if (

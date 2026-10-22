@@ -42,6 +42,9 @@ function createMemoryDb(seed = {}) {
 
     return {
       doc(id) {
+        if (typeof id !== 'string' || !id.trim()) {
+          throw new TypeError(`invalid document id: ${String(id)}`);
+        }
         return {
           async get() {
             return { data: clone(documents.get(id) || null) };
@@ -102,8 +105,22 @@ function createMemoryDb(seed = {}) {
         release = resolve;
       });
       await previous;
+      const snapshot = clone(
+        Object.fromEntries(
+          [...collections.entries()].map(([name, documents]) => [
+            name,
+            Object.fromEntries(documents),
+          ]),
+        ),
+      );
       try {
         return await callback({ collection });
+      } catch (error) {
+        collections.clear();
+        for (const [name, documents] of Object.entries(snapshot)) {
+          collections.set(name, new Map(Object.entries(documents)));
+        }
+        throw error;
       } finally {
         release();
       }
@@ -283,7 +300,77 @@ describe('adminStaff', () => {
 
     assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
     const rejected = results.find((result) => result.status === 'rejected');
-    assert.equal(rejected.reason.code, 'LAST_ADMIN');
+    assert.equal(rejected.reason.code, 'FORBIDDEN');
+    assert.equal(
+      [...['first', 'second']].filter(
+        (id) => db.dump('admin_users', id).role === 'admin',
+      ).length,
+      1,
+    );
+    assert.equal(db.dump('admin_config', 'staff').updatedAt, 10);
+  });
+
+  it('stops a concurrently demoted or disabled caller from editing a third user', async () => {
+    for (const callerChange of [
+      { role: 'operator', enabled: true },
+      { role: 'admin', enabled: false },
+    ]) {
+      const db = createMemoryDb({
+        admin_config: {
+          staff: { initialized: true },
+        },
+        admin_users: {
+          owner: staff('owner', 'admin', true),
+          caller: staff('caller', 'admin', true),
+          third: staff('third', 'operator', true),
+        },
+      });
+
+      const results = await Promise.allSettled([
+        updateStaff(db, {
+          openid: 'owner',
+          targetOpenid: 'caller',
+          ...callerChange,
+          now: 10,
+        }),
+        updateStaff(db, {
+          openid: 'caller',
+          targetOpenid: 'third',
+          role: 'admin',
+          enabled: true,
+          now: 11,
+        }),
+      ]);
+
+      assert.equal(results[0].status, 'fulfilled');
+      assert.equal(results[1].status, 'rejected');
+      assert.ok(['FORBIDDEN', 'UNAUTHORIZED'].includes(results[1].reason.code));
+      assert.equal(db.dump('admin_users', 'third').role, 'operator');
+    }
+  });
+
+  it('rolls back all transaction writes when its callback throws', async () => {
+    const db = createMemoryDb({
+      admin_users: {
+        existing: staff('existing', 'operator', true),
+      },
+    });
+
+    await assert.rejects(
+      db.runTransaction(async (transaction) => {
+        await transaction.collection('admin_users').doc('existing').update({
+          data: { enabled: false },
+        });
+        await transaction.collection('admin_users').doc('new').set({
+          data: staff('new', 'operator', true),
+        });
+        throw new Error('rollback');
+      }),
+      /rollback/,
+    );
+
+    assert.equal(db.dump('admin_users', 'existing').enabled, true);
+    assert.equal(db.dump('admin_users', 'new'), undefined);
   });
 
   it('lists enabled admins, enabled operators, then disabled staff', async () => {
@@ -327,6 +414,24 @@ describe('adminStaff', () => {
       usedBy: '',
     });
     assert.deepEqual(db.dump('admin_invites', 'invite-code'), result);
+  });
+
+  it('rejects an empty invite code before calling the database SDK', async () => {
+    const db = createMemoryDb({
+      admin_users: {
+        admin: staff('admin', 'admin', true),
+      },
+    });
+
+    await assert.rejects(
+      createInvite(db, {
+        openid: 'admin',
+        role: 'operator',
+        code: '',
+        now: 1_000,
+      }),
+      assertCode('INVALID_INVITE'),
+    );
   });
 
   it('claims an invite with its selected role', async () => {
@@ -382,6 +487,10 @@ describe('adminStaff', () => {
     );
     await assert.rejects(
       claimInvite(db, { openid: 'new', code: 'used', now: 100 }),
+      assertCode('INVALID_INVITE'),
+    );
+    await assert.rejects(
+      claimInvite(db, { openid: 'new', code: '', now: 100 }),
       assertCode('INVALID_INVITE'),
     );
   });
@@ -451,6 +560,52 @@ describe('adminStaff', () => {
       enabled: false,
       role: '',
     });
+  });
+
+  it('normalizes array-shaped document responses', async () => {
+    const db = {
+      collection(name) {
+        return {
+          doc() {
+            return {
+              async get() {
+                if (name === 'admin_config') {
+                  return { data: [{ initialized: true }] };
+                }
+                return { data: [staff('operator', 'operator', true)] };
+              },
+            };
+          },
+        };
+      },
+    };
+
+    assert.deepEqual(await getAdminState(db, 'operator'), {
+      initialized: true,
+      enabled: true,
+      role: 'operator',
+    });
+  });
+
+  it('rejects an invalid target openid with a stable domain code', async () => {
+    const db = createMemoryDb({
+      admin_users: {
+        admin: staff('admin', 'admin', true),
+      },
+    });
+
+    for (const targetOpenid of ['', null]) {
+      await assert.rejects(
+        updateStaff(db, {
+          openid: 'admin',
+          targetOpenid,
+          role: 'operator',
+          enabled: true,
+          now: 10,
+        }),
+        assertCode('INVALID_STAFF'),
+      );
+    }
   });
 
   it('keeps all three cloudfunction copies byte-identical', () => {
