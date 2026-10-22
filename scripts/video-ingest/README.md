@@ -49,22 +49,26 @@ python3 -m venv .video-ingest/venv
 
 ## 自动处理 worker
 
-worker 在云函数外运行，轮询 `catalog` 领取任务，并在本机完成下载、`ffprobe`、必要的 H.264+AAC 转码及 faster-whisper 转写。它不会调用 `publishVideo`，也不会把视频、音频或帧发送给第三方服务。
+云托管服务 `video-ingest`（仓库根目录 `Dockerfile`）轮询 `catalog` 领取任务，在容器内完成下载、`ffprobe`、必要的 H.264+AAC 转码、封面和抽音频。转写调用腾讯云录音文件识别，简介调用 TokenHub。它不会调用 `publishVideo`。音频会以临时链接交给腾讯云语音识别，用完即删；画面和关键帧不出容器。没有句子时任务仍标记可播放，字幕记为失败，不再改走本机模型。简介只有通过证据闸门才回写，否则保留占位。
 
-启动前需在进程环境中配置 `TCB_ENV_ID`、`TCB_SECRET_ID`、`TCB_SECRET_KEY`、`ADMIN_PIN`，值不要写入仓库或命令行。本机默认使用 `.video-ingest/venv/bin/python` 和 `medium` 模型；云托管镜像内为 `/opt/asr/bin/python` 与 `small`。如需覆盖，可只设置环境变量名 `VIDEO_INGEST_PYTHON`、`VIDEO_INGEST_ASR_MODEL`，不要把模型文件路径提交到 git。
+启动前在进程环境配置这些值，不要写入仓库或命令行：
 
-生产转写、转码和简介共用云托管服务 `video-ingest`（仓库根目录 `Dockerfile`）：构建时安装 faster-whisper 并预拉 `small` 权重，同时装入 llama.cpp。Qwen3-4B-Instruct 的 Q4_K_M 约 2.5GB，不放进镜像；容器启动后在后台下载，下完才写简介。转写成功后由容器内模型写简介，口播不出容器。重新部署该服务后，有音轨的任务在转码成功后继续转写，不再依赖本机常开 worker。构建若拉不下 Hugging Face，可加 `--build-arg HF_ENDPOINT=https://hf-mirror.com`（镜像默认已用该镜像站）。带简介模型的版本按云托管 1:2 搭配使用 4 核 8GB；只转写的旧镜像仍可按不少于 2GB 运行。转写比转码更久，长片仍可能超过 30 分钟租约，最大实例保持 1。摘要限时 3 分钟，超时或验收不通过时保留字幕、简介仍为占位。权重还没下完时同样只保留字幕。本机未设置 `VIDEO_INGEST_SUMMARY_MODEL` 时不跑摘要。
+- `TCB_ENV_ID`、`TCB_SECRET_ID`、`TCB_SECRET_KEY`、`ADMIN_PIN`
+- `TENCENT_ASR_ENGINE`（当前生产用 `16k_zh`）、`TENCENT_ASR_REGION`（当前生产用 `ap-shanghai`）
+- 需要自动简介时再加 `TOKENHUB_API_KEY`、`TOKENHUB_MODEL`（当前生产用 `hy3`）、`TOKENHUB_BASE_URL`（当前生产用 `https://tokenhub.tencentmaas.com/v1`）
+
+密钥可沿用 `TCB_SECRET_ID` / `TCB_SECRET_KEY`，也可用 `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` 覆盖。缺引擎或地域时转写直接失败；缺简介密钥、模型或地址时只跳过简介。上面的生产取值只写在云托管环境变量里，代码不带默认值。镜像只装 Node 和 ffmpeg，不再预拉 Whisper 或 Qwen。长片转码加上最长 15 分钟的识别轮询，仍可能超过 30 分钟租约，最大实例保持 1。
 
 ```bash
-# 需本机已配置 TCB_* 与 ADMIN_PIN
+# 需本机已配置上面列出的环境变量
 node scripts/video-ingest/worker.js
 ```
 
-worker 无任务时每 5 秒重试。每个任务使用独立临时目录，并在成功或异常后清理下载、转码及临时 manifest；转码产物上传后仍在原任务、原 `mediaRevision` 内完成。
+worker 无任务时每 5 秒重试。每个任务使用独立临时目录，并在成功或异常后清理下载、转码及临时文件；转码产物上传后仍在原任务、原 `mediaRevision` 内完成。
 
 ### 第一期只允许单实例
 
-**同一环境同时只跑一个 worker 进程。** 抢锁靠 `claim` 写入 `claimedAt`，租约固定 30 分钟（`CLAIM_TIMEOUT_MS`），超过即视为失联并允许别的 worker 重抢。但单个任务的下载、转码和 faster-whisper 转写各自的超时上限合计远超 30 分钟，长片很容易在仍在正常处理时租约就已过期。
+**同一环境同时只跑一个 worker 进程。** 抢锁靠 `claim` 写入 `claimedAt`，租约固定 30 分钟（`CLAIM_TIMEOUT_MS`），超过即视为失联并允许别的 worker 重抢。单条任务的下载、转码和云端识别轮询合计可能超过 30 分钟，长片很容易在仍在正常处理时租约就已过期。
 
 因此多开会出现：第二个 worker 重抢同一条并重复转码、重复转写；先跑完的那个回写 `complete` 成功，后跑完的那个因任务已 `done` 被拒；`videos.ingest` 的 `startedAt` 与实际处理进程也对不上。第一期不做续租（heartbeat），只能靠人为约束：
 

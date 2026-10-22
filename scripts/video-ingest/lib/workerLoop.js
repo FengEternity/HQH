@@ -89,10 +89,7 @@ async function runOnce({
   probeMedia,
   transcodeIfNeeded,
   createCover,
-  transcribe,
-  summarizeIntro,
   recognizeSpeech,
-  placeholderIntro,
   deleteCloudFiles = async () => {},
   warn = () => {},
 }) {
@@ -229,26 +226,10 @@ async function runOnce({
     });
   }
 
-  let transcription;
   const remoteSegments = remoteSpeech && Array.isArray(remoteSpeech.segments)
     ? fitSegmentsToDuration(remoteSpeech.segments, probe.durationSec)
     : [];
-  if (remoteSegments.length > 0) {
-    transcription = { ok: true, skipped: false, segments: remoteSegments };
-  } else try {
-    transcription = await transcribe(prepared.path);
-  } catch {
-    return completePrepared({
-      ...jobIdentity(claimed),
-      outcome: 'ready',
-      asr: 'failed',
-      errorMessage: '转写失败，播放文件已更新',
-      ...mediaPayload(probe),
-      ...transcoded,
-      ...cover,
-    });
-  }
-  if (!transcription || transcription.ok !== true) {
+  if (remoteSegments.length === 0) {
     return completePrepared({
       ...jobIdentity(claimed),
       outcome: 'ready',
@@ -260,36 +241,15 @@ async function runOnce({
     });
   }
 
-  if (transcription.skipped) {
-    return completePrepared({
-      ...jobIdentity(claimed),
-      outcome: 'ready',
-      asr: 'skipped',
-      ...mediaPayload(probe),
-      ...transcoded,
-      ...cover,
-    });
-  }
-
-  let resolvedIntro = { grounded: false };
-  if (remoteSpeech && remoteSpeech.grounded) {
-    resolvedIntro = { grounded: true, intro: remoteSpeech.intro };
-  } else try {
-    resolvedIntro = await summarizeIntro({
-      title: typeof claimed.title === 'string' ? claimed.title : '',
-      brandName: typeof claimed.brandName === 'string' ? claimed.brandName : '',
-      transcriptSegments: transcription.segments,
-      placeholderIntro,
-    });
-  } catch {
-    resolvedIntro = { grounded: false };
-  }
+  const resolvedIntro = remoteSpeech && remoteSpeech.grounded
+    ? { grounded: true, intro: remoteSpeech.intro }
+    : { grounded: false };
 
   return completePrepared({
     ...jobIdentity(claimed),
     outcome: 'ready',
     asr: 'ready',
-    transcriptSegments: transcription.segments,
+    transcriptSegments: remoteSegments,
     ...mediaPayload(probe),
     ...transcoded,
     ...cover,

@@ -15,7 +15,6 @@ const {
   readCredentials,
   runInTemporaryWorkspace,
 } = require('./worker');
-const { startSummaryDownload } = require('./ensureSummaryModel');
 
 function createServer({
   env = process.env,
@@ -94,7 +93,6 @@ function createServer({
 }
 
 if (require.main === module) {
-  startSummaryDownload();
   const port = Number(process.env.PORT) || 80;
   const { server, ensureQueue } = createServer();
   server.listen(port, () => {

@@ -2,28 +2,35 @@
 
 const crypto = require('node:crypto');
 
-const INTRO_MODEL = 'hy3';
-const ASR_ENGINE = '16k_zh';
 const ASR_HOST = 'asr.tencentcloudapi.com';
 const ASR_VERSION = '2019-06-14';
-const DEFAULT_CHAT_URL = 'https://tokenhub.tencentmaas.com/v1/chat/completions';
+
+function envValue(env, name) {
+  return String(env[name] || '').trim();
+}
+
+function chatCompletionsUrl(base) {
+  const trimmed = String(base || '').trim().replace(/\/$/, '');
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.endsWith('/chat/completions') ? trimmed : `${trimmed}/chat/completions`;
+}
 
 function resolveTencentConfig(env = process.env) {
-  const secretId = String(env.TENCENTCLOUD_SECRET_ID || env.TCB_SECRET_ID || '').trim();
-  const secretKey = String(env.TENCENTCLOUD_SECRET_KEY || env.TCB_SECRET_KEY || '').trim();
+  const secretId = envValue(env, 'TENCENTCLOUD_SECRET_ID') || envValue(env, 'TCB_SECRET_ID');
+  const secretKey = envValue(env, 'TENCENTCLOUD_SECRET_KEY') || envValue(env, 'TCB_SECRET_KEY');
   if (!secretId || !secretKey) {
     return null;
   }
-  const introKey = String(env.TOKENHUB_API_KEY || '').trim();
-  const chatUrl = String(env.TOKENHUB_BASE_URL || DEFAULT_CHAT_URL).trim().replace(/\/$/, '');
   return {
     secretId,
     secretKey,
-    region: 'ap-shanghai',
-    asrEngine: ASR_ENGINE,
-    introKey,
-    introModel: INTRO_MODEL,
-    chatUrl: chatUrl.endsWith('/chat/completions') ? chatUrl : `${chatUrl}/chat/completions`,
+    region: envValue(env, 'TENCENT_ASR_REGION'),
+    asrEngine: envValue(env, 'TENCENT_ASR_ENGINE'),
+    introKey: envValue(env, 'TOKENHUB_API_KEY'),
+    introModel: envValue(env, 'TOKENHUB_MODEL'),
+    chatUrl: chatCompletionsUrl(envValue(env, 'TOKENHUB_BASE_URL')),
   };
 }
 
@@ -126,9 +133,9 @@ function introFromChatPayload(payload) {
   return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
 }
 
-function buildIntroRequest(systemPrompt, userPrompt) {
+function buildIntroRequest(systemPrompt, userPrompt, model) {
   return {
-    model: INTRO_MODEL,
+    model,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
@@ -187,6 +194,9 @@ async function transcribeSpeech({
   if (!config) {
     return null;
   }
+  if (!config.asrEngine || !config.region) {
+    throw new Error('缺少腾讯云语音识别配置');
+  }
   if (!audioUrl) {
     throw new Error('腾讯云转写缺少音频地址');
   }
@@ -227,7 +237,7 @@ async function writeIntroText({
   userPrompt,
 }) {
   const config = resolveTencentConfig(env);
-  if (!config || !config.introKey) {
+  if (!config || !config.introKey || !config.introModel || !config.chatUrl) {
     return '';
   }
   const response = await fetchImpl(config.chatUrl, {
@@ -236,7 +246,7 @@ async function writeIntroText({
       Authorization: `Bearer ${config.introKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(buildIntroRequest(systemPrompt, userPrompt)),
+    body: JSON.stringify(buildIntroRequest(systemPrompt, userPrompt, config.introModel)),
   });
   const payload = await readJson(response);
   if (!response.ok) {
@@ -253,8 +263,6 @@ async function writeIntroText({
 }
 
 module.exports = {
-  INTRO_MODEL,
-  ASR_ENGINE,
   resolveTencentConfig,
   signTc3,
   segmentsFromAsrData,

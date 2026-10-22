@@ -17,16 +17,24 @@ describe('tencentSpeech', () => {
     assert.equal(resolveTencentConfig({}), null);
   });
 
-  it('沿用云托管里已有的密钥', () => {
+  it('沿用云托管里已有的密钥，引擎和模型只读环境变量', () => {
+    const config = resolveTencentConfig(speechEnv());
+    assert.equal(config.secretId, 'id');
+    assert.equal(config.asrEngine, '16k_zh');
+    assert.equal(config.region, 'ap-shanghai');
+    assert.equal(config.introModel, 'hy3');
+    assert.equal(config.chatUrl, 'https://tokenhub.tencentmaas.com/v1/chat/completions');
+  });
+
+  it('未设置引擎、地域、模型和接口地址时不回落到写死值', () => {
     const config = resolveTencentConfig({
       TCB_SECRET_ID: 'id',
       TCB_SECRET_KEY: 'key',
-      TOKENHUB_API_KEY: 'hub',
     });
-    assert.equal(config.secretId, 'id');
-    assert.equal(config.asrEngine, '16k_zh');
-    assert.equal(config.introModel, 'hy3');
-    assert.equal(config.chatUrl, 'https://tokenhub.tencentmaas.com/v1/chat/completions');
+    assert.equal(config.asrEngine, '');
+    assert.equal(config.region, '');
+    assert.equal(config.introModel, '');
+    assert.equal(config.chatUrl, '');
   });
 
   it('签名与腾讯云文档示例一致', () => {
@@ -49,9 +57,9 @@ describe('tencentSpeech', () => {
     );
   });
 
-  it('简介请求使用 hy3 并关闭深度思考', () => {
-    const body = buildIntroRequest('系统', '用户');
-    assert.equal(body.model, 'hy3');
+  it('简介请求使用调用方传入的模型并关闭深度思考', () => {
+    const body = buildIntroRequest('系统', '用户', 'caller-model');
+    assert.equal(body.model, 'caller-model');
     assert.equal(body.messages[0].content, '系统');
     assert.equal(body.max_tokens, 256);
     assert.deepEqual(body.thinking, { type: 'disabled' });
@@ -91,11 +99,7 @@ describe('tencentSpeech', () => {
       assert.deepEqual(body.thinking, { type: 'disabled' });
       return jsonResponse({ choices: [{ message: { content: '千寻本期讲解如何打开项目。' } }] });
     };
-    const env = {
-      TCB_SECRET_ID: 'id',
-      TCB_SECRET_KEY: 'key',
-      TOKENHUB_API_KEY: 'hub',
-    };
+    const env = speechEnv();
     const segments = await transcribeSpeech({
       fetch: fetchImpl,
       env,
@@ -114,7 +118,33 @@ describe('tencentSpeech', () => {
     assert.equal(calls[0].action, 'CreateRecTask');
     assert.equal(calls[1].action, 'DescribeTaskStatus');
   });
+
+  it('缺少引擎或地域时拒绝转写', async () => {
+    await assert.rejects(
+      () => transcribeSpeech({
+        env: speechEnv({ TENCENT_ASR_ENGINE: '', TENCENT_ASR_REGION: '' }),
+        audioUrl: 'https://audio.example/speech.m4a',
+        fetch: async () => {
+          throw new Error('不应发起请求');
+        },
+      }),
+      /缺少腾讯云语音识别配置/,
+    );
+  });
 });
+
+function speechEnv(overrides = {}) {
+  return {
+    TCB_SECRET_ID: 'id',
+    TCB_SECRET_KEY: 'key',
+    TOKENHUB_API_KEY: 'hub',
+    TENCENT_ASR_ENGINE: '16k_zh',
+    TENCENT_ASR_REGION: 'ap-shanghai',
+    TOKENHUB_MODEL: 'hy3',
+    TOKENHUB_BASE_URL: 'https://tokenhub.tencentmaas.com/v1',
+    ...overrides,
+  };
+}
 
 function jsonResponse(payload, status = 200) {
   return {

@@ -2,7 +2,6 @@
 
 const { hanSyllables, syllableSetsMatch } = require('./hanSyllables');
 
-const SUMMARY_TIMEOUT_MS = 3 * 60 * 1000;
 const MIN_INTRO_LENGTH = 10;
 const MAX_INTRO_LENGTH = 160;
 const FORMAT_TOKENS = ['csv', 'dat', 'txt', 'xls', 'dxf'];
@@ -226,7 +225,6 @@ module.exports = {
   INTRO_SYSTEM_PROMPT,
   MAX_INTRO_LENGTH,
   MIN_INTRO_LENGTH,
-  SUMMARY_TIMEOUT_MS,
   acceptIntro,
   buildIntroUserPrompt,
   hasHomophone,

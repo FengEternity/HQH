@@ -72,12 +72,11 @@ function createDeps(overrides = {}) {
         playback: playback(),
       }),
       transcodeIfNeeded: async (localPath) => ({ path: localPath }),
-      transcribe: async () => ({
-        ok: true,
+      recognizeSpeech: async () => ({
+        grounded: false,
+        intro: '',
         segments: [{ startSec: 0, endSec: 1, text: '打开项目。' }],
-        skipped: false,
       }),
-      summarizeIntro: () => ({ grounded: false, intro: PLACEHOLDER_INTRO }),
       placeholderIntro: PLACEHOLDER_INTRO,
       now: () => 1,
       deleteCloudFiles: async (fileIds) => {
@@ -140,11 +139,8 @@ describe('runOnce', () => {
       transcodeIfNeeded: async () => {
         throw new Error('可播编码不应转码');
       },
-      transcribe: async () => {
+      recognizeSpeech: async () => {
         throw new Error('无音轨不应转写');
-      },
-      summarizeIntro: () => {
-        throw new Error('无音轨不应生成简介');
       },
     });
 
@@ -251,7 +247,7 @@ describe('runOnce', () => {
         path: '/tmp/a-transcoded.mp4',
         uploadedFileId: 'cloud://transcoded-no-audio',
       }),
-      transcribe: async () => {
+      recognizeSpeech: async () => {
         throw new Error('无音轨不应转写');
       },
     });
@@ -501,7 +497,7 @@ describe('runOnce', () => {
         path: '/tmp/a-transcoded.mp4',
         uploadedFileId: 'cloud://transcoded',
       }),
-      transcribe: async () => ({ ok: false }),
+      recognizeSpeech: async () => ({ segments: [] }),
       deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
     });
 
@@ -556,17 +552,16 @@ describe('runOnce', () => {
     assert.deepEqual(deletedFileIds, ['cloud://transcoded', 'cloud://auto-cover']);
   });
 
-  it('Python 转写超时时回写 ASR_FAILED 且不生成简介', async () => {
-    const timeout = Object.assign(new Error('python timeout'), {
-      code: 'ETIMEDOUT',
-    });
+  it('腾讯云转写失败后不再改走本地转写', async () => {
     const { deps, completes } = createDeps({
-      transcribe: async () => {
-        throw timeout;
+      recognizeSpeech: async () => {
+        throw new Error('asr down');
       },
-      summarizeIntro: () => {
-        throw new Error('失败转写不应生成简介');
-      },
+      transcribe: async () => ({
+        ok: true,
+        segments: [{ startSec: 0, endSec: 1, text: '本地字幕' }],
+        skipped: false,
+      }),
     });
 
     assert.equal(await runOnce(deps), 'processed');
@@ -602,7 +597,7 @@ describe('runOnce', () => {
         path: '/tmp/a-transcoded.mp4',
         uploadedFileId: 'cloud://transcoded',
       }),
-      transcribe: async () => {
+      recognizeSpeech: async () => {
         throw new Error('asr down');
       },
       deleteCloudFiles: async (fileIds) => deletedFileIds.push(...fileIds),
@@ -616,13 +611,11 @@ describe('runOnce', () => {
   it('有取证简介时携带字幕和 intro 完成任务', async () => {
     const segments = [{ startSec: 0, endSec: 1, text: '打开项目。' }];
     const { deps, completes } = createDeps({
-      transcribe: async () => ({ ok: true, segments, skipped: false }),
-      summarizeIntro: ({ transcriptSegments, placeholderIntro, title, brandName }) => {
-        assert.deepEqual(transcriptSegments, segments);
-        assert.equal(placeholderIntro, PLACEHOLDER_INTRO);
+      recognizeSpeech: async ({ title, brandName, durationSec }) => {
         assert.equal(title, '千寻仪器数据导入');
         assert.equal(brandName, '千寻');
-        return { grounded: true, intro: '打开项目。' };
+        assert.equal(durationSec, 3);
+        return { grounded: true, intro: '打开项目。', segments };
       },
     });
 
@@ -631,13 +624,14 @@ describe('runOnce', () => {
     assert.equal(completes[0].intro, '打开项目。');
   });
 
-  it('摘要失败时仍回写字幕且不带 intro', async () => {
+  it('腾讯云没有通过检查的简介时仍回写字幕且不带 intro', async () => {
     const segments = [{ startSec: 0, endSec: 1, text: '打开项目。' }];
     const { deps, completes } = createDeps({
-      transcribe: async () => ({ ok: true, segments, skipped: false }),
-      summarizeIntro: async () => {
-        throw new Error('llama missing');
-      },
+      recognizeSpeech: async () => ({
+        grounded: false,
+        intro: '未取证的句子。',
+        segments,
+      }),
     });
 
     assert.equal(await runOnce(deps), 'processed');
@@ -699,7 +693,6 @@ describe('runOnce', () => {
 
   it('腾讯云简介在转码前写回，并且不再走本地转写', async () => {
     const notes = [];
-    let transcribed = false;
     let transcoded = false;
     let notedBeforeTranscode = false;
     let probes = 0;
@@ -739,10 +732,6 @@ describe('runOnce', () => {
         transcoded = true;
         return { path: localPath, uploadedFileId: 'cloud://processed' };
       },
-      transcribe: async () => {
-        transcribed = true;
-        return { ok: true, segments: [], skipped: false };
-      },
       recognizeSpeech: async () => ({
         grounded: true,
         intro: '千寻本期讲解如何打开项目。',
@@ -754,7 +743,6 @@ describe('runOnce', () => {
     assert.equal(notes[0].intro, '千寻本期讲解如何打开项目。');
     assert.equal(notedBeforeTranscode, true);
     assert.equal(transcoded, true);
-    assert.equal(transcribed, false);
     assert.equal(completes[0].intro, '千寻本期讲解如何打开项目。');
   });
 
