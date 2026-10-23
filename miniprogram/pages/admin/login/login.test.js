@@ -41,7 +41,7 @@ afterEach(() => {
   global.wx = originalWx;
 });
 
-it('shows the PIN only before initialization', async () => {
+it('shows the PIN form without checking the staff list', async () => {
   const wxml = fs.readFileSync(path.join(__dirname, 'login.wxml'), 'utf8');
   assert.equal(wxml.includes('wx:if="{{showPin}}"'), true);
 
@@ -55,46 +55,20 @@ it('shows the PIN only before initialization', async () => {
     },
     showToast() {},
   };
+  let identityChecks = 0;
   const page = loadPage({
     catalog: async () => ({ ok: true }),
-    adminMe: async () => ({ ok: true, initialized: false, enabled: false }),
+    adminMe: async () => {
+      identityChecks += 1;
+      return { ok: true, initialized: true, enabled: true };
+    },
   });
 
   await page.onShow();
 
   assert.equal(page.data.showPin, true);
+  assert.equal(identityChecks, 0);
   assert.deepEqual(events, []);
-});
-
-it('sends enabled staff home and initialized non-staff back to Mine', async () => {
-  const events = [];
-  global.wx = {
-    redirectTo({ url }) {
-      events.push(['redirect', url]);
-    },
-    switchTab({ url }) {
-      events.push(['switchTab', url]);
-    },
-    showToast() {},
-  };
-  const staffPage = loadPage({
-    catalog: async () => ({ ok: true }),
-    adminMe: async () => ({ ok: true, initialized: true, enabled: true }),
-  });
-  await staffPage.onShow();
-
-  const userPage = loadPage({
-    catalog: async () => ({ ok: true }),
-    adminMe: async () => ({ ok: true, initialized: true, enabled: false }),
-  });
-  await userPage.onShow();
-
-  assert.deepEqual(events, [
-    ['redirect', '/pages/admin/home/home'],
-    ['switchTab', '/pages/mine/mine'],
-  ]);
-  assert.equal(staffPage.data.showPin, false);
-  assert.equal(userPage.data.showPin, false);
 });
 
 it('bootstraps the first admin without storing a legacy ticket', async () => {

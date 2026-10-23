@@ -19,7 +19,6 @@ Page({
     const doc = normalizeDoc(release);
     this.setData({
       version: doc.version,
-      showAdmin: false,
     });
     const profile = ticketing({ action: 'csGetProfile' })
       .then((result) => this.applyProfile(result))

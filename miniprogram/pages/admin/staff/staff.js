@@ -1,4 +1,5 @@
 const { admin } = require('../../../utils/api');
+const { renderInviteCard } = require('./inviteCard');
 
 function showActionSheet(itemList) {
   return new Promise((resolve) => {
@@ -21,28 +22,6 @@ function confirmDisable() {
       fail: () => resolve(false),
     });
   });
-}
-
-function saveInviteImage(imageBase64) {
-  const filePath = `${wx.env.USER_DATA_PATH}/admin-invite.png`;
-  return new Promise((resolve, reject) => {
-    wx.getFileSystemManager().writeFile({
-      filePath,
-      data: imageBase64,
-      encoding: 'base64',
-      success: resolve,
-      fail: reject,
-    });
-  }).then(
-    () =>
-      new Promise((resolve, reject) => {
-        wx.saveImageToPhotosAlbum({
-          filePath,
-          success: resolve,
-          fail: reject,
-        });
-      }),
-  );
 }
 
 function presentStaff(item) {
@@ -155,7 +134,10 @@ Page({
           return;
         }
         try {
-          await saveInviteImage(result.imageBase64);
+          await renderInviteCard(wx, this, {
+            imageBase64: result.imageBase64,
+            expiresAt: result.expiresAt,
+          });
         } catch (error) {
           wx.showToast({ title: '保存失败', icon: 'none' });
         }

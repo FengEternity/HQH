@@ -1,6 +1,6 @@
 <view class="page">
   <profile-gate />
-  <view class="masthead">
+  <view class="masthead" bindtap="onTitleTap">
     <view class="mark">优</view>
     <view class="masthead-copy">
       <text class="tile-title">优度</text>

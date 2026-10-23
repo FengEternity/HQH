@@ -193,12 +193,18 @@ describe('home catalog failures', () => {
 });
 
 describe('admin entry gesture', () => {
-  it('never exposes title-tap navigation', () => {
+  it('opens admin login on the eighth title tap', () => {
+    const urls = [];
     const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
-    const wxml = fs.readFileSync(path.join(__dirname, 'index.wxml'), 'utf8');
-
-    assert.equal(page.onTitleTap, undefined);
-    assert.equal(Object.hasOwn(page, 'tapCount'), false);
-    assert.equal(wxml.includes('bindtap="onTitleTap"'), false);
+    global.wx = {
+      navigateTo({ url }) {
+        urls.push(url);
+      },
+    };
+    for (let i = 0; i < 7; i += 1) page.onTitleTap();
+    assert.deepEqual(urls, []);
+    page.onTitleTap();
+    assert.deepEqual(urls, ['/pages/admin/login/login']);
+    assert.equal(page.tapCount, 0);
   });
 });

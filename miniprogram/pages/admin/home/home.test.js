@@ -133,6 +133,26 @@ describe('admin home workbench', () => {
     assert.equal(events.filter((item) => item[0] === 'nav').length, navigationCount);
   });
 
+  it('keeps the staff row visible while identity reloads', async () => {
+    let resolveIdentity;
+    global.wx = wxStub([]);
+    const page = loadPage({
+      adminMe: () =>
+        new Promise((resolve) => {
+          resolveIdentity = resolve;
+        }),
+      ticketingAdmin: async () => ({ ok: true, threads: [] }),
+    });
+    page.setData({ role: 'admin' });
+
+    const shown = page.onShow();
+
+    assert.equal(page.data.role, 'admin');
+    resolveIdentity({ ok: true, enabled: true, role: 'admin' });
+    await shown;
+    assert.equal(page.data.role, 'admin');
+  });
+
   it('returns non-staff to Mine without loading protected jobs', async () => {
     const events = [];
     const actions = [];

@@ -378,7 +378,7 @@ async function adminCreateInvite(event, openid) {
     pin: process.env.ADMIN_PIN,
   });
   const code = crypto.randomBytes(18).toString('base64url');
-  await createInvite(db, {
+  const invite = await createInvite(db, {
     openid,
     role: event.role,
     code,
@@ -392,6 +392,7 @@ async function adminCreateInvite(event, openid) {
     return {
       ok: true,
       generated: true,
+      expiresAt: invite.expiresAt,
       imageBase64: result.buffer.toString('base64'),
       contentType: 'image/jpeg',
       message: '',
@@ -400,6 +401,7 @@ async function adminCreateInvite(event, openid) {
     return {
       ok: true,
       generated: false,
+      expiresAt: invite.expiresAt,
       imageBase64: '',
       contentType: '',
       message: '发布后才能生成小程序码',

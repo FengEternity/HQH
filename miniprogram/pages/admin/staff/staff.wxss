@@ -5,3 +5,11 @@
 .staff-invite {
   margin-top: 12rpx;
 }
+
+.invite-card {
+  position: fixed;
+  left: -2000px;
+  top: 0;
+  width: 430px;
+  height: 500px;
+}

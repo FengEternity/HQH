@@ -16,11 +16,11 @@ Page({
     const mini = account.miniProgram || {};
     this.setData({
       aboutHint: envLabel(mini.envVersion) + ' · ' + doc.version,
-      role: '',
     });
     return adminMe()
       .then((identity) => {
         if (!identity.enabled) {
+          this.setData({ role: '' });
           wx.switchTab({ url: '/pages/mine/mine' });
           return;
         }

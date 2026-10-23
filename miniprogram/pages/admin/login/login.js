@@ -1,24 +1,9 @@
-const { catalog, adminMe } = require('../../../utils/api');
+const { catalog } = require('../../../utils/api');
 
 Page({
-  data: { pin: '', showPin: false },
+  data: { pin: '', showPin: true },
   onShow() {
-    this.setData({ showPin: false });
-    return adminMe()
-      .then((result) => {
-        if (result.enabled) {
-          wx.redirectTo({ url: '/pages/admin/home/home' });
-          return;
-        }
-        if (result.initialized) {
-          wx.switchTab({ url: '/pages/mine/mine' });
-          return;
-        }
-        this.setData({ showPin: true });
-      })
-      .catch(() => {
-        wx.switchTab({ url: '/pages/mine/mine' });
-      });
+    this.setData({ showPin: true });
   },
   onPin(e) {
     this.setData({ pin: e.detail.value });

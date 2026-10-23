@@ -23,4 +23,5 @@
   </view>
 
   <view class="btn staff-invite" bindtap="createInvite">创建邀请</view>
+  <canvas type="2d" id="invite-card" class="invite-card"></canvas>
 </view>

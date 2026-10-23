@@ -201,6 +201,7 @@ describe('adminAccess', () => {
     assert.ok(body.indexOf('createInvite(db,') < body.indexOf('cloud.openapi.wxacode.get('));
     assert.match(body, /result\.buffer/);
     assert.match(body, /toString\('base64'\)/);
+    assert.equal(body.split('expiresAt: invite.expiresAt').length - 1, 2);
     assert.match(body, /generated: false/);
     assert.match(body, /发布后才能生成小程序码/);
     assert.doesNotMatch(body, /\.remove\(/);

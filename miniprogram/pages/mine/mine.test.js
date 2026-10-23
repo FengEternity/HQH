@@ -102,6 +102,24 @@ describe('mine page', () => {
     assert.equal(unknown.data.showAdmin, false);
   });
 
+  it('keeps the ops row visible while identity reloads', async () => {
+    let resolveIdentity;
+    const page = loadPage({
+      adminMe: () =>
+        new Promise((resolve) => {
+          resolveIdentity = resolve;
+        }),
+    });
+    page.setData({ showAdmin: true });
+
+    const shown = page.onShow();
+
+    assert.equal(page.data.showAdmin, true);
+    resolveIdentity({ ok: true, enabled: true });
+    await shown;
+    assert.equal(page.data.showAdmin, true);
+  });
+
   it('shows the ops row for enabled staff even when profile loading fails', async () => {
     const urls = [];
     const page = loadPage({

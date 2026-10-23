@@ -74,6 +74,50 @@ function wxStub(events, actionTaps = [], modalConfirms = []) {
         },
       };
     },
+    createSelectorQuery() {
+      const canvas = {
+        getContext() {
+          return {
+            scale() {},
+            fillRect() {},
+            drawImage() {},
+            fillText(text, x, y) {
+              events.push(['fillText', text, x, y]);
+            },
+          };
+        },
+        createImage() {
+          const image = {};
+          Object.defineProperty(image, 'src', {
+            set() {
+              if (typeof image.onload === 'function') image.onload();
+            },
+          });
+          return image;
+        },
+      };
+      const query = {
+        in() {
+          return query;
+        },
+        select() {
+          return query;
+        },
+        fields() {
+          return query;
+        },
+        exec(callback) {
+          callback([{ node: canvas }]);
+        },
+      };
+      return query;
+    },
+    getWindowInfo() {
+      return { pixelRatio: 1 };
+    },
+    canvasToTempFilePath({ success }) {
+      success({ tempFilePath: '/tmp/user-data/admin-invite-card.png' });
+    },
     saveImageToPhotosAlbum({ filePath, success }) {
       events.push(['save', filePath]);
       success();
@@ -293,6 +337,7 @@ describe('admin staff page', () => {
       return {
         ok: true,
         generated: true,
+        expiresAt: Date.parse('2026-10-24T03:17:00.000Z'),
         imageBase64: 'base64-image',
         contentType: 'image/jpeg',
         message: '',
@@ -303,10 +348,17 @@ describe('admin staff page', () => {
 
     assert.deepEqual(calls, [{ action: 'adminCreateInvite', role: 'operator' }]);
     assert.deepEqual(
+      events.filter((item) => item[0] === 'fillText').map((item) => item[1]),
+      ['2026-10-24 11:17', '24 小时有效'],
+    );
+    assert.ok(
+      events.filter((item) => item[0] === 'fillText').every((item) => item[3] > 360),
+    );
+    assert.deepEqual(
       events.filter((item) => item[0] === 'write' || item[0] === 'save'),
       [
-        ['write', '/tmp/user-data/admin-invite.png', 'base64-image', 'base64'],
-        ['save', '/tmp/user-data/admin-invite.png'],
+        ['write', '/tmp/user-data/admin-invite-qr.jpg', 'base64-image', 'base64'],
+        ['save', '/tmp/user-data/admin-invite-card.png'],
       ],
     );
   });
@@ -367,7 +419,12 @@ describe('admin staff page', () => {
     global.wx = wx;
     const page = loadPage(async () => {
       createCount += 1;
-      return { ok: true, generated: true, imageBase64: 'image' };
+      return {
+        ok: true,
+        generated: true,
+        expiresAt: Date.parse('2026-10-24T03:17:00.000Z'),
+        imageBase64: 'image',
+      };
     });
 
     const first = page.createInvite();
@@ -422,7 +479,12 @@ describe('admin staff page', () => {
     let createCount = 0;
     const page = loadPage(async (data) => {
       if (data.action === 'adminCreateInvite') createCount += 1;
-      return { ok: true, generated: true, imageBase64: 'image' };
+      return {
+        ok: true,
+        generated: true,
+        expiresAt: Date.parse('2026-10-24T03:17:00.000Z'),
+        imageBase64: 'image',
+      };
     });
 
     await page.createInvite();
