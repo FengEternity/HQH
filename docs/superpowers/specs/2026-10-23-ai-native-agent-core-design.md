@@ -1,7 +1,7 @@
 # AI Native Agent Core
 
 日期：2026-10-23  
-状态：架构规格。本文不实现云函数，也不选择模型供应商。  
+状态：架构已定。本仓库落地 Core 契约与 Forseti 上报；Forseti 服务从自己的 GitHub 仓库发布到微信云托管。问答模型使用当前云开发环境的生文模型列表，由运营工作台按场景选择。  
 分支：`dev-agent-core`（从 `dev` 迁出）  
 取代：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md` 中的 Agent harness，以及 `docs/superpowers/specs/2026-09-13-unified-search-context-hub-design.md` 第 3 节冻结的问答接口。
 
@@ -23,14 +23,17 @@
 - 两个场景的会话不合并。播放页只回答当前已发布视频及其关联上架商品。
 - 客服只在领域状态允许时进入模型。转人工之后只追加用户消息。
 - 主体从第一期就区分 `end_user` 与 `operator`。第一期不启用运营 profile，也不允许运营身份调用 C 端 profile。
-- 一次回合的排障可以在云开发日志里按 `requestId` 检索，不自建指标库。
+- 一次 Agent 回合的调用链出现在 Forseti 里，能按模型、工具、耗时和 token 展开。云函数是否超时仍看云开发监控。
 
 第一期不做：
 
 - 跨场景自动跳转，或把播放页历史并入客服线程。
 - 运营助手、搜索框闲聊、下单、退款、改订单。
 - 抽帧、按播放进度切章节、向量库、知识库全文注入。
-- 把日志投递到腾讯云 CLS，或接入腾讯云 APM 探针。
+- 把运行时换成腾讯云 ADP，或使用 ADP 的 Agent Harness。
+- 使用 Onesuite-Pilot、Pi Coding Agent 采集器或 APM 探针。这些接入面向主机、容器或 Python/Java 服务，不是微信云函数。
+- 把云开发日志绑定投递到 CLS。那是另一条单向投递，不能代替 Agent 调用链。
+- 把 Forseti 源码并入本仓库，或把它放进 `video-ingest` 容器。
 - 在小程序里运行 Agent 循环，或让客户端上传 prompt、工具列表、openid、权限。
 
 若以后做跨场景引用，只能由用户显式生成一份最小化引用包（视频 id，以及用户选中的消息 id）。客服读取这份引用并写入自己的线程。两个会话仍然分开。
@@ -102,12 +105,18 @@ scope 由领域服务生成，Core 不信任客户端拼接的会话键。
 profile 是带版本的服务端模块，不是运营可编辑的 prompt 文档。一个 profile 包含五部分：
 
 - `scopeResolver`：核对场景对象并生成 scope。
-- `policy`：主体、输入长度、工具上限、超时、上下文预算、模型路由。模型名只来自云函数环境变量。
+- `policy`：主体、输入长度、工具上限、超时、上下文预算、模型路由。问答模型名按使用场景存在 `admin_config` 文档 `agent_models`。运营工作台从服务端名单选择，默认 `hy3`。未保存时，若 `AGENT_MODEL_NAME` 落在名单内则使用它，否则仍是 `hy3`。
 - `contextProvider`：每一轮重新投影该 profile 需要的材料。
 - `toolset`：本 profile 显式注册的工具。
 - `renderer`：把模型输出收成正文和白名单卡片。
 
 更换 prompt、工具或权限时递增 profile 版本。运行记录保存实际执行的版本。
+
+问答使用当前云开发环境已经开通的生文模型。云函数通过 `cloud.ai().createModel("cloudbase")` 调用。服务端名单是云开发文档里支持工具调用的生文模型原名，并包含控制台出现过的 `deepseek-v4.1-flash-1017`。角色、翻译和纯视觉模型不进入名单。启用中的管理员和运营在工作台「模型」里为播放页问答、客服各选一个名字，再用单独的「测试」做一次固定短句调用。页面不填写基址或密钥，客户端也不能在提问时提交模型名。播放页问答读取 `video_doc`。客服的名字先写入同一文档，等客服回合接入时读取 `customer_service`。控制台里的「接入 Agent」不作为运行时。
+
+云函数不读取视频预处理的 `TOKENHUB_*`，也不使用语音识别的 `SecretId` / `SecretKey`。视频预处理容器继续在云托管上使用自己的 `TOKENHUB_BASE_URL`、`TOKENHUB_API_KEY`、`TOKENHUB_MODEL`。
+
+调用依赖 `wx-server-sdk` 4.0.1 及以上的 `cloud.ai()`。云函数初始化超时设为 60 秒，单次模型调用超时 20 秒。模型列表里没有该模型、或调用失败时，返回 `MODEL_UNAVAILABLE`。
 
 ### 5.1 `video_doc@v1`
 
@@ -209,33 +218,58 @@ profile 是带版本的服务端模块，不是运营可编辑的 prompt 文档�
 
 ## 10. 可观测性
 
-可观测性使用微信云开发日志监控和腾讯云可观测平台。不自建指标集合，不把 APM 探针作为云函数接入方式。
+可观测性分成两层。Agent 调用链用已有的 Forseti，不改用腾讯云 ADP，也不自建指标库。
 
-每一轮用 `wx-server-sdk` 的 `cloud.logger()` 写结构化事件。`logger()` 在云函数入口内调用。固定事件为 `gate`、`context`、`model`、`tool`、`persist`。字段只包括：
+| 层 | 落点 | 回答的问题 |
+| --- | --- | --- |
+| Agent 调用链 | Forseti | 哪一步模型或工具失败、耗时和 token |
+| 云函数基础设施 | 云开发日志与腾讯云可观测平台 | 云函数是否报错、超时或被限流 |
 
-- `event`、`status`、`durationMs`、`errorClass`
-- `requestId`、`agentRunId`、`profileId`、`profileVersion`
-- 模型事件额外有 `model`、`tokenInput`、`tokenOutput`
-- 工具事件额外有 `toolName`、`resultCode`
-- `enteredModel`：未进入模型的终止事件为 `false`
+曾比较过的三个腾讯云产品不作为调用链后端：
 
-云开发服务调用日志已有 `traceId` 与 `spanId`，用于关联同一次请求中的云函数、数据库和存储。Agent 事件使用云函数 `requestId`，不另造链路 id。
+- 腾讯云可观测平台只看云函数、数据库等资源指标，看不到模型调用和工具调用。
+- 腾讯云 ADP 是整套智能体开发平台。它的 AgentOps 调用链属于跑在 ADP 上的智能体。接入它就要换掉 `pi-agent-core` 和本规格的 profile。
+- 腾讯云 Agent 可观测可以接收自研应用的 OTLP，但采集器面向主机和容器里的现成 Agent。本产品已经有 Forseti，调用链不再另接一套。
 
-调用次数、运行时间、错误次数、超时和限流使用云函数自带监控。告警在腾讯云可观测平台配置，策略类型选择「云开发」。这些指标看不到 profile、工具失败和 token；业务维度只存在结构化日志里。
+云函数在用户可见回复落库之后、函数返回之前，把这一轮导出为 OTLP JSON，经 `cloud.callContainer` 发给 Forseti。路径是 `POST /v1/traces`，请求头带 `X-WX-SERVICE: forseti` 和 `Authorization: Basic base64(public_key:secret_key)`。这与 `catalog` 唤醒 `video-ingest` 的调用方式相同，不走公网 URL。`public_key` 和 `secret_key` 只放云函数环境变量。导出失败只记云开发日志，不回滚已经成功的回复，也不抛未捕获异常。
 
-完整提示词、消息正文、工具参数、工具结果原文、openid、文件 id 和密钥不写日志。日志写入失败不回滚已经成功的用户回复。
+一条回合是一棵 Trace。固定 Span 为 `gate`、`context`、`model`、`tool`、`persist`。Span 只带：
 
-第一期交付日志检索和云函数基础设施告警。按 profile 做仪表盘、长期保留或业务字段告警时，再把云开发日志投递到腾讯云 CLS。绑定后由 CLS 单独计费且不能切回，因此不是第一期前置。
+- `status`、`durationMs`、`errorClass`、`enteredModel`
+- 云函数 `requestId`、`agentRunId`、`profileId`、`profileVersion`、`scopeHash`
+- 模型 Span 额外有模型名、`tokenInput`、`tokenOutput`
+- 工具 Span 额外有 `toolName`、`resultCode`
+
+不上传提示词、用户正文、工具参数、工具结果原文、openid、文件 id 和密钥。Forseti 会保存上报内容，所以脱敏在离开云函数之前完成。控制台能展开调用树和用量，不能回放原文。
+
+云开发服务调用日志仍用自己的 `traceId` / `spanId` 关联云函数、数据库和存储。它和 Forseti 的 Trace 不是同一条链路；两边用 `requestId` 对照。
+
+## 10.1 Forseti 部署
+
+Forseti 是独立仓库 `FengEternity/Forseti`，部署单位就是这个 GitHub 仓库，不把源码并入 HQH，也不打进 `video-ingest` 镜像。
+
+发布用微信云托管的「绑定 GitHub 仓库」。授权后拉取指定的已验收分支或标签，构建镜像并发布，配置留在该服务的流水线里。不用手动上传代码包，那种方式上限 2 MiB。不绑定自建账密仓库。流水线不跟踪未验收的功能分支。
+
+API 镜像是仓库里的 `infra/Dockerfile.api`，监听 `18000`。构建上下文是仓库根目录，因为该文件复制整个仓库和 `infra/forseti.docker.json`。控制台若把目标目录当成构建上下文，不能填 `infra/`。
+
+它和 `video-ingest` 同在一个云开发环境，但是另一个服务，名称 `forseti`。`video-ingest` 是最小实例数 0 的工人：`catalog` 调用 `POST /run`，结果写回云数据库和云存储，容器本地文件可以丢。Forseti 的 Trace 在自己的 `/data`，运营还要打开页面查看，所以：
+
+- 最小实例数是 1。缩到 0 时，云函数那一次短上报赶不上冷启动。
+- `/data` 必须是重启后还在的磁盘。没有持久盘就不发布，不能把 Trace 写在临时盘里。
+- Web 工作台若要给人看，单独建服务并打开访问入口，使用 Forseti 自己的登录。`video-ingest` 没有页面，所以关闭公网；这个开关不能照抄到 Forseti Web。云函数只访问 API。
+
+密钥、`FORSETI_SESSION_SECRET` 和管理员口令由云托管环境变量注入，不进 GitHub，也不进 HQH。
 
 ## 11. 测试
 
-测试分三层，核心自动化不依赖真实模型：
+核心自动化不依赖真实模型：
 
 - Core：非法 profile、主体不匹配、工具不在白名单、伪造 openid、卡片 id 不是本轮工具结果、超限停止。
 - 领域适配：已发布视频才可提问；客服 `open` 才能运行；`waiting_human`、`human`、`closed` 不调用 Core；`claim`、`human`、`missing` 和显式转人工不进入模型。
 - 替身模型：同一幂等键不重复写助手消息、不重复转人工；超时保留用户消息并返回 `TIMEOUT`；内容安全拒绝不写库。
+- 调用链导出：Span 不含提示词、正文、工具原文和 openid；导出失败时用户回复仍成功。
 
-真实模型只做受控 smoke test，不作为这三层的通过条件。
+真实模型只做受控 smoke test，不作为上面这些自动化的通过条件。
 
 ## 12. 与搜索规格的关系
 
@@ -245,4 +279,4 @@ profile 是带版本的服务端模块，不是运营可编辑的 prompt 文档�
 
 ## 13. 实现顺序
 
-本文通过审阅后再拆实现计划。顺序是：Core 契约与替身执行器、播放页 `video_doc@v1`、客服 `customer_service@v1` 接入 `ticketing`。不要在一份计划里同时改检索、支付和工单状态机。
+本仓库先落地 Core 契约、替身执行器和 Forseti OTLP 上报。随后是播放页 `video_doc@v1`，再把 `customer_service@v1` 接入 `ticketing`。Forseti 容器在微信云托管控制台按第 10.1 节发布，不在本仓库构建。不要在一份改动里同时改检索、支付和工单状态机。

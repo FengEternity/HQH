@@ -1,0 +1,23 @@
+<view class="page">
+  <view class="model-block" wx:for="{{places}}" wx:key="id">
+    <view class="tile-title">{{item.label}}</view>
+    <view class="model-line">
+      <picker
+        class="model-picker"
+        mode="selector"
+        range="{{modelIds}}"
+        value="{{item.modelIndex}}"
+        data-place="{{item.id}}"
+        bindchange="onPick"
+      >
+        <view class="model-field">
+          <text class="model-field-name">{{item.model}}</text>
+          <view class="model-caret"></view>
+        </view>
+      </picker>
+      <view class="model-test" data-place="{{item.id}}" bindtap="testModel">测试</view>
+    </view>
+    <view wx:if="{{item.note}}" class="model-note {{item.noteOk ? 'model-note-ok' : 'model-note-bad'}}">{{item.note}}</view>
+  </view>
+  <view wx:if="{{error}}" class="model-note model-note-bad">{{error}}</view>
+</view>

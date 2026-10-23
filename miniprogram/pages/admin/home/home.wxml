@@ -13,6 +13,13 @@
     </view>
     <text class="muted">进入</text>
   </view>
+  <view class="hub-item" bindtap="openModels">
+    <view>
+      <view class="tile-title">模型</view>
+      <view class="muted">选择各处使用的生文模型并测试</view>
+    </view>
+    <text class="muted">进入</text>
+  </view>
   <view class="hub-item" bindtap="openInbox">
     <view>
       <view class="tile-title">客服工单</view>

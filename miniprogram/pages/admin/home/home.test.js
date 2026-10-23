@@ -77,6 +77,7 @@ describe('admin home workbench', () => {
     assert.equal(wxml.includes('内容运营'), true);
     assert.equal(wxml.includes('商品运营'), true);
     assert.equal(wxml.includes('客服工单'), true);
+    assert.equal(wxml.includes('模型'), true);
     assert.equal(wxml.includes('人员'), true);
     assert.equal(wxml.includes('管理员与运营'), true);
     assert.equal(wxml.includes('wx:if="{{role === \'admin\'}}"'), true);
@@ -106,6 +107,7 @@ describe('admin home workbench', () => {
     page.openCatalog();
     page.openShop();
     page.openInbox();
+    page.openModels();
     page.openStaff();
     page.openAbout();
 
@@ -119,6 +121,7 @@ describe('admin home workbench', () => {
         ['nav', '/pages/admin/catalog/catalog'],
         ['nav', '/pages/admin/shop/shop'],
         ['nav', '/pages/admin/inbox/inbox'],
+        ['nav', '/pages/admin/models/models'],
         ['nav', '/pages/admin/staff/staff'],
         ['nav', '/pages/about/about?staff=1'],
       ],

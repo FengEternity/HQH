@@ -68,17 +68,26 @@
 
       <view wx:else class="player-ask">
         <scroll-view class="player-ask-thread" scroll-y>
-          <view class="player-ask-empty muted">
-            本片问答即将开放。以后可针对当前讲解提问，不跳转客服。
+          <view wx:if="{{!messages.length}}" class="player-ask-empty muted">
+            针对当前讲解提问，不会跳到客服。
           </view>
+          <view
+            wx:for="{{messages}}"
+            wx:key="id"
+            class="player-ask-row player-ask-row-{{item.role}}"
+          >
+            <text>{{item.text}}</text>
+          </view>
+          <view wx:if="{{askError}}" class="player-ask-error">{{askError}}</view>
         </scroll-view>
         <view class="player-ask-dock">
           <input
             class="player-ask-input"
-            placeholder="问答即将开放"
+            placeholder="问问这条讲解"
             value="{{inputDraft}}"
-            disabled
             bindinput="onAskInput"
+            confirm-type="send"
+            bindconfirm="onAskSend"
           />
           <view class="btn player-ask-send" bindtap="onAskSend">发送</view>
         </view>

@@ -78,6 +78,9 @@ Page({
   openInbox() {
     wx.navigateTo({ url: '/pages/admin/inbox/inbox' });
   },
+  openModels() {
+    wx.navigateTo({ url: '/pages/admin/models/models' });
+  },
   openStaff() {
     if (this.data.role !== 'admin') return;
     wx.navigateTo({ url: '/pages/admin/staff/staff' });

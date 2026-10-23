@@ -51,6 +51,15 @@ function ticketing(data) {
     });
 }
 
+function agent(data) {
+  return wx.cloud
+    .callFunction({ name: 'agent', data })
+    .then(unwrapCloudResult)
+    .catch((err) => {
+      throw mapCloudCallError(err, 'agent');
+    });
+}
+
 function admin(data) {
   return catalog(data);
 }
@@ -71,6 +80,7 @@ module.exports = {
   catalog,
   ticketing,
   shop,
+  agent,
   admin,
   ticketingAdmin,
   shopAdmin,
