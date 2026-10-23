@@ -9,7 +9,7 @@
 
 ## 图一：搜索+AI问答总图
 
-两条进线（架构）：搜索框只进 `search`；问答进 `agent`，需要找片/找货时用 tool **`search`** 打回同一套 I/O。`search` 不跑 pi-agent-core。**本期只接通讲解框。**
+两条进线（架构）：搜索框只进 `search`；问答进 Agent Core，需要找片/找货时用 tool **`search`** 打回同一套 I/O。`search` 不跑 pi-agent-core。问答 profile、权限和可观测性以 `docs/superpowers/specs/2026-10-23-ai-native-agent-core-design.md` 为准。**本期只接通讲解框。**
 
 ```mermaid
 flowchart TB
@@ -36,8 +36,8 @@ flowchart TB
 
   BoxV -->|"入 scene=video"| searchFn
   searchFn -->|出 items 全为 video| BoxV
-  Player -->|入 profile=video_doc| agentFn
-  CS -->|入 profile=cs| agentFn
+  Player -->|播放页问答| agentFn
+  CS -->|客服问答| agentFn
   agentFn -->|出 文本 + 卡片| Player
   agentFn -->|出 文本 + 卡片| CS
 ```
@@ -208,61 +208,18 @@ L2 开工验收必须包含：上架/改文案/下架后该 `sourceId` 的 chunk
 
 ---
 
-## 3 关于问答 Agent（本分支不实现；冻结接口）
+## 3 问答 Agent
 
-**本分支（`dev-ai-search`）不实现本节代码。** 仅冻结 profile / tool / 投影，供下一分支引用。search 评审通过不依赖本节实现。
+本节不再冻结 profile 和投影。问答架构见 `docs/superpowers/specs/2026-10-23-ai-native-agent-core-design.md`。`dev-ai-search` 仍不实现问答。
 
-### 3.1 问答入口 → `agent`
+和搜索有关的约束保持不变：
 
-小程序不跑循环，只把这一轮交给云函数。
-
-| 来源     | 入 `agent`                                                                      | 出回页面                                |
-| ------ | ------------------------------------------------------------------------------ | ----------------------------------- |
-| 播放页窗口  | `{ profile: 'video_doc', message, videoId, currentTimeSec? }`，`videoId` 由当前页带上 | `{ text, cards[] }`，`cards` 可点视频/商品 |
-| 客服 tab | `{ profile: 'cs', message }`                                                   | 同上；转人工后本轮可只有系统句，不再出 AI 气泡           |
-
-`profile` 非法、或缺 `videoId`（仅 `video_doc`）→ `BAD_INPUT`，不调模型。
-
-`video_doc` 必须先加载该 `videoId`：**仅 `status=published` 可继续**；否则 `NOT_FOUND`，不调模型、不跑 RAG、不注入草稿/下架文案。未登录可对**已上架当前片**提问；下单仍走商城。
-
-### 3.2 `agent` 内部
-
-| 环节            | 入                           | 出                                                          |
-| ------------- | --------------------------- | ---------------------------------------------------------- |
-| 校验            | 原始请求                        | 合法 profile + **wxContext OPENID** 会话键；否则直接错误                |
-| 上下文投影         | profile、会话键、本轮 `message`、历史 | system + 本轮非对话材料 + 允许的 tools                               |
-| pi-agent-core | 投影结果                        | 助手 `text` / `cards`；需要找片找货时调用 tool `search`（I/O = §2.1）     |
-
-会话键：`video_doc` = `OPENID + videoId`；`cs` = `OPENID`。读写历史都按该键隔离。
-
-`search` 未就绪时不要接 `agent`。
-
-### 3.3 上下文中枢与 profile 一览
-
-所有进 `agent` 的请求带 `profile`（不要和搜索框的 `scene=video|product` 混用）。中枢按 profile **投影** 成：system 片段 + 本轮附加材料 + 允许的 tools。不接文件 / shell 类 tool。播放页会话和客服会话不合并。
-
-| profile                      | 入口                        | 会话键                | 注入材料                                         | tools                                                                 |
-| ---------------------------- | ------------------------- | ------------------ | -------------------------------------------- | --------------------------------------------------------------------- |
-| `video_doc`                  | 播放页：播放器 → 资料 → 关联商品 → 对话区 | `OPENID + videoId` | 当前片标题/简介/标签/品牌型号；可选 `currentTimeSec`；该片关联上架商品 | 当前视频文档字段（只读）；该片 `video_shop_links` 上的上架商品（只读）。无全库 `search`。无转人工。不把会话改成 `cs`。 |
-| `cs`                         | 客服 tab 一条时间线              | `OPENID`           | 无强制「当前片」；可带最近一次 `search` 摘要                  | 日后 tool `search`。本期云函数只实现 `scene=video`；`scene=product` 待商城检索分支。转人工。查订单本设计不注册（计划 06）。 |
-| （非 agent）`video`              | 讲解搜索框                       | 无会话                | 不经中枢                                         | 无                                                                     |
-
-**拒绝请求：** `agent` 只接受 `video_doc` \| `cs`。缺省、拼错、或把搜索框用的 `video`/`product` 传来 → `{ ok: false, code: BAD_INPUT }`。
-
-**客服转人工：** 入：常驻按钮。出：线程 `waiting_human` + 系统句「已转交」；之后用户消息只追加、不再进内核。不跳微信原生客服。运营回复与订阅属计划 06。无依据则说不知道；能引用则出可点卡片，不编造物流、不代替下单。
-
-kb 摘要：仅在 L2/`passages` 就绪后注入；kb 若含内部运营材料，不得对未登录播放页默认全量公开——L2 分支须再定 kb 可见范围。
-
-### 3.4 投影规则
-
-- 只注入本 profile 需要的材料。客服上下文不要塞进某条视频的全部转写。播放页**不改 profile、不跳客服 tab、不注册转人工**。
-- **与总 spec 一致，不改「请去打开 B」。** `video_doc` 只答当前 `videoId` 文档与该片关联上架商品。问到其它型号/其它视频：说明请回讲解搜索或打开对应播放页，可给搜索建议；**不**注入 B 的全文，**不**把播放页做成全站检索。跨片对比与找货放在 `cs`。
-- 多轮：历史由 pi-agent-core / 消息表维护；中枢每轮重算非对话投影，不把简介只写在第一轮 system 里。消息表仅云函数可写；应用日志不记录原文 query/message/OPENID。
-- 单轮 tool 建议 ≤5；超时返回可理解错误，会话可重试。
-
-### 3.5 播放页抽帧（默认关）
-
-一期：`currentTimeSec` 只当文案（「约第 N 秒」），默认不截帧。预留 `frameFileIds[]`。开关例如 `ENABLE_PLAYER_FRAMES=0`。
+- 搜索框不进入 Agent Core。`search` 不运行 `pi-agent-core`。
+- 客服找片、找货时调用 tool `search`，入参和出参使用本文 §2.1。Agent 不直连 `search_chunks`。
+- 播放页 profile 没有全库 `search`。它只回答当前已发布视频和关联上架商品。
+- 本期 `search` 只接受 `scene=video`。商城检索落地前，客服工具不发送 `scene=product`。
+- 搜索日志不记录原始 query、消息正文和 OPENID。Agent 日志的字段限制见 2026-10-23 规格第 10 节。
+- kb 片段只有在 L2 的 `passages` 就绪后才能注入问答。kb 若含内部运营材料，不得对未登录播放页默认全量公开；可见范围仍在 L2 开工时决定。
 
 ---
 
@@ -285,7 +242,7 @@ kb 摘要：仅在 L2/`passages` 就绪后注入；kb 若含内部运营材料�
 
 ## 5. 已拍板（审查最佳判断）
 
-1. **播放页就地答 B：不改总 spec。** `video_doc` 只答当前片 + 关联上架商品；其它型号请去搜索/打开 B。跨片走客服。
+1. **播放页只回答当前片。** 该产品决定已写入 2026-10-23 Agent Core 规格：`video_doc` 只答当前片和关联上架商品；其他型号请去搜索或打开对应播放页。跨片走客服。
 2. **嵌入模型：** 仍待选供应商（见文末）。L2 未开工前不阻塞 `search` L1。
 3. **L1 读库故障：选 A。** 整单 `ok: false`。本期无「L2 有结果仍出列表」。
 4. **RRF：选 A。** 一期不做。L2 开工后仍先按 L1 规则 + `limit`，不以跨路分数比大小。

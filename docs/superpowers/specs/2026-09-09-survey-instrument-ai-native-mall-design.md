@@ -9,13 +9,15 @@
 
 需求总表：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-req-board.md`
 
+Agent 运行时以 `docs/superpowers/specs/2026-10-23-ai-native-agent-core-design.md` 为准。本文继续描述商城、播放和客服的产品行为。文中的 `cs` profile、`ai` 线程状态和独立 `cs` 云函数不再作为实现依据；客服状态以现网 `ticketing` 为准。
+
 ## 背景与决策
 
 一期已经能做品牌/视频目录、关键词搜索、播放、运营入库、首页客服留言。没有可购商品、没有支付订单，也没有统一的检索服务。
 
 本期要在同一小程序里补上两件事：讲解之后能买；围绕已入库内容做 AI 搜索、播放页文档问答和 AI 客服。实现路径定为继续云开发，商城与 AI 以新云函数接入，不新开用户端、不新开独立 Web 后台。
 
-对话运行时：播放页问答与客服 tab 的 AI **共用 `@earendil-works/pi-agent-core` 作为 harness 内核**（Agent 循环、工具调用、状态与事件流），模型访问走 `@earendil-works/pi-ai`。业务差异只体现在 system prompt、工具集和会话作用域，不另写一套生成循环。不接入 `pi-coding-agent` 的文件系统 / shell 类工具。
+对话运行时见 2026-10-23 Agent Core 规格。播放页问答与客服 AI 共用 `pi-agent-core` 的模型循环；profile、权限、会话和可观测性不在本文展开。不接入 `pi-coding-agent` 的文件系统 / shell 类工具。
 
 主路径：用户先找讲解、看完，需要时再进商城下单支付。商城是讲解的出口。首页默认仍是讲解 tab。
 
@@ -25,7 +27,7 @@
 2. 商城 tab 可走完：列表/搜索 → 详情（含关联讲解）→ 购物车 → 微信支付 → 「我的」订单（待付款 / 已付款 / 已关闭）。
 3. 播放页展示关联上架商品；商品详情展示关联已上架视频。关联为多对多，由运营手工维护。播放页视频下方有文档问答对话框：问当前这条讲解，不跳转客服 tab。
 4. 客服 tab 默认 AI（全站讲解/商品/本人订单）；常驻「转人工」；转人工后生成工单，运营可在小程序回复，运营与用户均可收到订阅消息（授权失败则只靠打开对应页，工单不丢）。
-5. 播放页问答与客服 AI 均由同一套 pi-agent-core 会话接口驱动；检索通过 agent 工具调用统一 `search`，不在小程序里直连模型。
+5. 播放页问答与客服 AI 都调用 Agent Core。客服检索通过 `search` 工具进入统一 `search`；播放页问答不获得全库检索。小程序不直连模型。
 6. 下单收集收货人姓名、手机、地址，供线外履约使用。小程序不展示运单、不维护发货物流状态。
 
 ## 信息架构
@@ -115,18 +117,11 @@ C 端不得命中草稿视频、下架商品、未发布关联。
 
 第一期不做：向量库（接口可留空字段，实现不加依赖）、用搜索框闲聊、按播放进度自动切章节问答、生成讲解片。播放器可把当前播放秒数作为可选上下文字段传给文档问答 agent，模型不据此强制seek。
 
-## Agent harness（pi-agent-core）
+## Agent Core
 
-云函数 **`agent`**（Node）内嵌 `@earendil-works/pi-agent-core` 的 `Agent` 循环：收用户消息、按工具定义调用、流式或整包返回 assistant 事件。模型由 `@earendil-works/pi-ai` 配置，密钥只放云函数环境变量。
+运行时、profile、工具权限、幂等和可观测性见 `docs/superpowers/specs/2026-10-23-ai-native-agent-core-design.md`。第一期 profile 是 `video_doc@v1` 与 `customer_service@v1`。两套 prompt 不是完整架构。
 
-同一内核、两种 profile（实现上是两套 `system` + `tools`，不是两个 npm 包）：
-
-| profile | 入口 | 会话键 | 工具 |
-| --- | --- | --- | --- |
-| `video_doc` | 播放页下方对话框 | `openid + videoId` | 仅检索**当前视频**文档字段（标题、简介、标签、型号/品牌、已有 `searchAbstract`/`transcript*`）及该视频 `video_shop_links` 上的上架商品；可返回商品卡片。无订单工具、无转人工工具。 |
-| `cs` | 客服 tab | `openid`（全局客服线程） | `search`（`video` / `product`）、查本人订单、转人工（写工单并停模型）。 |
-
-小程序不跑 agent 循环，只渲染消息与卡片，并把用户输入、`profile`、会话键交给 `agent`。云函数超时：单轮工具调用次数设上限（建议 ≤5）；超时返回可理解错误，会话状态仍落库，可重试。禁止把编码 agent 的 read/write/bash 接到本产品。
+小程序不跑 Agent 循环，只渲染消息与卡片。播放页只提交当前 `videoId` 和文本；客服请求进入 `ticketing`，由它在状态允许时调用 Core。客户端不上传 prompt、工具列表、openid 或权限。
 
 ## 播放页文档问答
 
@@ -141,13 +136,13 @@ C 端不得命中草稿视频、下架商品、未发布关联。
 
 客服 tab 一条线程（集合 `cs_threads`：用户 openid、状态见下、更新时间）。消息集合 `cs_messages`：threadId、role（`user | assistant | operator | system`）、文本、可选卡片（video / shop_product / order）、时间。
 
-线程状态与后台列表对应：`ai` 仅 C 端 AI 中（不进待处理队列）；`waiting_human` = 待处理；运营发出第一条回复后改为 `human` = 处理中；运营关闭 = `closed`。
+线程状态以现网 `ticketing` 为准：`open` 才允许进入 Agent Core，不进待处理队列；`waiting_human` = 待处理；运营发出第一条回复后改为 `human` = 处理中；运营关闭 = `closed`。不再使用本文旧稿中的 `ai` 状态。分流规则见 2026-10-23 规格第 8 节。
 
 现网 `support_messages` 在实现时迁移或双写后切到工单模型，C 端只呈现一套对话。快捷问题（现 `miniprogram/config.js` 的 `contact`）可保留为输入建议，点选后当作用户消息走 AI，不再只做本地死回复（「领取账号」类运营配置回复可以仍走规则，须在实现计划里列白名单）。
 
 ### AI 默认行为
 
-客服走 `agent` 的 `cs` profile。每条用户消息：内容安全检查（与现网一致；本地可 `SKIP_CONTENT_CHECK`，正式环境不可）→ pi-agent-core 循环（工具内调 `search`、查订单）→ 生成回答。须遵守：
+客服在 `open` 且不属于转人工、领取账号或「没有我要的讲解」时，走 `customer_service@v1`。内容安全检查与现网一致；本地可 `SKIP_CONTENT_CHECK`，正式环境不可。模型循环、工具和停模型条件见 2026-10-23 规格。回答须遵守：
 
 - 只根据检索到的上架内容与用户本人订单回答；没有依据则说明不知道，并提示转人工或去讲解/商城搜索。
 - 能引用则带卡片，禁止只给无法跳转的纯链接文案。
@@ -162,7 +157,7 @@ C 端不得命中草稿视频、下架商品、未发布关联。
 
 1. 线程进入 `waiting_human`。
 2. 写入系统消息：已转交运营。
-3. 之后用户消息只追加到工单，**不再进入 pi-agent-core 循环**，直到运营关闭工单且用户开启新线程（关闭后下一句用户消息开新 `ai` 线程，旧线程只读）。
+3. 之后用户消息只追加到工单，**不再进入 Agent Core**，直到运营关闭工单且用户开启新线程（关闭后下一句用户消息开新 `open` 线程，旧线程只读）。
 4. 向**已在运营端订阅「新工单」模板**的账号发订阅消息。运营 openid 在首次成功登录工作台时写入集合 `admin_notify_subscribers`（可多条）。未订阅则跳过发送，工单仍为待处理。
 
 ### 真人交互（怎么实施）
@@ -171,7 +166,7 @@ C 端不得命中草稿视频、下架商品、未发布关联。
 
 | 角色 | 做什么 |
 | --- | --- |
-| 用户 | 常驻「转人工」。转交后页面仍是这条对话：可继续打字；只追加 `user` 消息，不再出 AI 气泡。看到系统「已转交运营」、之后的 `operator` 回复。关单后旧线程只读；再发一句开新的 `ai` 线程。写操作须先微信登录。 |
+| 用户 | 常驻「转人工」。转交后页面仍是这条对话：可继续打字；只追加 `user` 消息，不再出 AI 气泡。看到系统「已转交运营」、之后的 `operator` 回复。关单后旧线程只读；再发一句开新的 `open` 线程。写操作须先微信登录。 |
 | 运营 | 工作台工单：待处理（`waiting_human`）优先。打开后能看到转人工前的 AI 上下文。回复写入 `operator`，第一条回复把线程改为处理中（`human`）。可继续多轮，直到点关闭（`closed`）。 |
 | 通知 | 转人工：给已订阅的运营发 `CS_NEW_TICKET`。运营回复：给已授权的用户发 `CS_REPLIED`。未授权或未配模板：消息仍进线程，工单状态照常改。 |
 
@@ -196,8 +191,8 @@ C 端不得命中草稿视频、下架商品、未发布关联。
 | `catalog` | 品牌、型号 `products`、视频、同义词、initDb 中与目录相关的集合。不处理支付。 |
 | `shop` | `shop_products`、购物车、订单、微信支付统一下单与回调、收货地址。 |
 | `search` | 统一检索。供搜索框与 agent 工具调用。 |
-| `agent` | pi-agent-core 运行时：`video_doc` / `cs` 两套 profile、会话读写、工具调度。 |
-| `cs` | 转人工、运营回复、订阅消息、工单列表。可与 `agent` 同仓不同 action，但转人工不得绕过工单状态机。 |
+| `agent` | 日后新建。容纳 Agent Core 和播放页问答入口，不持有客服工单。 |
+| `ticketing` | 客服线程、转人工、运营回复、订阅消息和工单列表。状态允许时调用 Agent Core。 |
 
 集合增量：`shop_products`、`video_shop_links`、`carts`、`orders`、`user_addresses`、`cs_threads`、`cs_messages`、`video_doc_threads`、`video_doc_messages`（按 `openid+videoId`）、`admin_notify_subscribers`。Agent 会话消息与 C 端展示共用上述 message 集合，不另存一份「模型私有 log」作为用户可见历史。`initDb` 幂等创建。权限：仅管理端/云函数可读写，C 端一律经云函数。
 
@@ -226,8 +221,8 @@ C 端不得命中草稿视频、下架商品、未发布关联。
 
 - 订单状态机：仅允许 `pending_pay → paid | closed`，金额以服务端价格计算。
 - `search`：`scene=video` 不把下架商品当主结果；`scene=product` 不把草稿视频当主结果。
-- 转人工后同一线程不再进入 pi-agent-core 循环（可用伪 Agent 断言）。
-- `video_doc` 工具不得对非当前 `videoId` 做全库 `scene=video` 检索（可用固定夹具断言）。
+- 转人工后同一线程不再进入 Agent Core（可用伪 Agent 断言）。
+- `video_doc` 工具不得对非当前 `videoId` 做全库检索（可用固定夹具断言）。
 
 ## 非目标（第一期）
 
@@ -242,7 +237,7 @@ C 端不得命中草稿视频、下架商品、未发布关联。
 
 ## 对实现计划的拆分建议
 
-本文件是一份产品总 spec。落地时应拆成可独立验收的计划，例如：底栏与讲解/商城壳页 → `shop_products` 与关联 → 购物车支付订单 → `search` 与两处搜索框 → 云函数接入 pi-agent-core 与播放页 `video_doc` → 客服 `cs` profile 与转人工通知 → 运营商品/订单/工单。不要按一份计划一次改完所有云函数。
+本文件是一份产品总 spec。Agent 实现顺序见 2026-10-23 规格第 13 节：先 Core 契约，再播放页 profile，再把客服 profile 接入 `ticketing`。不要按一份计划一次改完所有云函数。
 
 实现从 **`dev` 迁出 `dev-<功能>`**（如 `dev-ai-search`）逐渐开发，验收后合回 `dev`；**`main` 仅发布验证**。见 `docs/branching.md`。
 
