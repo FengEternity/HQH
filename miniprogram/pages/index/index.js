@@ -1,4 +1,5 @@
-const { catalog } = require('../../utils/api');
+const { catalog, search } = require('../../utils/api');
+const { searchNoticeText } = require('./searchNotice');
 const { withPosterUrls } = require('../../utils/videoMedia');
 const { whenCloudReady } = require('../../utils/cloudReady');
 const {
@@ -12,9 +13,13 @@ Page({
     allVideos: [],
     shelves: [],
     results: [],
+    searchItems: [],
     brandId: '',
     query: '',
     searched: false,
+    searching: false,
+    notice: '',
+    noticeText: '',
     loading: true,
     error: '',
   },
@@ -80,34 +85,55 @@ Page({
         items: videos.filter((item) => item.brandId === brand._id),
       }))
       .filter((shelf) => shelf.items.length);
-    this.setData({ shelves, searched: false, results: [] });
+    this.setData({
+      shelves,
+      searched: false,
+      results: [],
+      searchItems: [],
+      notice: '',
+      noticeText: '',
+    });
+  },
+  paintSearchResults() {
+    const brandId = this.data.brandId;
+    const results = (this.data.searchItems || []).filter((item) => !brandId || item.brandId === brandId);
+    this.setData({ results });
   },
   onQuery(e) {
     this.setData({ query: e.detail.value });
   },
   onSearch() {
     const query = (this.data.query || '').trim();
+    if (this.data.searching) {
+      return;
+    }
     if (!query) {
       this.paintShelves();
       return;
     }
     const seq = (this._searchSeq || 0) + 1;
     this._searchSeq = seq;
-    this.setData({ loading: true, error: '' });
-    return callWithVisitorRetry(() => catalog({ action: 'search', query }))
+    this.setData({ searching: true, error: '' });
+    return callWithVisitorRetry(() => search({ scene: 'video', query }))
       .then((res) => {
         if (seq !== this._searchSeq) {
           return;
         }
-        let results = withPosterUrls(res.videos || []).map((item) =>
+        const searchItems = withPosterUrls(res.items || []).map((item) =>
           Object.assign({}, item, {
             initial: String(item.brandName || '优').slice(0, 1),
           }),
         );
-        if (this.data.brandId) {
-          results = results.filter((item) => item.brandId === this.data.brandId);
-        }
-        this.setData({ results, loading: false, searched: true, error: '' });
+        const notice = res.notice || '';
+        this.setData({
+          searchItems,
+          notice,
+          noticeText: searchNoticeText(notice, searchItems),
+          searching: false,
+          searched: true,
+          error: '',
+        });
+        this.paintSearchResults();
       })
       .catch((err) => {
         if (seq !== this._searchSeq) {
@@ -117,21 +143,23 @@ Page({
         const stillEmpty =
           !(this.data.shelves && this.data.shelves.length) && !this.data.brands.length;
         this.setData({
-          loading: false,
+          searching: false,
           error: stillEmpty ? visitorCatalogMessage('load') : '',
         });
-        wx.showToast({ title: visitorCatalogMessage('search'), icon: 'none' });
+        wx.showToast({ title: '搜索失败，请重试', icon: 'none' });
       });
   },
   onBrandTap(e) {
     const id = e.currentTarget.dataset.id || '';
     this.setData({ brandId: id });
     const query = (this.data.query || '').trim();
-    if (!query) {
-      this.paintShelves();
+    if (!query || !this.data.searched) {
+      if (!this.data.searching) {
+        this.paintShelves();
+      }
       return;
     }
-    this.onSearch();
+    this.paintSearchResults();
   },
   onVideoTap(e) {
     const id = e.currentTarget.dataset.id;

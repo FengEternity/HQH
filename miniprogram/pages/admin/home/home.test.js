@@ -147,6 +147,43 @@ describe('admin home workbench', () => {
     assert.equal(page.data.ingestLabel, '进入');
   });
 
+  it('stays on the workbench when ticketing rejects the ticket', async () => {
+    const events = [];
+    global.wx = wxStub(events);
+    const page = loadPage({
+      ticketingAdmin: async () => {
+        const err = new Error('登录已失效，请重新登录');
+        err.code = 'UNAUTHORIZED';
+        throw err;
+      },
+    });
+
+    await page.onShow();
+    assert.equal(page.data.pendingLabel, '工单加载失败');
+    assert.deepEqual(events.filter((item) => item[0] === 'redirect'), []);
+    assert.deepEqual(events.filter((item) => item[0] === 'toast'), [
+      ['toast', '工单加载失败'],
+    ]);
+  });
+
+  it('returns to login when the content ticket is rejected', async () => {
+    const events = [];
+    global.wx = wxStub(events);
+    const page = loadPage({
+      ticketingAdmin: async () => ({ ok: true, threads: [] }),
+      admin: async () => {
+        const err = new Error('UNAUTHORIZED');
+        err.code = 'UNAUTHORIZED';
+        throw err;
+      },
+    });
+
+    await page.onShow();
+    assert.deepEqual(events.filter((item) => item[0] === 'redirect'), [
+      ['redirect', '/pages/admin/login/login'],
+    ]);
+  });
+
   it('keeps the pending-ticket failure text', async () => {
     const events = [];
     global.wx = wxStub(events);

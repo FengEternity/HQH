@@ -2,6 +2,8 @@
 
 const cloud = require('wx-server-sdk');
 const { buildSearchBlob, searchPublished } = require('./lib/catalogSearch');
+const { contentHash } = require('./lib/videoContentHash');
+const { requestSearchIndex } = require('./lib/requestSearchIndex');
 const { issueTicket, verifyTicket } = require('./lib/ticket');
 const {
   assertVideoDraftFields,
@@ -26,8 +28,13 @@ const videoIngestActions = createVideoIngestActions({
   repository: videoIngestRepository,
   now: Date.now,
   buildSearchBlob,
+  buildContentHash: contentHash,
   nextStatusAfterSave,
 });
+
+function refreshSearchIndex(data) {
+  return requestSearchIndex((payload) => cloud.callFunction(payload), data);
+}
 
 const TICKET_TTL_MS = 12 * 60 * 60 * 1000;
 
@@ -492,7 +499,7 @@ async function upsertBrand(event) {
     }
     await db.collection('brands').doc(event.id).update({ data });
     if (snap.data.name !== name) {
-      await syncBrandName(event.id, name);
+      await syncBrandName(event.id, name, event.ticket);
     }
     return { ok: true, id: event.id };
   }
@@ -501,16 +508,29 @@ async function upsertBrand(event) {
 }
 
 // videos 里冗余了 brandName 与 searchBlob，改名后要一并刷新，否则搜索还命中旧名
-async function syncBrandName(brandId, name) {
+async function syncBrandName(brandId, name, ticket) {
   const res = await db.collection('videos').where({ brandId }).limit(200).get();
+  const publishedIds = [];
   for (const doc of res.data) {
     const merged = Object.assign({}, doc, { brandName: name });
     await db.collection('videos').doc(doc._id).update({
       data: {
         brandName: name,
         searchBlob: buildSearchBlob(merged),
+        contentHash: contentHash(merged),
         updatedAt: Date.now(),
       },
+    });
+    if (doc.status === 'published') {
+      publishedIds.push(doc._id);
+    }
+  }
+  if (publishedIds.length) {
+    await refreshSearchIndex({
+      action: 'startIndexTask',
+      ticket,
+      taskType: 'brandRename',
+      videoIds: publishedIds,
     });
   }
 }
@@ -615,6 +635,13 @@ async function upsertVideo(event) {
   if (saved.enqueued) {
     await wakeVideoIngest((options) => cloud.callContainer(options));
   }
+  if (saved.status === 'published') {
+    await refreshSearchIndex({
+      action: 'reindexVideo',
+      ticket: event.ticket,
+      videoId: saved.id,
+    });
+  }
   return saved;
 }
 
@@ -659,30 +686,53 @@ async function claimVideoIngest(event) {
 
 async function noteVideoIntro(event) {
   await requireAdmin(event.ticket);
-  return await videoIngestActions.noteRunningIntro({
+  const saved = await videoIngestActions.noteRunningIntro({
     videoId: String(event.videoId || '').trim(),
     mediaRevision: event.mediaRevision,
     intro: event.intro,
     introGate: event.introGate,
   });
+  if (saved.status === 'published') {
+    await refreshSearchIndex({
+      action: 'reindexVideo',
+      ticket: event.ticket,
+      videoId: saved.videoId,
+    });
+  }
+  return saved;
 }
 
 async function completeVideoIngest(event) {
   await requireAdmin(event.ticket);
-  return await videoIngestActions.completeVideo({
+  const saved = await videoIngestActions.completeVideo({
     ...event,
     videoId: String(event.videoId || '').trim(),
   });
+  if (saved.status === 'published') {
+    await refreshSearchIndex({
+      action: 'reindexVideo',
+      ticket: event.ticket,
+      videoId: saved.videoId,
+    });
+  }
+  return saved;
 }
 
 async function publishVideo(event) {
   await requireAdmin(event.ticket);
-  return await publishReadyVideo({
+  const saved = await publishReadyVideo({
     repository: videoIngestRepository,
     id: event.id,
     checkText,
     now: Date.now,
+    buildContentHash: contentHash,
   });
+  await refreshSearchIndex({
+    action: 'reindexVideo',
+    ticket: event.ticket,
+    videoId: event.id,
+  });
+  return saved;
 }
 
 async function unpublishVideo(event) {
@@ -698,6 +748,11 @@ async function unpublishVideo(event) {
       status: 'unpublished',
       updatedAt: Date.now(),
     },
+  });
+  await refreshSearchIndex({
+    action: 'deleteChunk',
+    ticket: event.ticket,
+    videoId: event.id,
   });
   return { ok: true };
 }
@@ -715,6 +770,11 @@ async function deleteVideo(event) {
       // File may already be gone; still drop the record.
     }
   }
+  await refreshSearchIndex({
+    action: 'deleteChunk',
+    ticket: event.ticket,
+    videoId: event.id,
+  });
   return { ok: true };
 }
 

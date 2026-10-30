@@ -1,3 +1,17 @@
+.search-notice {
+  margin: 8rpx 0 20rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 12rpx;
+  background: #f4f4f5;
+  color: #3f3f46;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.search-btn-off {
+  opacity: 0.55;
+}
+
 .home-retry {
   margin: 28rpx auto 0;
   width: 280rpx;

@@ -22,6 +22,18 @@ function catalog(data) {
     });
 }
 
+function search(data) {
+  return wx.cloud
+    .callFunction({
+      name: 'search',
+      data,
+    })
+    .then(unwrapCloudResult)
+    .catch((err) => {
+      throw mapCloudCallError(err, 'search');
+    });
+}
+
 function shop(data) {
   return wx.cloud
     .callFunction({
@@ -73,6 +85,7 @@ function shopAdmin(data) {
 
 module.exports = {
   catalog,
+  search,
   ticketing,
   shop,
   admin,

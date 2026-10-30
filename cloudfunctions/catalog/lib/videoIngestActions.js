@@ -156,8 +156,16 @@ function createVideoIngestActions({
   repository,
   now = Date.now,
   buildSearchBlob,
+  buildContentHash,
   nextStatusAfterSave,
 }) {
+  function searchFields(fields) {
+    const searchBlob = buildSearchBlob(fields);
+    if (typeof buildContentHash !== 'function') {
+      return { searchBlob };
+    }
+    return { searchBlob, contentHash: buildContentHash(fields) };
+  }
   async function replacePlaybackMedia({
     id,
     expectedVideoFileId,
@@ -320,7 +328,7 @@ function createVideoIngestActions({
         searchBlob: '',
         updatedAt: timestamp,
       };
-      payload.searchBlob = buildSearchBlob(payload);
+      Object.assign(payload, searchFields(payload));
 
       let videoId = event.id;
       if (videoId) {
@@ -339,9 +347,9 @@ function createVideoIngestActions({
           }),
         );
       }
-      return { id: videoId, enqueued: planned.enqueue === true };
+      return { id: videoId, enqueued: planned.enqueue === true, status: payload.status };
     });
-    return { ok: true, id: saved.id, enqueued: saved.enqueued === true };
+    return { ok: true, id: saved.id, enqueued: saved.enqueued === true, status: saved.status };
   }
 
   async function enqueueVideo({ id }) {
@@ -471,7 +479,7 @@ function createVideoIngestActions({
     if (!candidate) {
       throw badInput('运行中的任务不存在');
     }
-    await repository.runTransaction(async (transaction) => {
+    const status = await repository.runTransaction(async (transaction) => {
       const video = await transaction.getVideo(videoId);
       if (!video) {
         throw notFound();
@@ -506,13 +514,15 @@ function createVideoIngestActions({
         introRevisions: planned.introRevisions,
         ingest: planned.ingest,
       };
+      const fields = { ...video, ...patch };
       await transaction.updateVideo(videoId, {
         ...patch,
-        searchBlob: buildSearchBlob({ ...video, ...patch }),
+        ...searchFields(fields),
         updatedAt: timestamp,
       });
+      return video.status;
     });
-    return { ok: true, videoId };
+    return { ok: true, videoId, status };
   }
 
   async function completeVideo(complete) {
@@ -526,7 +536,7 @@ function createVideoIngestActions({
     if (!candidate) {
       throw badInput('运行中的任务不存在');
     }
-    await repository.runTransaction(async (transaction) => {
+    const status = await repository.runTransaction(async (transaction) => {
       const video = await transaction.getVideo(complete.videoId);
       if (!video) {
         throw notFound();
@@ -546,14 +556,16 @@ function createVideoIngestActions({
         now: timestamp,
         phase: 'done',
       });
+      const fields = { ...video, ...patch };
       await transaction.updateVideo(complete.videoId, {
         ...patch,
-        searchBlob: buildSearchBlob({ ...video, ...patch }),
+        ...searchFields(fields),
         updatedAt: timestamp,
       });
       await transaction.updateJob(candidate._id, finished);
+      return video.status;
     });
-    return { ok: true, videoId: complete.videoId };
+    return { ok: true, videoId: complete.videoId, status };
   }
 
   async function deleteVideo({ videoId }) {

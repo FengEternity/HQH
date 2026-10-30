@@ -15,11 +15,17 @@ function fail(code, message) {
   return err;
 }
 
-function loadPage(catalog) {
+function loadPage(catalog, search) {
   delete require.cache[pagePath];
   const api = require(apiPath);
   const originalCatalog = api.catalog;
+  const originalSearch = api.search;
   api.catalog = catalog;
+  api.search = search || (async () => {
+    const err = new Error('search 调用失败');
+    err.code = 'FAIL';
+    throw err;
+  });
 
   let definition;
   global.Page = (value) => {
@@ -27,6 +33,7 @@ function loadPage(catalog) {
   };
   require(pagePath);
   api.catalog = originalCatalog;
+  api.search = originalSearch;
 
   return Object.assign({}, definition, {
     data: JSON.parse(JSON.stringify(definition.data)),
@@ -172,20 +179,82 @@ describe('home catalog failures', () => {
         toasts.push({ title, icon });
       },
     };
-    const actions = [];
-    const page = loadPage(async (data) => {
-      actions.push(data.action);
-      throw fail('FAIL', 'catalog 调用失败');
-    });
-    page.setData({ query: '怎么算参数' });
+    const calls = [];
+    const page = loadPage(
+      async () => ({ ok: true, brands: [], videos: [] }),
+      async (data) => {
+        calls.push(data);
+        throw fail('FAIL', 'search 调用失败');
+      },
+    );
+    page.setData({ query: '怎么算参数', brands: [{ _id: 'b1' }], shelves: [{ id: 'b1' }] });
 
     await page.onSearch();
 
-    assert.deepEqual(actions, ['search', 'search']);
-    assert.equal(page.data.loading, false);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].scene, 'video');
+    assert.equal(calls[0].query, '怎么算参数');
+    assert.equal(page.data.searching, false);
     assert.equal(page.data.searched, false);
+    assert.equal(page.data.query, '怎么算参数');
     assert.deepEqual(toasts, [
-      { title: '搜索暂时不可用，请再试一次', icon: 'none' },
+      { title: '搜索失败，请重试', icon: 'none' },
     ]);
+  });
+});
+
+describe('explainer search', () => {
+  it('does not call search for a blank query', async () => {
+    let calls = 0;
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async () => {
+      calls += 1;
+      return { ok: true, scene: 'video', items: [] };
+    });
+    page.setData({ query: '   ' });
+
+    await page.onSearch();
+
+    assert.equal(calls, 0);
+    assert.equal(page.data.searched, false);
+  });
+
+  it('shows the semantic notice and filters the same result by brand', async () => {
+    const calls = [];
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async (data) => {
+      calls.push(data);
+      return {
+        ok: true,
+        scene: 'video',
+        notice: 'semantic_unavailable',
+        items: [
+          { id: 'v1', title: '甲', brandId: 'b1', brandName: '中海达', modelName: '', tags: [] },
+          { id: 'v2', title: '乙', brandId: 'b2', brandName: '华测', modelName: '', tags: [] },
+        ],
+      };
+    });
+    page.setData({ query: '对中' });
+
+    await page.onSearch();
+    page.onBrandTap({ currentTarget: { dataset: { id: 'b2' } } });
+
+    assert.equal(calls.length, 1);
+    assert.equal(page.data.noticeText, '语义检索暂不可用，以下为关键词结果');
+    assert.deepEqual(page.data.results.map((item) => item.id), ['v2']);
+  });
+
+  it('keeps an empty semantic failure distinct from no results', async () => {
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async () => ({
+      ok: true,
+      scene: 'video',
+      notice: 'semantic_unavailable',
+      items: [],
+    }));
+    page.setData({ query: '怎么算' });
+
+    await page.onSearch();
+
+    assert.equal(page.data.searched, true);
+    assert.equal(page.data.results.length, 0);
+    assert.equal(page.data.noticeText, '语义检索暂不可用');
   });
 });

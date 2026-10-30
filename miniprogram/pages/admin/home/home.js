@@ -27,12 +27,11 @@ Page({
         });
       })
       .catch((err) => {
-        if (err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
-          return;
-        }
         this.setData({ pendingLabel: '工单加载失败' });
-        wx.showToast({ title: err.message || '工单加载失败', icon: 'none' });
+        const title = err.code === 'UNAUTHORIZED'
+          ? '工单加载失败'
+          : (err.message || '工单加载失败');
+        wx.showToast({ title, icon: 'none' });
       });
   },
   loadProgress() {

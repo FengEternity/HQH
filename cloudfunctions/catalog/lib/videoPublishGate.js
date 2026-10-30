@@ -46,7 +46,7 @@ function isReadyToPublish(doc) {
   }
 }
 
-async function publishReadyVideo({ repository, id, checkText, now }) {
+async function publishReadyVideo({ repository, id, checkText, now, buildContentHash }) {
   return await repository.runTransaction(async (transaction) => {
     const doc = await transaction.getVideo(id);
     if (!doc) {
@@ -57,11 +57,15 @@ async function publishReadyVideo({ repository, id, checkText, now }) {
     assertReadyToPublish(doc);
     await checkText(`${doc.title}\n${doc.intro}`);
     const timestamp = now();
-    await transaction.updateVideo(id, {
+    const patch = {
       status: 'published',
       publishedAt: timestamp,
       updatedAt: timestamp,
-    });
+    };
+    if (typeof buildContentHash === 'function') {
+      patch.contentHash = buildContentHash(doc);
+    }
+    await transaction.updateVideo(id, patch);
     return { ok: true };
   });
 }
