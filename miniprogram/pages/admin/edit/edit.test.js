@@ -266,7 +266,7 @@ describe('deriveVideoUi', () => {
   });
 });
 
-describe('uploadVideo', () => {
+describe('pickVideo', () => {
   function uploadContext(extra) {
     return {
       data: {
@@ -302,13 +302,6 @@ describe('uploadVideo', () => {
       resolveSaved = resolve;
     });
     global.wx = {
-      getSystemInfoSync() {
-        return { platform: 'ios' };
-      },
-      showActionSheet({ itemList, success }) {
-        assert.deepEqual(itemList, ['从手机相册', '从聊天记录']);
-        success({ tapIndex: 1 });
-      },
       chooseMessageFile({ success }) {
         success({
           tempFiles: [{ path: 'wxfile://video.mp4', name: '千寻数据导入.mp4' }],
@@ -329,7 +322,7 @@ describe('uploadVideo', () => {
     const context = uploadContext();
 
     try {
-      pageConfig.uploadVideo.call(context);
+      pageConfig.pickChatVideo.call(context);
       await saved;
       assert.equal(context.data.autoTitle, '千寻数据导入');
       assert.equal(context.data.videoFileId, 'cloud://video');
@@ -346,13 +339,6 @@ describe('uploadVideo', () => {
     });
     let uploadedPath = '';
     global.wx = {
-      getSystemInfoSync() {
-        return { platform: 'windows' };
-      },
-      showActionSheet({ itemList, success }) {
-        assert.deepEqual(itemList, ['从电脑文件夹', '从聊天记录']);
-        success({ tapIndex: 0 });
-      },
       chooseMedia({ success }) {
         success({
           tempFiles: [{ tempFilePath: 'wxfile://tmp_abc.mp4' }],
@@ -380,12 +366,31 @@ describe('uploadVideo', () => {
     context.data.titleText = '已有标题';
 
     try {
-      pageConfig.uploadVideo.call(context);
+      pageConfig.pickLocalVideo.call(context);
       await saved;
       assert.equal(uploadedPath, 'wxfile://tmp_abc.mp4');
       assert.equal(context.data.autoTitle, '已有标题');
       assert.equal(context.data.titleText, '已有标题');
       assert.equal(context.data.videoFileId, 'cloud://video');
+    } finally {
+      global.wx = originalWx;
+    }
+  });
+
+  it('选文件失败时弹出接口原文，取消不提示', () => {
+    const originalWx = global.wx;
+    const shown = [];
+    global.wx = {
+      showModal(options) {
+        shown.push(options);
+      },
+    };
+    try {
+      pageConfig.showPickError({ errMsg: 'chooseMessageFile:fail cancel' });
+      pageConfig.showPickError({ errMsg: 'chooseMessageFile:fail' });
+      assert.equal(shown.length, 1);
+      assert.equal(shown[0].title, '没有选到视频');
+      assert.equal(shown[0].content, 'chooseMessageFile:fail');
     } finally {
       global.wx = originalWx;
     }

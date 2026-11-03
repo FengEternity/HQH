@@ -407,7 +407,7 @@ test('拒绝已存在的输出软链指向输入目录', () => {
   assert.equal(fs.existsSync(path.join(input, 'manifest.json')), false);
 });
 
-test('第 1 秒无封面时回退第 3 秒', () => {
+test('第 0 秒无封面时回退第 3 秒', () => {
   const { input, output } = createSingleVideoFixture();
 
   const manifest = preprocess({

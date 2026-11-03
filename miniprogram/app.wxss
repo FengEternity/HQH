@@ -581,8 +581,15 @@ page {
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
-  padding: 20rpx 0 24rpx;
+  padding: 20rpx 0 12rpx;
   border-top: 1rpx solid #f4f4f5;
+}
+
+.media-source-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  padding-bottom: 24rpx;
 }
 
 .media-row-main {

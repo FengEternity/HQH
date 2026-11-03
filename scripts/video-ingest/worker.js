@@ -166,9 +166,7 @@ async function createVideoCover({
 }) {
   const outputPath = path.join(workspace, 'auto-cover.jpg');
   const duration = Number(durationSec);
-  const firstSeek = Number.isFinite(duration) && duration > 0
-    ? Math.min(1, duration / 2)
-    : 1;
+  const firstSeek = 0;
   const fallbackSeek = Number.isFinite(duration) && duration > 0
     ? (duration >= 3 ? 3 : duration / 2)
     : 3;

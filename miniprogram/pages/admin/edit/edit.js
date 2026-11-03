@@ -194,11 +194,16 @@ Page({
     showRetryIngest: false,
     canRetryIngest: false,
     canPublish: false,
+    localVideoLabel: '从手机相册',
   },
   onLoad(query) {
     const brandId = query.brandId || '';
     const id = query.id || '';
-    this.setData({ brandId, id });
+    this.setData({
+      brandId,
+      id,
+      localVideoLabel: videoSourceLabels(currentPlatform())[0],
+    });
     admin({ action: 'adminListBrands' })
       .then((res) => {
         const brand = (res.brands || []).find((item) => item._id === brandId);
@@ -392,20 +397,6 @@ Page({
       this.ingestTimer = null;
     }
   },
-  uploadVideo() {
-    wx.showActionSheet({
-      itemList: videoSourceLabels(currentPlatform()),
-      success: (res) => {
-        if (res.tapIndex === 0) {
-          this.pickLocalVideo();
-          return;
-        }
-        if (res.tapIndex === 1) {
-          this.pickChatVideo();
-        }
-      },
-    });
-  },
   pickLocalVideo() {
     wx.chooseMedia({
       count: 1,
@@ -445,11 +436,15 @@ Page({
     });
   },
   showPickError(err) {
-    const message = err && err.errMsg ? err.errMsg : '';
+    const message = err && err.errMsg ? String(err.errMsg) : '';
     if (/cancel/i.test(message)) {
       return;
     }
-    wx.showToast({ title: '没有选到视频', icon: 'none' });
+    wx.showModal({
+      title: '没有选到视频',
+      content: message || '请重试',
+      showCancel: false,
+    });
   },
   acceptPickedVideo(file) {
     const duration = Number(file && file.duration);

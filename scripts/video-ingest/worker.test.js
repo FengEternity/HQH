@@ -501,7 +501,7 @@ describe('worker 生产胶水', () => {
     }
   });
 
-  it('自动封面按 16:9 抽帧，首帧失败时改试第 3 秒并上传', async () => {
+  it('自动封面按 16:9 抽第 0 秒，失败时改试第 3 秒并上传', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hqh-cover-test-'));
     const seeks = [];
     try {
@@ -537,7 +537,7 @@ describe('worker 生产胶水', () => {
       });
 
       assert.equal(fileId, 'cloud://auto-cover');
-      assert.deepEqual(seeks, [1, 3]);
+      assert.deepEqual(seeks, [0, 3]);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

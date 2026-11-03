@@ -168,7 +168,7 @@ function extractImages(
   fs.rmSync(keyframesDirectory, { recursive: true, force: true });
   fs.mkdirSync(keyframesDirectory, { recursive: true });
 
-  extractCover(mediaPath, coverPath, 1, runCommand);
+  extractCover(mediaPath, coverPath, 0, runCommand);
   if (!isNonEmptyFile(coverPath)) {
     const fallbackSec =
       durationSec >= 3

@@ -87,7 +87,10 @@
         <view class="tile-title">视频文件</view>
         <view class="muted">{{videoFileId ? '已上传到云存储' : '还没有视频'}}</view>
       </view>
-      <view class="btn btn-ghost media-upload-btn" bindtap="uploadVideo">{{videoFileId ? '更换视频' : '上传视频'}}</view>
+    </view>
+    <view class="media-source-row">
+      <view class="btn btn-ghost media-upload-btn" bindtap="pickLocalVideo">{{localVideoLabel}}</view>
+      <view class="btn btn-ghost media-upload-btn" bindtap="pickChatVideo">从聊天记录</view>
     </view>
   </view>
 
