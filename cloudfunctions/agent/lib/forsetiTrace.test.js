@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { exportForsetiTrace } = require('./forsetiTrace');
+const { exportForsetiTrace, buildTrace } = require('./forsetiTrace');
 
 const turn = {
   requestId: 'req-1',
@@ -42,6 +42,17 @@ const turn = {
 };
 
 describe('exportForsetiTrace', () => {
+  it('真实模型时间保留，未知用量不记作零，父节点包住子节点', () => {
+    const output = buildTrace({ agentRunId: 'timing', spans: [
+      { name: 'gate', status: 'ok', durationMs: 0 },
+      { name: 'model', status: 'ok', startedAt: 1000, durationMs: 37, tokenInput: null, tokenOutput: null },
+    ] });
+    const spans = output.resourceSpans[0].scopeSpans[0].spans;
+    assert.equal(BigInt(spans[1].endTimeUnixNano) - BigInt(spans[1].startTimeUnixNano), 37000000n);
+    assert.equal(spans[1].attributes.some(item => item.key === 'tokenInput'), false);
+    assert.ok(BigInt(spans[0].startTimeUnixNano) <= BigInt(spans[1].startTimeUnixNano));
+    assert.ok(BigInt(spans[0].endTimeUnixNano) >= BigInt(spans[1].endTimeUnixNano));
+  });
   it('posts one OTLP tree to forseti without prompt, text, or openid', async () => {
     const calls = [];
     const result = await exportForsetiTrace({

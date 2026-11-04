@@ -1,7 +1,8 @@
 'use strict';
 
-const { assignmentPatch, publicModelConfig, resolvePlaceModel } = require('./agentModels');
+const { assignmentPatch, publicModelConfig, resolvePlaceModel, isListedModel } = require('./agentModels');
 const { probeAgentModel } = require('./videoDocModel');
+const { tokenHubStatus } = require('./ai-runtime');
 
 const ADMIN_USERS = 'admin_users';
 const ADMIN_CONFIG = 'admin_config';
@@ -63,28 +64,37 @@ async function handleAgentModelAction(db, event, deps) {
   const env = (deps && deps.env) || {};
   if (action === 'agentModelConfig') {
     const stored = await getDocument(db, ADMIN_CONFIG, CONFIG_ID);
-    return { ok: true, ...publicModelConfig(stored, env) };
+    return { ok: true, ...publicModelConfig(stored, env), connection: tokenHubStatus(env) };
   }
   if (action === 'agentModelSave') {
     let patch;
     try {
       const current = await getDocument(db, ADMIN_CONFIG, CONFIG_ID);
-      patch = assignmentPatch(current, event.place, event.model);
+      patch = assignmentPatch(current, event.place, event.model, env);
     } catch (error) {
       return { ok: false, code: 'BAD_INPUT', message: '请选择列表中的模型' };
     }
     await db.collection(ADMIN_CONFIG).doc(CONFIG_ID).set({
       data: Object.assign({}, patch, { updatedAt: deps && deps.now }),
     });
-    return { ok: true, ...publicModelConfig(patch, env) };
+    return { ok: true, ...publicModelConfig(patch, env), connection: tokenHubStatus(env) };
   }
   if (action === 'agentModelTest') {
     try {
-      const result = await probeAgentModel({
-        modelName: event && event.model,
-        createAi: deps && deps.createAi,
-      });
-      return { ok: true, model: result.model, text: result.text, message: '可以调用' };
+      if (!isListedModel(event && event.model)) {
+        const error = new Error('BAD_INPUT'); error.code = 'BAD_INPUT'; throw error;
+      }
+      const result = event.place === 'video_intro'
+        ? await deps.probeVideoIntro()
+        : await probeAgentModel({
+          modelName: event && event.model,
+          env,
+          fetch: deps && deps.fetch,
+        });
+      if (event.place === 'video_intro' && result.model !== event.model) {
+        return { ok: false, code: 'CONFIG_CHANGED', message: '模型配置已变化，请刷新后重试' };
+      }
+      return { ok: true, model: result.model, text: result.text, message: event.place === 'video_intro' ? '视频处理服务可以调用' : '问答服务可以调用' };
     } catch (error) {
       if (error && error.code === 'BAD_INPUT') {
         return { ok: false, code: 'BAD_INPUT', message: '请选择列表中的模型' };

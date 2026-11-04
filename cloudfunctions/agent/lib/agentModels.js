@@ -1,33 +1,13 @@
 'use strict';
 
 const DEFAULT_MODEL = 'hy3';
-
-const MODELS = [
-  { id: 'hy3' },
-  { id: 'hy4-preview' },
-  { id: 'deepseek-v4.1-flash-1017' },
-  { id: 'deepseek-v4.1-flash' },
-  { id: 'deepseek/deepseek-flash' },
-  { id: 'deepseek-v4-pro' },
-  { id: 'deepseek-v4-pro-0813' },
-  { id: 'glm-5.3-flashx' },
-  { id: 'glm-5.3-flash' },
-  { id: 'glm-5.3' },
-  { id: 'glm-5.2' },
-  { id: 'kimi-k3' },
-  { id: 'kimi-k2.8-preview' },
-  { id: 'kimi-k2.7-code-highspeed' },
-  { id: 'kimi-k2.7-code' },
-  { id: 'kimi-k2.6' },
-  { id: 'minimax-m3' },
-  { id: 'mimo-v2.6-pro' },
-  { id: 'mimo-v2.6-flash' },
-  { id: 'step-5-preview' },
-];
+const { TEXT_MODELS, resolveTextModel } = require('./ai-runtime');
+const MODELS = TEXT_MODELS.map(id => ({ id }));
 
 const PLACES = [
   { id: 'video_doc', label: '播放页问答', hint: '讲解页提问时使用' },
   { id: 'customer_service', label: '客服', hint: '已保存，客服回复接入后按这个名字调用' },
+  { id: 'video_intro', label: '视频简介', hint: '视频处理容器生成简介时使用' },
 ];
 
 function clean(value) {
@@ -50,11 +30,7 @@ function knownPlace(place) {
 
 function resolvePlaceModel({ place, stored, env }) {
   if (!knownPlace(place)) throw coded('BAD_INPUT');
-  const saved = clean(stored && stored[place]);
-  if (isListedModel(saved)) return saved;
-  const fromEnv = clean(env && env.AGENT_MODEL_NAME);
-  if (isListedModel(fromEnv)) return fromEnv;
-  return DEFAULT_MODEL;
+  return resolveTextModel({ place, stored, env: env || {} });
 }
 
 function publicModelConfig(stored, env) {
@@ -69,12 +45,12 @@ function publicModelConfig(stored, env) {
   };
 }
 
-function assignmentPatch(current, place, model) {
+function assignmentPatch(current, place, model, env = {}) {
   if (!knownPlace(place) || !isListedModel(model)) throw coded('BAD_INPUT');
   const next = {};
   PLACES.forEach((item) => {
     const existing = clean(current && current[item.id]);
-    next[item.id] = isListedModel(existing) ? existing : DEFAULT_MODEL;
+    next[item.id] = isListedModel(existing) ? existing : resolvePlaceModel({ place: item.id, stored: current, env });
   });
   next[place] = model;
   return next;

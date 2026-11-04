@@ -69,15 +69,17 @@ async function runTurn(input) {
   });
   const cards = allowedCards(executed && executed.toolResults, profile.tools, executed && executed.cards);
   const spans = [gateSpan(true, 'ok')];
-  if (executed && (executed.model || executed.tokenInput !== undefined)) {
+  if (executed && Array.isArray(executed.modelSpans) && executed.modelSpans.length) {
+    spans.push(...executed.modelSpans);
+  } else if (executed && (executed.model || executed.tokenInput !== undefined)) {
     spans.push({
       name: 'model',
       status: 'ok',
       durationMs: 0,
       enteredModel: true,
       model: executed.model || '',
-      tokenInput: Number(executed.tokenInput) || 0,
-      tokenOutput: Number(executed.tokenOutput) || 0,
+      tokenInput: executed.tokenInput == null ? null : Number(executed.tokenInput),
+      tokenOutput: executed.tokenOutput == null ? null : Number(executed.tokenOutput),
     });
   }
   for (const tool of (executed && executed.toolResults) || []) {
@@ -85,7 +87,8 @@ async function runTurn(input) {
     spans.push({
       name: 'tool',
       status: 'ok',
-      durationMs: 0,
+      durationMs: Number(tool.durationMs) || 0,
+      startedAt: tool.startedAt,
       enteredModel: true,
       toolName: tool.name,
       resultCode: tool.resultCode || 'ok',

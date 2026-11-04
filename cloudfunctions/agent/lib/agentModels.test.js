@@ -83,6 +83,7 @@ describe('agent model list', () => {
     assert.deepEqual(assignmentPatch({ customer_service: 'hy3' }, 'video_doc', 'deepseek-v4.1-flash-1017'), {
       video_doc: 'deepseek-v4.1-flash-1017',
       customer_service: 'hy3',
+      video_intro: 'hy3',
     });
   });
 });

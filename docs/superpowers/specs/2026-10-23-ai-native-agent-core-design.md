@@ -1,7 +1,7 @@
 # AI Native Agent Core
 
 日期：2026-10-23  
-状态：架构已定。本仓库落地 Core 契约与 Forseti 上报；Forseti 服务从自己的 GitHub 仓库发布到微信云托管。问答模型使用当前云开发环境的生文模型列表，由运营工作台按场景选择。  
+状态：架构已定。本仓库落地 Core 契约与 Forseti 上报；Forseti 服务从自己的 GitHub 仓库发布到微信云托管。2026-11-03 修订：问答和视频简介统一使用 TokenHub，由运营工作台按场景选择；配置和云端验收见 `docs/ai-model-setup.md`。
 分支：`dev-agent-core`（从 `dev` 迁出）  
 取代：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md` 中的 Agent harness，以及 `docs/superpowers/specs/2026-09-13-unified-search-context-hub-design.md` 第 3 节冻结的问答接口。
 
@@ -55,7 +55,7 @@ flowchart LR
 
 小程序只提交场景坐标和本轮文本。领域服务先确认身份、scope 和状态，再调用 Core。Core 按 profile 投影上下文并执行。工具结果必须来自领域端口。领域服务把用户可见回复写入自己的消息表。
 
-播放页的领域 action 放在日后新建的云函数 `agent` 中。该云函数现在不存在，本文不创建它。客服 action 留在 `ticketing`。`ticketing` 在门禁通过后把回合交给 `agent` 里的 Core，不复制一套循环。
+播放页的领域 action 已放在云函数 `agent` 中。客服 action 留在 `ticketing`。`ticketing` 在门禁通过后把回合交给 `agent` 里的 Core，不复制一套循环。
 
 `customer_service` 拒绝小程序直调。请求体里的「已通过门禁」标志无效。调用来源以云函数上下文判定。`video_doc` 可以由小程序调用 `agent`，但 openid 只取 `cloud.getWXContext().OPENID`，视频是否已发布由服务端查询。
 
@@ -112,11 +112,15 @@ profile 是带版本的服务端模块，不是运营可编辑的 prompt 文档�
 
 更换 prompt、工具或权限时递增 profile 版本。运行记录保存实际执行的版本。
 
-问答使用当前云开发环境已经开通的生文模型。云函数通过 `cloud.ai().createModel("cloudbase")` 调用。服务端名单是云开发文档里支持工具调用的生文模型原名，并包含控制台出现过的 `deepseek-v4.1-flash-1017`。角色、翻译和纯视觉模型不进入名单。启用中的管理员和运营在工作台「模型」里为播放页问答、客服各选一个名字，再用单独的「测试」做一次固定短句调用。页面不填写基址或密钥，客户端也不能在提问时提交模型名。播放页问答读取 `video_doc`。客服的名字先写入同一文档，等客服回合接入时读取 `customer_service`。控制台里的「接入 Agent」不作为运行时。
+问答和视频简介统一通过 TokenHub Chat Completions 协议调用。共享调用源码位于 `shared/ai-runtime`，通过检查脚本生成云函数与容器的独立发布副本。客户端只提交业务场景，不能提交供应商、基址、密钥或模型。模型候选名单由服务端维护，候选不等于账户已开通或已经通过工具验收。
 
-云函数不读取视频预处理的 `TOKENHUB_*`，也不使用语音识别的 `SecretId` / `SecretKey`。视频预处理容器继续在云托管上使用自己的 `TOKENHUB_BASE_URL`、`TOKENHUB_API_KEY`、`TOKENHUB_MODEL`。
+运营工作台为播放页问答、客服和视频简介分别保存模型名，仍使用 `admin_config/agent_models`。问答与视频容器读取同一场景配置。场景环境变量、全局 `TOKENHUB_MODEL` 和默认 `hy3` 用作未保存配置的回退，旧 `AGENT_MODEL_NAME` 仅兼容迁移。客服模型仍只保存，自动回复未接入。
 
-调用依赖 `wx-server-sdk` 4.0.1 及以上的 `cloud.ai()`。云函数初始化超时设为 60 秒，单次模型调用超时 20 秒。模型列表里没有该模型、或调用失败时，返回 `MODEL_UNAVAILABLE`。
+接入凭据使用服务端 `TOKENHUB_API_KEY` 和可选 `TOKENHUB_BASE_URL`。云函数与容器的环境变量不共享，分别在云端注入，不能要求开发机持有生产密钥。密钥不存入业务数据库、小程序或 Trace。语音识别继续使用腾讯 ASR 的凭据与协议。
+
+工作台分别验证问答云函数和视频容器：问答测试在 `agent` 内调用相同 TokenHub 客户端；视频简介测试经已鉴权的 `agent` 调用 `video-ingest /ai/probe`，容器自行读取场景配置并请求模型。固定短句通过只代表文字连通，不代表问答工具或真实简介已验收。具体配置、权限和发布步骤以模型接入说明为准。
+
+云函数运行 Node.js 18 或以上，函数时限 60 秒，模型与工具共享 20 秒预算。共享客户端支持取消实际 HTTP 请求，短暂限流或服务故障有限重试，不自动换模型。工具调用按供应商协议回填，显式关闭思考后指定固定工具。`pi-agent-core` 仍是后续运行时目标，当前实现为有界的只读工具回合，不能将本次传输统一视为该运行时已经接入。
 
 ### 5.1 `video_doc@v1`
 

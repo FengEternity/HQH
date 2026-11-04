@@ -131,6 +131,18 @@ describe('tencentSpeech', () => {
       /缺少腾讯云语音识别配置/,
     );
   });
+
+  it('简介调用不依赖 ASR 密钥，并接受运营保存的场景模型', async () => {
+    const intro = await writeIntroText({
+      env: { TOKENHUB_API_KEY: 'fixture-key' }, modelName: 'hy4-preview',
+      systemPrompt: '系统', userPrompt: '口播', fetch: async (url, options) => {
+        assert.equal(url, 'https://tokenhub.tencentmaas.com/v1/chat/completions');
+        assert.equal(JSON.parse(options.body).model, 'hy4-preview');
+        return jsonResponse({ choices: [{ message: { content: '本期讲解整平。' } }] });
+      },
+    });
+    assert.equal(intro, '本期讲解整平。');
+  });
 });
 
 function speechEnv(overrides = {}) {

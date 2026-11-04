@@ -14,8 +14,10 @@ const STRING_FIELDS = [
   'model',
   'toolName',
   'resultCode',
+  'provider',
+  'configVersion',
 ];
-const INT_FIELDS = ['durationMs', 'tokenInput', 'tokenOutput'];
+const INT_FIELDS = ['durationMs', 'tokenInput', 'tokenOutput', 'attempt'];
 
 function hexId(seed, size) {
   return crypto.createHash('sha256').update(seed).digest('hex').slice(0, size);
@@ -40,7 +42,7 @@ function spanAttributes(turn, span) {
     }
   }
   for (const key of INT_FIELDS) {
-    if (Number.isFinite(Number(source[key]))) {
+    if (source[key] !== null && source[key] !== undefined && Number.isFinite(Number(source[key]))) {
       attributes.push(attribute(key, Number(source[key])));
     }
   }
@@ -53,7 +55,11 @@ function spanAttributes(turn, span) {
 function buildTrace(turn) {
   const spans = (turn.spans || []).filter((span) => SPAN_NAMES.has(span.name));
   const traceId = hexId(String(turn.agentRunId || turn.requestId || 'trace'), 32);
-  const now = String(Date.now() * 1000000);
+  const now = Date.now();
+  const bounds = spans.map(span => {
+    const start = Number.isFinite(span.startedAt) ? span.startedAt : now;
+    return [start, start + Math.max(0, Number(span.durationMs) || 0)];
+  });
   let rootId = '';
   return {
     resourceSpans: [
@@ -63,14 +69,17 @@ function buildTrace(turn) {
             spans: spans.map((span, index) => {
               const spanId = hexId(traceId + ':' + span.name + ':' + index, 16);
               if (!rootId) rootId = spanId;
+              const rootGate = index === 0 && span.name === 'gate';
+              const startedAt = rootGate ? Math.min(...bounds.map(item => item[0])) : bounds[index][0];
+              const end = rootGate ? Math.max(...bounds.map(item => item[1])) : bounds[index][1];
               const body = {
                 traceId,
                 spanId,
                 name: span.name,
                 kind: 'SPAN_KIND_INTERNAL',
-                startTimeUnixNano: now,
-                endTimeUnixNano: now,
-                attributes: spanAttributes(turn, span),
+                startTimeUnixNano: String(BigInt(Math.trunc(startedAt)) * 1000000n),
+                endTimeUnixNano: String(BigInt(Math.trunc(end)) * 1000000n),
+                attributes: spanAttributes(turn, rootGate ? { ...span, durationMs: end - startedAt } : span),
                 status: {
                   code: span.status === 'ok' ? 'STATUS_CODE_OK' : 'STATUS_CODE_ERROR',
                 },

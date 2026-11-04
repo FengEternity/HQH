@@ -1,23 +1,18 @@
 'use strict';
 
-const { DEFAULT_MODEL, isListedModel, resolvePlaceModel } = require('./agentModels');
+const { isListedModel, resolvePlaceModel } = require('./agentModels');
+const { createTokenHubClient, tokenHubStatus } = require('./ai-runtime');
 const TOOL_CAP = 5;
 const TURN_BUDGET_MS = 20000;
 const TOOL_TIMEOUT_MS = 5000;
-
 const LOOKUP_TOOL = {
-  name: 'lookup_current_video_doc',
-  description: '读取当前这条已发布讲解和它关联的上架商品',
-  parameters: { type: 'object', properties: {} },
+  type: 'function',
+  function: {
+    name: 'lookup_current_video_doc',
+    description: '读取当前这条已发布讲解和它关联的上架商品',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+  },
 };
-
-function clean(value) {
-  return String(value || '').trim();
-}
-
-function resolveAgentModelName(env) {
-  return resolvePlaceModel({ place: 'video_doc', stored: null, env });
-}
 
 function coded(code) {
   const error = new Error(code);
@@ -25,205 +20,132 @@ function coded(code) {
   return error;
 }
 
-function unavailable(publicMessage) {
-  const error = coded('MODEL_UNAVAILABLE');
-  error.publicMessage = publicMessage;
-  return error;
-}
-
-function safeFailureCode(value) {
-  const code = String(value || '').trim();
-  return /^[A-Za-z0-9_.:-]{1,64}$/.test(code) ? code : '';
-}
-
-function modelFailure(error) {
-  const matched = String((error && error.message) || '').match(/错误码：([A-Za-z0-9_.:-]+)/);
-  const code = (matched && matched[1]) || safeFailureCode(error && (error.code || error.errCode));
-  if (code) return unavailable('模型调用失败：' + code);
-  return coded('MODEL_UNAVAILABLE');
+function resolveAgentModelName(env) {
+  return resolvePlaceModel({ place: 'video_doc', stored: null, env });
 }
 
 function visibleText(content) {
-  const raw = Array.isArray(content)
-    ? content.map((part) => (part && part.text) || '').join('')
-    : String(content || '');
+  const raw = Array.isArray(content) ? content.map(part => (part && part.text) || '').join('') : String(content || '');
   const withoutThink = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
   const fence = withoutThink.match(/```json\s*([\s\S]*?)```/);
   const text = withoutThink.replace(/```json\s*[\s\S]*?```/g, '').trim();
   let cards = [];
   if (fence) {
-    try {
-      const parsed = JSON.parse(fence[1]);
-      if (parsed && Array.isArray(parsed.cards)) cards = parsed.cards;
-    } catch (error) {
-      cards = [];
-    }
+    try { cards = JSON.parse(fence[1]).cards || []; } catch { cards = []; }
   }
-  return { text, cards };
-}
-
-function productCards(doc) {
-  return ((doc && doc.products) || [])
-    .filter((item) => item && item.id)
-    .map((item) => ({ type: 'shop_product', id: String(item.id) }));
-}
-
-function usageCount(usage, promptKey, completionKey) {
-  const source = usage || {};
-  return {
-    tokenInput: Number(source[promptKey] || source.promptTokens || source.inputTokens) || 0,
-    tokenOutput: Number(source[completionKey] || source.completionTokens || source.outputTokens) || 0,
-  };
+  return { text, cards: Array.isArray(cards) ? cards : [] };
 }
 
 async function withTimeout(work, ms) {
+  if (ms <= 0) throw coded('TIMEOUT');
   let timer;
   try {
-    return await Promise.race([
-      work(),
-      new Promise((resolve, reject) => {
-        timer = setTimeout(() => reject(coded('TIMEOUT')), ms);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
+    return await Promise.race([work(), new Promise((resolve, reject) => { timer = setTimeout(() => reject(coded('TIMEOUT')), ms); })]);
+  } finally { clearTimeout(timer); }
 }
 
-async function runConfiguredTurn({ modelName, createAi, tools, projection, text }) {
-  const ai = createAi();
-  if (!ai || typeof ai.createModel !== 'function' || typeof ai.registerFunctionTool !== 'function') {
-    throw coded('MODEL_UNAVAILABLE');
-  }
+function modelError(error) {
+  if (error && error.code === 'TIMEOUT') return coded('TIMEOUT');
+  return coded('MODEL_UNAVAILABLE');
+}
+
+async function runConfiguredTurn({ client, modelName, tools, projection, text, now, modelSpans }) {
+  const deadline = now() + TURN_BUDGET_MS;
+  const messages = [
+    { role: 'system', content: '你是讲解页助手。回答前调用 lookup_current_video_doc。只根据工具返回的当前讲解回答，不要引用其他视频。引用商品时，在回答末尾追加 json 代码块 {"cards":[{"type":"shop_product","id":"商品id"}]}，id 必须来自工具结果。' },
+    { role: 'user', content: (projection && projection.playbackLabel ? '播放位置：' + projection.playbackLabel + '\n' : '') + String(text || '').trim() },
+  ];
   const toolResults = [];
   let used = 0;
-  const lookupTool = Object.assign({}, LOOKUP_TOOL, {
-    fn: async () => {
-      used += 1;
-      if (used > TOOL_CAP) throw coded('TIMEOUT');
-      const doc = await withTimeout(() => tools.lookup_current_video_doc(), TOOL_TIMEOUT_MS);
-      toolResults.push({
-        name: LOOKUP_TOOL.name,
-        resultCode: 'ok',
-        cards: productCards(doc),
+  let tokenInput = 0;
+  let tokenOutput = 0;
+  for (;;) {
+    let result;
+    try {
+      result = await client.chat({ model: modelName, messages, tools: [LOOKUP_TOOL],
+        tool_choice: used ? 'auto' : { type: 'function', function: { name: LOOKUP_TOOL.function.name } },
+        temperature: 0.2, max_tokens: 1024, thinking: { type: 'disabled' }, deadline, timeoutMs: TURN_BUDGET_MS,
       });
-      return doc;
-    },
-  });
-  ai.registerFunctionTool(lookupTool);
-  const model = ai.createModel('cloudbase');
-  let result;
-  try {
-    result = await model.generateText(
-      {
-        model: modelName,
-        messages: [
-          {
-            role: 'system',
-            content:
-              '你是讲解页助手。回答前调用 lookup_current_video_doc。只根据工具返回的当前讲解回答，不要引用其他视频。引用商品时，在回答末尾追加 json 代码块 {"cards":[{"type":"shop_product","id":"商品id"}]}，id 必须来自工具结果。',
-          },
-          {
-            role: 'user',
-            content:
-              (projection && projection.playbackLabel ? '播放位置：' + projection.playbackLabel + '\n' : '') +
-              clean(text),
-          },
-        ],
-        temperature: 0.2,
-        maxSteps: TOOL_CAP,
-        tools: [lookupTool],
-      },
-      { timeout: TURN_BUDGET_MS },
-    );
-  } catch (error) {
-    if (error && error.code === 'TIMEOUT') throw error;
-    throw coded('MODEL_UNAVAILABLE');
-  }
-  if (result && result.error) {
-    if (result.error.code === 'TIMEOUT') throw result.error;
-    throw coded('MODEL_UNAVAILABLE');
-  }
-  const answer = visibleText(result && result.text);
-  if (!answer.text) throw coded('MODEL_UNAVAILABLE');
-  const usage = usageCount(result && result.usage, 'prompt_tokens', 'completion_tokens');
-  return {
-    text: answer.text,
-    model: modelName,
-    tokenInput: usage.tokenInput,
-    tokenOutput: usage.tokenOutput,
-    toolResults,
-    cards: answer.cards,
-  };
-}
-
-async function probeAgentModel({ modelName, createAi }) {
-  if (!isListedModel(modelName)) throw coded('BAD_INPUT');
-  let ai;
-  try {
-    ai = typeof createAi === 'function' ? createAi() : null;
-  } catch (error) {
-    throw unavailable('云函数未提供 cloud.ai()');
-  }
-  if (!ai || typeof ai.createModel !== 'function') throw unavailable('云函数未提供 cloud.ai()');
-  const model = ai.createModel('cloudbase');
-  let result;
-  try {
-    result = await model.generateText(
-      {
-        model: modelName,
-        messages: [{ role: 'user', content: '回复一个字：好' }],
-        temperature: 0,
-        maxSteps: 1,
-      },
-      { timeout: TURN_BUDGET_MS },
-    );
-  } catch (error) {
-    if (error && error.code === 'TIMEOUT') throw error;
-    throw modelFailure(error);
-  }
-  if (result && result.error) {
-    if (result.error.code === 'TIMEOUT') throw result.error;
-    throw modelFailure(result.error);
-  }
-  const answer = visibleText(result && result.text);
-  if (!answer.text) throw unavailable('模型没有返回文字');
-  return { model: modelName, text: answer.text.slice(0, 40) };
-}
-
-function createVideoDocExecutor(options) {
-  const createAi = options && options.createAi;
-  if (typeof createAi !== 'function') return null;
-  try {
-    if (!createAi()) return null;
-  } catch (error) {
-    return null;
-  }
-  const env = options.env;
-  const loadModelName = options.loadModelName;
-  return async function executor(input) {
-    let modelName = resolveAgentModelName(env);
-    if (typeof loadModelName === 'function') {
-      try {
-        const loaded = await loadModelName();
-        if (isListedModel(loaded)) modelName = loaded;
-      } catch (error) {
-        modelName = resolveAgentModelName(env);
-      }
+    } catch (error) { throw modelError(error); }
+    tokenInput = tokenInput === null || result.usage.input === null ? null : tokenInput + result.usage.input;
+    tokenOutput = tokenOutput === null || result.usage.output === null ? null : tokenOutput + result.usage.output;
+    const message = result.message;
+    const calls = message.tool_calls || [];
+    if (!Array.isArray(calls)) throw coded('MODEL_UNAVAILABLE');
+    if (!calls.length) {
+      const answer = visibleText(message.content);
+      if (!toolResults.length || !answer.text) throw coded('MODEL_UNAVAILABLE');
+      return { text: answer.text, cards: answer.cards, toolResults, model: result.model,
+        tokenInput, tokenOutput, modelSpans };
     }
-    return runConfiguredTurn({
-      modelName,
-      createAi,
-      tools: input.tools,
-      projection: input.projection,
-      text: input.text,
+    messages.push({ ...message, role: 'assistant' });
+    for (const call of calls) {
+      if (++used > TOOL_CAP) throw coded('TIMEOUT');
+      if (!call || !call.id || !call.function || call.function.name !== LOOKUP_TOOL.function.name) throw coded('MODEL_UNAVAILABLE');
+      try {
+        const args = JSON.parse(call.function.arguments || '{}');
+        if (!args || Array.isArray(args) || typeof args !== 'object') throw new Error();
+      } catch { throw coded('MODEL_UNAVAILABLE'); }
+      const startedAt = now();
+      const doc = await withTimeout(() => tools.lookup_current_video_doc(), Math.min(TOOL_TIMEOUT_MS, deadline - now()));
+      toolResults.push({ name: LOOKUP_TOOL.function.name, resultCode: 'ok', startedAt,
+        durationMs: Math.max(0, now() - startedAt),
+        cards: ((doc && doc.products) || []).filter(item => item && item.id).map(item => ({ type: 'shop_product', id: String(item.id) })),
+      });
+      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(doc) });
+    }
+  }
+}
+
+async function probeAgentModel({ modelName, env = process.env, fetch }) {
+  if (!isListedModel(modelName)) throw coded('BAD_INPUT');
+  try {
+    const result = await createTokenHubClient({ env, fetch }).chat({ model: modelName,
+      messages: [{ role: 'user', content: '回复一个字：好' }], temperature: 0, thinking: { type: 'disabled' }, max_tokens: 32, timeoutMs: TURN_BUDGET_MS });
+    const answer = visibleText(result.message.content);
+    if (!answer.text) throw coded('BAD_RESPONSE');
+    return { model: result.model, text: answer.text.slice(0, 40) };
+  } catch (error) {
+    if (error && error.code === 'TIMEOUT') throw error;
+    const failure = coded('MODEL_UNAVAILABLE');
+    const messages = {
+      NOT_CONFIGURED: '模型服务尚未配置，请完成服务端接入设置',
+      AUTH: '模型服务鉴权失败，请检查服务端接入设置',
+      QUOTA: '模型未开通或额度不足，请检查服务端设置',
+      RATE_LIMITED: '模型服务繁忙，请稍后再试',
+      BAD_RESPONSE: '模型没有返回可用文字',
+    };
+    failure.publicMessage = messages[error && error.code] || '暂时无法调用，请稍后再试';
+    throw failure;
+  }
+}
+
+function createVideoDocExecutor(options = {}) {
+  const env = options.env || process.env;
+  if (!tokenHubStatus(env).ready) return null;
+  return async input => {
+    let modelName = resolveAgentModelName(env);
+    if (typeof options.loadModelName === 'function') {
+      try {
+        const loaded = await options.loadModelName();
+        if (isListedModel(loaded)) modelName = loaded;
+      } catch { /* 保留场景环境配置。 */ }
+    }
+    const modelSpans = [];
+    const client = createTokenHubClient({ env, fetch: options.fetch, now: options.now,
+      onAttempt: span => modelSpans.push({ name: 'model', status: span.code === 'ok' ? 'ok' : 'error',
+        enteredModel: true, provider: span.provider, configVersion: span.version, attempt: span.attempt,
+        model: span.model, startedAt: span.startedAt, durationMs: span.durationMs,
+        resultCode: span.code, tokenInput: span.usage.input, tokenOutput: span.usage.output }),
     });
+    try {
+      return await runConfiguredTurn({ client, modelName, tools: input.tools, projection: input.projection,
+        text: input.text, now: options.now || Date.now, modelSpans });
+    } catch (error) {
+      error.modelSpans = modelSpans;
+      throw error;
+    }
   };
 }
 
-module.exports = {
-  resolveAgentModelName,
-  createVideoDocExecutor,
-  probeAgentModel,
-  DEFAULT_MODEL,
-};
+module.exports = { resolveAgentModelName, createVideoDocExecutor, probeAgentModel, visibleText, LOOKUP_TOOL };

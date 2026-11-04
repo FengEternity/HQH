@@ -10,6 +10,8 @@
 
 微信小程序 + 微信云开发。讲解浏览、关键词搜索、运营入库、播放走云函数 `catalog`；客服工单走 `ticketing`。
 
+当前 Agent 功能分支的播放页问答、运营模型测试和视频简介已改为统一 TokenHub 客户端。`agent` 云函数与视频容器分别注入服务端凭据，通过工作台做云端测试；本机密钥不是开发前提。部署副本检查、配置与实际验收步骤见 [模型接入说明](docs/ai-model-setup.md)。该说明不代表功能已合入主线或已发布。
+
 一期实现计划（已落地）：`docs/plans/2026-08-29-001-feat-survey-instrument-miniprogram-search-plan.md`
 
 ## 分支
@@ -52,7 +54,10 @@
 ## 自动化单测（不依赖微信）
 
 ```bash
+node scripts/sync-ai-runtime.js --check
 node --test \
+  shared/ai-runtime/*.test.js \
+  cloudfunctions/agent/lib/*.test.js \
   cloudfunctions/catalog/lib/*.test.js \
   cloudfunctions/shop/lib/*.test.js \
   cloudfunctions/ticketing/lib/*.test.js \
@@ -61,6 +66,8 @@ node --test \
   miniprogram/pages/contact/contact.test.js \
   miniprogram/pages/admin/login/login.test.js \
   miniprogram/pages/admin/home/home.test.js \
+  miniprogram/pages/admin/models/models.test.js \
+  miniprogram/pages/player/player.test.js \
   miniprogram/pages/admin/edit/edit.test.js \
   miniprogram/pages/admin/ticket/ticket.test.js \
   miniprogram/pages/admin/staff/staff.test.js \

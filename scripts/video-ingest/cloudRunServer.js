@@ -4,6 +4,8 @@ const http = require('node:http');
 const os = require('node:os');
 
 const cloudbase = require('@cloudbase/node-sdk');
+const { createTokenHubClient, tokenHubStatus, loadTextModel, verifyProbeProof } = require('./lib/ai-runtime');
+const { introFromChatPayload } = require('./lib/tencentSpeech');
 
 const { runOnce } = require('./lib/workerLoop');
 const { createRunQueue, keepClaiming } = require('./lib/runQueue');
@@ -19,6 +21,7 @@ const {
 function createServer({
   env = process.env,
   createApp = (config) => cloudbase.init(config),
+  fetch: fetchImpl = globalThis.fetch,
 } = {}) {
   const credentials = readCredentials(env);
   let queue = null;
@@ -66,6 +69,30 @@ function createServer({
 
   const server = http.createServer(async (request, response) => {
     const path = String(request.url || '').split('?')[0];
+    if (request.method === 'POST' && path === '/ai/probe') {
+      try {
+        if (env.ADMIN_PIN && !verifyProbeProof(env.ADMIN_PIN, request.headers && request.headers['x-hqh-ai-proof'])) {
+          const error = new Error('UNAUTHORIZED'); error.code = 'UNAUTHORIZED'; throw error;
+        }
+        if (!tokenHubStatus(env).ready || !hasAllCredentials(credentials)) {
+          const error = new Error('NOT_CONFIGURED'); error.code = 'NOT_CONFIGURED'; throw error;
+        }
+        const app = createApp({ env: credentials.envId, secretId: credentials.secretId, secretKey: credentials.secretKey });
+        const model = await loadTextModel(app.database(), 'video_intro', env);
+        const result = await createTokenHubClient({ env, fetch: fetchImpl }).chat({ model,
+          messages: [{ role: 'user', content: '回复一个字：好' }], max_tokens: 32, temperature: 0,
+          thinking: { type: 'disabled' }, timeoutMs: 20000 });
+        const text = introFromChatPayload({ choices: [{ message: result.message }] }).slice(0, 40);
+        if (!text) { const error = new Error('BAD_RESPONSE'); error.code = 'BAD_RESPONSE'; throw error; }
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ ok: true, runtime: 'video-ingest', model, text }));
+      } catch (error) {
+        const codes = ['NOT_CONFIGURED', 'UNAUTHORIZED', 'AUTH', 'QUOTA', 'RATE_LIMITED', 'TIMEOUT'];
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ ok: false, code: codes.includes(error.code) ? error.code : 'MODEL_UNAVAILABLE' }));
+      }
+      return;
+    }
     if (request.method !== 'POST' || path !== '/run') {
       response.writeHead(404, { 'content-type': 'application/json' });
       response.end(JSON.stringify({ ok: false, code: 'NOT_FOUND' }));

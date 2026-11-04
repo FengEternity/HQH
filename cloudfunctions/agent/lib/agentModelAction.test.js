@@ -47,6 +47,19 @@ function staffDb() {
 }
 
 describe('agent model actions', () => {
+  it('配置返回脱敏就绪状态，简介测试发往实际容器且先校验人员', async () => {
+    const db = staffDb();
+    const view = await handleAgentModelAction(db, { action: 'agentModelConfig' }, { openid: 'op-1', env: {} });
+    assert.equal(view.connection.ready, false);
+    let called = false;
+    const deps = { openid: 'op-1', env: {}, probeVideoIntro: async () => { called = true; return { model: 'hy3', text: '好' }; } };
+    const result = await handleAgentModelAction(db, { action: 'agentModelTest', place: 'video_intro', model: 'hy3' }, deps);
+    assert.equal(called, true);
+    assert.equal(result.message, '视频处理服务可以调用');
+    called = false;
+    await handleAgentModelAction(db, { action: 'agentModelTest', place: 'video_intro', model: 'hy3' }, { ...deps, openid: 'off-1' });
+    assert.equal(called, false);
+  });
   it('loads the saved video model inside the cloud function entry', () => {
     const source = fs.readFileSync(require.resolve('../index.js'), 'utf8');
     assert.equal(source.includes('handleAgentModelAction'), true);
@@ -94,7 +107,7 @@ describe('agent model actions', () => {
       { action: 'agentModelTest', model: 'hy3' },
       {
         openid: 'off-1',
-        createAi() {
+        fetch() {
           throw new Error('should not run');
         },
       },
@@ -106,17 +119,8 @@ describe('agent model actions', () => {
       { action: 'agentModelTest', model: 'hy3' },
       {
         openid: 'op-1',
-        createAi() {
-          return {
-            createModel() {
-              return {
-                generateText() {
-                  throw new Error('sk-live');
-                },
-              };
-            },
-          };
-        },
+        env: { TOKENHUB_API_KEY: 'fixture-key' },
+        fetch: async () => { throw new Error('sk-live'); },
       },
     );
     assert.equal(unavailable.ok, false);
@@ -126,9 +130,9 @@ describe('agent model actions', () => {
     const missing = await handleAgentModelAction(
       db,
       { action: 'agentModelTest', model: 'hy3' },
-      { openid: 'op-1', createAi: () => null },
+      { openid: 'op-1', env: {} },
     );
-    assert.equal(missing.message, '云函数未提供 cloud.ai()');
+    assert.equal(missing.message, '模型服务尚未配置，请完成服务端接入设置');
     assert.equal(JSON.stringify(unavailable).includes('sk-live'), false);
   });
 });

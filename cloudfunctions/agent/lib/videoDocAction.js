@@ -205,7 +205,7 @@ async function videoDocSend(db, input) {
       profileId: 'video_doc',
       profileVersion: 'v1',
       scopeHash: hash,
-      spans: [
+      spans: error.modelSpans && error.modelSpans.length ? error.modelSpans : [
         {
           name: 'model',
           status: 'error',

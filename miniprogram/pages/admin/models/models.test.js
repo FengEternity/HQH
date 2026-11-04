@@ -36,6 +36,16 @@ afterEach(() => {
 });
 
 describe('admin model page', () => {
+  it('未就绪时不发问答测试，但允许独立检查视频处理容器', async () => {
+    const calls = [];
+    const page = loadPage(async (data) => { calls.push(data); return { ok: true, text: '好' }; });
+    page.places = [{ id: 'video_doc', model: 'hy3' }, { id: 'video_intro', model: 'hy3' }];
+    page.modelIds = ['hy3']; page.notes = {};
+    await page.testModel({ currentTarget: { dataset: { place: 'video_doc' } } });
+    assert.equal(calls.length, 0);
+    await page.testModel({ currentTarget: { dataset: { place: 'video_intro' } } });
+    assert.equal(calls[0].place, 'video_intro');
+  });
   it('uses a model dropdown beside the test button', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'models.wxml'), 'utf8');
     assert.equal(wxml.includes('picker'), true);
@@ -62,6 +72,7 @@ describe('admin model page', () => {
       if (data.action === 'agentModelConfig') {
         return {
           ok: true,
+          connection: { provider: 'tokenhub', ready: true },
           models: [
             { id: 'hy3', label: '混元 hy3' },
             { id: 'deepseek-v4.1-flash-1017', label: 'DeepSeek V4.1 Flash' },
@@ -81,7 +92,7 @@ describe('admin model page', () => {
             id: 'video_doc',
             label: '播放页问答',
             hint: '讲解页提问时使用',
-            model: 'deepseek-v4.1-flash-1017',
+            model: data.model,
             modelLabel: 'DeepSeek V4.1 Flash',
           },
         ],
@@ -103,5 +114,8 @@ describe('admin model page', () => {
     assert.equal(page.data.places[0].model, 'deepseek-v4.1-flash-1017');
     assert.equal(page.data.places[0].note, '可以调用：好');
     assert.equal(events.length, 0);
+    await page.onPick({ currentTarget: { dataset: { place: 'video_doc' } }, detail: { value: '0' } });
+    assert.equal(page.data.places[0].model, 'hy3');
+    assert.equal(page.data.places[0].note, '');
   });
 });
