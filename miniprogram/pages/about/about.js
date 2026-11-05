@@ -1,4 +1,3 @@
-const { adminMe } = require('../../utils/api');
 const release = require('../../data/appRelease');
 const {
   buildAboutView,
@@ -20,21 +19,7 @@ Page({
   },
   onLoad(query) {
     const staff = isStaffMode(query);
-    if (!staff) {
-      this.applyView(false);
-      return;
-    }
-    return adminMe()
-      .then((identity) => {
-        if (!identity.enabled) {
-          wx.switchTab({ url: '/pages/mine/mine' });
-          return;
-        }
-        this.applyView(true);
-      })
-      .catch(() => {
-        wx.switchTab({ url: '/pages/mine/mine' });
-      });
+    this.applyView(staff);
   },
   applyView(staff) {
     const view = buildAboutView({

@@ -17,19 +17,12 @@ Page({
     this.setData({
       aboutHint: envLabel(mini.envVersion) + ' · ' + doc.version,
     });
-    return adminMe()
-      .then((identity) => {
-        if (!identity.enabled) {
-          this.setData({ role: '' });
-          wx.switchTab({ url: '/pages/mine/mine' });
-          return;
-        }
-        this.setData({ role: identity.role || '' });
-        return Promise.all([this.load(), this.loadProgress()]);
+    const identity = adminMe()
+      .then((result) => {
+        this.setData({ role: (result && result.role) || '' });
       })
-      .catch(() => {
-        wx.switchTab({ url: '/pages/mine/mine' });
-      });
+      .catch(() => {});
+    return Promise.all([identity, this.load(), this.loadProgress()]);
   },
   load() {
     return ticketingAdmin({ action: 'csAdminList' })
@@ -58,11 +51,7 @@ Page({
           }),
         });
       })
-      .catch((err) => {
-        if (err && err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
-          return;
-        }
+      .catch(() => {
         this.setData({
           ingestLabel: ingestEntryLabel({ failedToLoad: true }),
         });

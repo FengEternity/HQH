@@ -126,7 +126,7 @@ describe('admin home workbench', () => {
         ['nav', '/pages/about/about?staff=1'],
       ],
     );
-    assert.equal(actions[0], 'adminMe');
+    assert.equal(actions.includes('adminMe'), true);
     assert.deepEqual(actions.filter((action) => action.indexOf('cs') === 0), ['csAdminList']);
     assert.equal(events.some((item) => item[0] === 'subscribe'), false);
 
@@ -156,7 +156,7 @@ describe('admin home workbench', () => {
     assert.equal(page.data.role, 'admin');
   });
 
-  it('returns non-staff to Mine without loading protected jobs', async () => {
+  it('opens the workbench for anyone and still loads daily jobs', async () => {
     const events = [];
     const actions = [];
     global.wx = wxStub(events);
@@ -174,9 +174,33 @@ describe('admin home workbench', () => {
 
     await page.onShow();
 
-    assert.deepEqual(actions, []);
-    assert.deepEqual(events, [['switchTab', '/pages/mine/mine']]);
+    assert.deepEqual(actions.sort(), ['catalog', 'ticketing']);
+    assert.deepEqual(events, []);
     assert.equal(page.data.role, '');
+  });
+
+  it('stays on the workbench when identity lookup fails', async () => {
+    const events = [];
+    const actions = [];
+    global.wx = wxStub(events);
+    const page = loadPage({
+      adminMe: async () => {
+        throw new Error('identity unavailable');
+      },
+      ticketingAdmin: async () => {
+        actions.push('ticketing');
+        return { ok: true, threads: [] };
+      },
+      admin: async () => {
+        actions.push('catalog');
+        return { ok: true };
+      },
+    });
+
+    await page.onShow();
+
+    assert.deepEqual(actions.sort(), ['catalog', 'ticketing']);
+    assert.deepEqual(events, []);
   });
 
   it('shows the ingest state on content ops and clears it when the read fails', async () => {
@@ -234,7 +258,7 @@ describe('admin home workbench', () => {
     ]);
   });
 
-  it('returns to login when the content ticket is rejected', async () => {
+  it('stays on the workbench when the content read is unauthorized', async () => {
     const events = [];
     global.wx = wxStub(events);
     const page = loadPage({
@@ -247,9 +271,8 @@ describe('admin home workbench', () => {
     });
 
     await page.onShow();
-    assert.deepEqual(events.filter((item) => item[0] === 'redirect'), [
-      ['redirect', '/pages/admin/login/login'],
-    ]);
+    assert.equal(page.data.ingestLabel, '进入');
+    assert.deepEqual(events.filter((item) => item[0] === 'redirect' || item[0] === 'switchTab'), []);
   });
 
   it('keeps the pending-ticket failure text', async () => {

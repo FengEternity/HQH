@@ -47,43 +47,19 @@ describe('about page', () => {
     assert.equal((section.match(/·/g) || []).length, 2);
   });
 
-  it('waits for adminMe before building staff view', async () => {
-    let resolveIdentity;
-    const identity = new Promise((resolve) => {
-      resolveIdentity = resolve;
-    });
+  it('builds the staff view without an identity check', () => {
     global.wx = {
       getAccountInfoSync() {
         return { miniProgram: { envVersion: 'develop', version: '1.0.0' } };
       },
-      switchTab() {},
     };
-    const page = loadPage(() => identity);
+    const page = loadPage(async () => {
+      throw new Error('must not check identity');
+    });
 
-    const loading = page.onLoad({ staff: '1' });
-    assert.equal(page.data.staff, false);
-    resolveIdentity({ ok: true, enabled: true, role: 'operator' });
-    await loading;
+    page.onLoad({ staff: '1' });
 
     assert.equal(page.data.staff, true);
     assert.equal(page.data.version, '0.2.5');
-  });
-
-  it('returns non-staff to Mine without building the staff view', async () => {
-    const events = [];
-    global.wx = {
-      getAccountInfoSync() {
-        throw new Error('must not build staff view');
-      },
-      switchTab({ url }) {
-        events.push(url);
-      },
-    };
-    const page = loadPage(async () => ({ ok: true, enabled: false }));
-
-    await page.onLoad({ staff: '1' });
-
-    assert.deepEqual(events, ['/pages/mine/mine']);
-    assert.equal(page.data.staff, false);
   });
 });

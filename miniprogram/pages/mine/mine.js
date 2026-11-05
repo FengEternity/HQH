@@ -1,6 +1,6 @@
 const release = require('../../data/appRelease');
 const { normalizeDoc } = require('../../utils/appRelease');
-const { ticketing, adminMe } = require('../../utils/api');
+const { ticketing } = require('../../utils/api');
 
 function initialOf(nickname) {
   const name = String(nickname || '').trim();
@@ -13,22 +13,15 @@ Page({
     nickname: '',
     avatarFileId: '',
     initial: '优',
-    showAdmin: false,
   },
   onShow() {
     const doc = normalizeDoc(release);
     this.setData({
       version: doc.version,
     });
-    const profile = ticketing({ action: 'csGetProfile' })
+    return ticketing({ action: 'csGetProfile' })
       .then((result) => this.applyProfile(result))
       .catch(() => {});
-    const identity = adminMe()
-      .then((result) => {
-        this.setData({ showAdmin: Boolean(result.enabled) });
-      })
-      .catch(() => {});
-    return Promise.all([profile, identity]);
   },
   onProfileBound(e) {
     this.applyProfile(e && e.detail);
