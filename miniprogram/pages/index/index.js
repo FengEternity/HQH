@@ -18,6 +18,8 @@ Page({
     query: '',
     searched: false,
     searching: false,
+    searchMode: '',
+    aiLabel: '',
     notice: '',
     noticeText: '',
     loading: true,
@@ -90,6 +92,8 @@ Page({
       searched: false,
       results: [],
       searchItems: [],
+      searchMode: '',
+      aiLabel: '',
       notice: '',
       noticeText: '',
     });
@@ -103,6 +107,12 @@ Page({
     this.setData({ query: e.detail.value });
   },
   onSearch() {
+    return this.submitSearch('keyword');
+  },
+  onAiSearch() {
+    return this.submitSearch('ai');
+  },
+  submitSearch(mode) {
     const query = (this.data.query || '').trim();
     if (this.data.searching) {
       return;
@@ -111,10 +121,11 @@ Page({
       this.paintShelves();
       return;
     }
+    const searchMode = mode === 'ai' ? 'ai' : 'keyword';
     const seq = (this._searchSeq || 0) + 1;
     this._searchSeq = seq;
     this.setData({ searching: true, error: '' });
-    return callWithVisitorRetry(() => search({ scene: 'video', query }))
+    return callWithVisitorRetry(() => search({ scene: 'video', query, mode: searchMode }))
       .then((res) => {
         if (seq !== this._searchSeq) {
           return;
@@ -124,11 +135,13 @@ Page({
             initial: String(item.brandName || '优').slice(0, 1),
           }),
         );
-        const notice = res.notice || '';
+        const notice = searchMode === 'ai' ? (res.notice || '') : '';
         this.setData({
           searchItems,
+          searchMode,
+          aiLabel: searchMode === 'ai' ? 'AI 搜索结果' : '',
           notice,
-          noticeText: searchNoticeText(notice, searchItems),
+          noticeText: searchMode === 'ai' ? searchNoticeText(notice, searchItems) : '',
           searching: false,
           searched: true,
           error: '',
@@ -146,7 +159,10 @@ Page({
           searching: false,
           error: stillEmpty ? visitorCatalogMessage('load') : '',
         });
-        wx.showToast({ title: '搜索失败，请重试', icon: 'none' });
+        wx.showToast({
+          title: searchMode === 'ai' ? '搜索失败，请重试' : visitorCatalogMessage('search'),
+          icon: 'none',
+        });
       });
   },
   onBrandTap(e) {

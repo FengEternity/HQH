@@ -31,6 +31,10 @@ function toVideoItem(video) {
   };
 }
 
+function resolveSearchMode(mode) {
+  return mode === 'ai' ? 'ai' : 'keyword';
+}
+
 function runSearch(input) {
   const scene = input && input.scene;
   if (scene !== 'video' && scene !== 'product') {
@@ -46,6 +50,13 @@ function runSearch(input) {
   const synonyms = (input && input.synonyms) || [];
   const videos = ((input && input.videos) || []).map(withSearchBlob);
   const keywordHits = searchPublished(videos, query, synonyms);
+  if (resolveSearchMode(input && input.mode) !== 'ai') {
+    return {
+      ok: true,
+      scene,
+      items: keywordHits.map(toVideoItem),
+    };
+  }
   const published = videos.filter((video) => video && video.status === 'published');
   const threshold = input && Object.prototype.hasOwnProperty.call(input, 'threshold')
     ? input.threshold
@@ -94,5 +105,6 @@ function runSearch(input) {
 }
 
 module.exports = {
+  resolveSearchMode,
   runSearch,
 };

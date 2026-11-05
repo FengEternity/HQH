@@ -17,7 +17,10 @@
       bindinput="onQuery"
       bindconfirm="onSearch"
     />
-    <view class="btn search-btn {{searching ? 'search-btn-off' : ''}}" bindtap="onSearch">搜索</view>
+    <view class="search-actions">
+      <view class="btn search-btn {{searching ? 'search-btn-off' : ''}}" bindtap="onSearch">搜索</view>
+      <view class="btn search-btn {{searching ? 'search-btn-off' : ''}}" bindtap="onAiSearch">AI 搜索</view>
+    </view>
   </view>
 
   <scroll-view scroll-x class="brand-scroll" wx:if="{{brands.length}}">
@@ -59,8 +62,10 @@
   <view wx:elif="{{searching}}" class="empty">正在搜索…</view>
 
   <view wx:elif="{{searched}}">
+    <view wx:if="{{aiLabel}}" class="search-ai-label">{{aiLabel}}</view>
     <view wx:if="{{noticeText}}" class="search-notice">{{noticeText}}</view>
-    <view wx:if="{{results.length === 0 && !noticeText}}" class="empty">没有找到相关视频</view>
+    <view wx:if="{{results.length === 0 && !noticeText && searchMode !== 'ai'}}" class="empty">没有找到相关视频。可以换品牌名、型号或操作关键词，或点上方品牌浏览。</view>
+    <view wx:elif="{{results.length === 0 && !noticeText}}" class="empty">没有找到相关视频</view>
     <view class="grid" wx:if="{{results.length}}">
       <view
         class="tile"

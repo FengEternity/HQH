@@ -123,6 +123,7 @@ describe('vector merge', () => {
     assert.equal(ranked.hits.some((hit) => hit.video._id === 'vec-8'), false);
     const res = runSearch({
       scene: 'video',
+      mode: 'ai',
       query: '对中',
       videos: [keyword, stale].concat(vectorOnly),
       synonyms: [],
@@ -142,6 +143,7 @@ describe('vector merge', () => {
     const item = video({ contentHash: 'hash-1', searchBlob: '无关' });
     const res = runSearch({
       scene: 'video',
+      mode: 'ai',
       query: '怎么架设',
       videos: [item],
       chunks: [readyChunk('v1', 'hash-1', 1)],
@@ -156,6 +158,7 @@ describe('vector merge', () => {
     const item = video();
     const failed = runSearch({
       scene: 'video',
+      mode: 'ai',
       query: '怎么架设',
       videos: [item],
       embedError: true,
@@ -168,6 +171,7 @@ describe('vector merge', () => {
     }
     const capped = runSearch({
       scene: 'video',
+      mode: 'ai',
       query: '怎么架设',
       videos: many,
       chunks: [readyChunk('id-0', 'h-0', 0)],

@@ -67,6 +67,7 @@ describe('runSearch', () => {
     const video = publishedVideo();
     const res = runSearch({
       scene: 'video',
+      mode: 'ai',
       query: 'hi-target iRTK5',
       videos: [video],
       synonyms,
@@ -123,7 +124,7 @@ describe('runSearch', () => {
       synonyms,
     });
     assert.equal(miss.items.length, 0);
-    assert.equal(miss.notice, 'semantic_unavailable');
+    assert.equal(miss.notice, undefined);
     const hit = runSearch({
       scene: 'video',
       query: '华测 主机架设',
@@ -171,5 +172,46 @@ describe('runSearch', () => {
       res.items.map((item) => item.id),
       ['title-new', 'title-old', 'tag'],
     );
+  });
+
+  it('keyword mode keeps keyword hits and leaves semantic hits out', () => {
+    const keyword = publishedVideo({
+      _id: 'kw',
+      title: '对中讲解',
+      brandName: '华测',
+      modelName: '',
+      tags: [],
+    });
+    const semanticOnly = publishedVideo({
+      _id: 'sem',
+      title: '别的标题',
+      brandName: '南方',
+      modelName: '',
+      tags: [],
+      contentHash: 'hash-sem',
+    });
+    const embedding = new Array(1024).fill(0);
+    embedding[0] = 1;
+    const res = runSearch({
+      scene: 'video',
+      mode: 'keyword',
+      query: '对中',
+      videos: [keyword, semanticOnly],
+      synonyms,
+      embedError: true,
+      threshold: 0.1,
+      queryEmbedding: embedding,
+      chunks: [
+        {
+          sourceId: 'sem',
+          status: 'ready',
+          contentHash: 'hash-sem',
+          embeddingModel: 'kinfra-text-embedding-0.6b',
+          embedding,
+        },
+      ],
+    });
+    assert.deepEqual(res.items.map((item) => item.id), ['kw']);
+    assert.equal(res.notice, undefined);
   });
 });

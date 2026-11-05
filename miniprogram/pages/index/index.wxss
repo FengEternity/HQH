@@ -1,3 +1,19 @@
+.search-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8rpx;
+}
+
+.search-actions .search-btn {
+  padding: 18rpx 16rpx;
+}
+
+.search-ai-label {
+  margin: 8rpx 0 12rpx;
+  color: #3f3f46;
+  font-size: 24rpx;
+}
+
 .search-notice {
   margin: 8rpx 0 20rpx;
   padding: 18rpx 22rpx;

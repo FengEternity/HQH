@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { afterEach, beforeEach, describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -193,17 +195,26 @@ describe('home catalog failures', () => {
 
     assert.equal(calls.length, 2);
     assert.equal(calls[0].scene, 'video');
+    assert.equal(calls[0].mode, 'keyword');
     assert.equal(calls[0].query, '怎么算参数');
     assert.equal(page.data.searching, false);
     assert.equal(page.data.searched, false);
     assert.equal(page.data.query, '怎么算参数');
     assert.deepEqual(toasts, [
-      { title: '搜索失败，请重试', icon: 'none' },
+      { title: '搜索暂时不可用，请再试一次', icon: 'none' },
     ]);
   });
 });
 
 describe('explainer search', () => {
+  it('keeps keyword search beside a separate ai search button', () => {
+    const wxml = fs.readFileSync(path.join(__dirname, 'index.wxml'), 'utf8');
+    assert.match(wxml, /bindtap="onSearch">搜索/);
+    assert.match(wxml, /bindtap="onAiSearch">AI 搜索/);
+    assert.match(wxml, /bindconfirm="onSearch"/);
+    assert.match(wxml, /可以换品牌名、型号或操作关键词/);
+  });
+
   it('does not call search for a blank query', async () => {
     let calls = 0;
     const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async () => {
@@ -234,10 +245,12 @@ describe('explainer search', () => {
     });
     page.setData({ query: '对中' });
 
-    await page.onSearch();
+    await page.onAiSearch();
     page.onBrandTap({ currentTarget: { dataset: { id: 'b2' } } });
 
     assert.equal(calls.length, 1);
+    assert.equal(calls[0].mode, 'ai');
+    assert.equal(page.data.aiLabel, 'AI 搜索结果');
     assert.equal(page.data.noticeText, '语义检索暂不可用，以下为关键词结果');
     assert.deepEqual(page.data.results.map((item) => item.id), ['v2']);
   });
@@ -251,10 +264,68 @@ describe('explainer search', () => {
     }));
     page.setData({ query: '怎么算' });
 
-    await page.onSearch();
+    await page.onAiSearch();
 
     assert.equal(page.data.searched, true);
     assert.equal(page.data.results.length, 0);
     assert.equal(page.data.noticeText, '语义检索暂不可用');
+    assert.equal(page.data.aiLabel, 'AI 搜索结果');
+  });
+
+  it('keyword search ignores a semantic notice and keeps the query on the keyword lane', async () => {
+    const calls = [];
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async (data) => {
+      calls.push(data);
+      return {
+        ok: true,
+        scene: 'video',
+        notice: 'semantic_unavailable',
+        items: [{ id: 'v1', title: '甲', brandId: 'b1', brandName: '中海达', modelName: '', tags: [] }],
+      };
+    });
+    page.setData({ query: 'iRTK5' });
+
+    await page.onSearch();
+
+    assert.deepEqual(calls, [{ scene: 'video', mode: 'keyword', query: 'iRTK5' }]);
+    assert.equal(page.data.searchMode, 'keyword');
+    assert.equal(page.data.noticeText, '');
+    assert.equal(page.data.aiLabel, '');
+    assert.deepEqual(page.data.results.map((item) => item.id), ['v1']);
+  });
+
+  it('ai search sends the ai mode and labels the result', async () => {
+    const calls = [];
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async (data) => {
+      calls.push(data);
+      return {
+        ok: true,
+        scene: 'video',
+        items: [{ id: 'v1', title: '甲', brandId: 'b1', brandName: '中海达', modelName: '', tags: [] }],
+      };
+    });
+    page.setData({ query: '怎么对中' });
+
+    await page.onAiSearch();
+
+    assert.equal(calls[0].mode, 'ai');
+    assert.equal(page.data.searchMode, 'ai');
+    assert.equal(page.data.aiLabel, 'AI 搜索结果');
+    assert.equal(page.data.noticeText, '');
+  });
+
+  it('does not call ai search for a blank query', async () => {
+    let calls = 0;
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async () => {
+      calls += 1;
+      return { ok: true, scene: 'video', items: [] };
+    });
+    page.setData({ query: '   ', searched: true, aiLabel: 'AI 搜索结果', searchMode: 'ai' });
+
+    await page.onAiSearch();
+
+    assert.equal(calls, 0);
+    assert.equal(page.data.searched, false);
+    assert.equal(page.data.aiLabel, '');
   });
 });

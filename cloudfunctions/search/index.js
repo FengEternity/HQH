@@ -2,7 +2,7 @@
 
 const cloud = require('wx-server-sdk');
 const crypto = require('crypto');
-const { runSearch } = require('./lib/searchIndex');
+const { resolveSearchMode, runSearch } = require('./lib/searchIndex');
 const { attachPosterUrls } = require('./lib/resolvePosterUrls');
 const { verifyTicket } = require('./lib/ticket');
 const { expandQuery } = require('./lib/keywordSearch');
@@ -177,15 +177,16 @@ async function indexOne(videoId) {
 
 async function handleQuery(event) {
   const scene = event && event.scene;
+  const mode = resolveSearchMode(event && event.mode);
   if (scene !== 'video' && scene !== 'product') {
     return { ok: false, code: 'BAD_INPUT' };
   }
   if (scene === 'product') {
-    return runSearch({ scene, query: event && event.query });
+    return runSearch({ scene, mode, query: event && event.query });
   }
   const query = event && event.query;
   if (!String(query || '').trim()) {
-    return runSearch({ scene, query });
+    return runSearch({ scene, mode, query });
   }
   const [videos, synonyms] = await Promise.all([loadPublishedVideos(), loadSynonyms()]);
   const vectorOn = typeof COSINE_THRESHOLD === 'number' && Number.isFinite(COSINE_THRESHOLD);
@@ -193,7 +194,7 @@ async function handleQuery(event) {
   let embedError = false;
   let queryEmbedding;
   let chunks = [];
-  if (vectorOn && publishedCount > 0 && publishedCount <= VECTOR_CAP) {
+  if (mode === 'ai' && vectorOn && publishedCount > 0 && publishedCount <= VECTOR_CAP) {
     const sentence = expandQuery(query, synonyms).join(' ');
     const embedded = sentence ? await embedChunkText(sentence) : { ok: false, error: 'embed_failed' };
     if (!embedded.ok) {
@@ -205,6 +206,7 @@ async function handleQuery(event) {
   }
   const result = runSearch({
     scene,
+    mode,
     query,
     videos,
     synonyms,
