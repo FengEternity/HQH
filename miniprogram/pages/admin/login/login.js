@@ -1,22 +1,9 @@
-const {
-  catalog,
-  setTicket,
-  getTicket,
-  admin,
-} = require('../../../utils/api');
+const { catalog } = require('../../../utils/api');
 
 Page({
-  data: { pin: '' },
+  data: { pin: '', showPin: true },
   onShow() {
-    const ticket = getTicket();
-    if (!ticket) {
-      return;
-    }
-    admin({ action: 'adminListBrands' })
-      .then(() => {
-        wx.redirectTo({ url: '/pages/admin/home/home' });
-      })
-      .catch(() => {});
+    this.setData({ showPin: true });
   },
   onPin(e) {
     this.setData({ pin: e.detail.value });
@@ -28,8 +15,7 @@ Page({
       return;
     }
     return catalog({ action: 'adminLogin', pin })
-      .then((res) => {
-        setTicket(res.ticket);
+      .then(() => {
         wx.redirectTo({ url: '/pages/admin/home/home' });
       })
       .catch((err) => {

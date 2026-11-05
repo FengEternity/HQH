@@ -1,4 +1,4 @@
-const { admin, ticketingAdmin } = require('../../../utils/api');
+const { admin, adminMe, ticketingAdmin } = require('../../../utils/api');
 const release = require('../../../data/appRelease');
 const { normalizeDoc, envLabel } = require('../../../utils/appRelease');
 const { ingestEntryLabel } = require('../../../utils/ingestEntryLabel');
@@ -8,6 +8,7 @@ Page({
     pendingLabel: '暂无未读',
     aboutHint: '',
     ingestLabel: '进入',
+    role: '',
   },
   onShow() {
     const doc = normalizeDoc(release);
@@ -16,7 +17,19 @@ Page({
     this.setData({
       aboutHint: envLabel(mini.envVersion) + ' · ' + doc.version,
     });
-    return Promise.all([this.load(), this.loadProgress()]);
+    return adminMe()
+      .then((identity) => {
+        if (!identity.enabled) {
+          this.setData({ role: '' });
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
+        this.setData({ role: identity.role || '' });
+        return Promise.all([this.load(), this.loadProgress()]);
+      })
+      .catch(() => {
+        wx.switchTab({ url: '/pages/mine/mine' });
+      });
   },
   load() {
     return ticketingAdmin({ action: 'csAdminList' })
@@ -63,6 +76,13 @@ Page({
   },
   openInbox() {
     wx.navigateTo({ url: '/pages/admin/inbox/inbox' });
+  },
+  openModels() {
+    wx.navigateTo({ url: '/pages/admin/models/models' });
+  },
+  openStaff() {
+    if (this.data.role !== 'admin') return;
+    wx.navigateTo({ url: '/pages/admin/staff/staff' });
   },
   openAbout() {
     wx.navigateTo({ url: '/pages/about/about?staff=1' });

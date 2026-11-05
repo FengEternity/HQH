@@ -180,10 +180,28 @@
   border-radius: 12rpx;
   background: #f4f4f5;
   font-size: 28rpx;
-  color: #a1a1aa;
+  color: #18181b;
+}
+
+.player-ask-row {
+  margin-bottom: 16rpx;
+  font-size: 28rpx;
+  line-height: 1.5;
+  color: #18181b;
+}
+
+.player-ask-row-user {
+  text-align: right;
+  color: #3f3f46;
+}
+
+.player-ask-error {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #b91c1c;
 }
 
 .player-ask-send {
   flex-shrink: 0;
-  opacity: 0.45;
 }

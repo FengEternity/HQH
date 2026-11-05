@@ -26,7 +26,7 @@
     bindtap="openTicket"
   >
     <view class="inbox-row">
-      <image wx:if="{{item.avatarFileId}}" class="inbox-avatar" src="{{item.avatarFileId}}" mode="aspectFill" />
+      <image wx:if="{{item.avatarUrl}}" class="inbox-avatar" src="{{item.avatarUrl}}" mode="aspectFill" />
       <view wx:else class="inbox-avatar inbox-fallback">{{item.initial}}</view>
       <view class="inbox-main">
         <view class="row">

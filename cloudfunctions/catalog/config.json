@@ -1,7 +1,7 @@
 {
   "timeout": 60,
   "permissions": {
-    "openapi": ["security.msgSecCheck"]
+    "openapi": ["security.msgSecCheck", "wxacode.get"]
   },
   "triggers": [
     {

@@ -52,6 +52,8 @@ describe('admin inbox notifications', () => {
     const filtersAt = wxml.indexOf('selectStatus');
     assert.equal(noticeAt > -1 && filtersAt > noticeAt, true);
     assert.equal(wxml.includes('openNotify'), true);
+    assert.equal(wxml.includes('src="{{item.avatarUrl}}"'), true);
+    assert.equal(wxml.includes('item.avatarFileId'), false);
     assert.equal(wxml.includes('设置'), true);
     assert.equal(wxml.includes('{{notifyLabel}}'), true);
     assert.equal(wxml.includes('wx:key="id"'), true);

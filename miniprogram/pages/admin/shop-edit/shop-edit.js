@@ -75,7 +75,7 @@ Page({
         this._linksReady = false;
         this.setData({ id: '', canSave: false });
         if (err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
+          wx.switchTab({ url: '/pages/mine/mine' });
           return;
         }
         wx.showToast({ title: err.message || '加载失败', icon: 'none' });
@@ -183,6 +183,12 @@ Page({
         this.setData({ id: res.id });
         wx.showToast({ title: '已保存' });
       })
-      .catch((err) => wx.showToast({ title: err.message || '保存失败', icon: 'none' }));
+      .catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
+        wx.showToast({ title: err.message || '保存失败', icon: 'none' });
+      });
   },
 });

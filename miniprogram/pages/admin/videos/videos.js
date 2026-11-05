@@ -80,7 +80,7 @@ Page({
       })
       .catch((err) => {
         if (err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
+          wx.switchTab({ url: '/pages/mine/mine' });
           return;
         }
         wx.showToast({ title: err.message || '加载失败', icon: 'none' });
@@ -103,7 +103,13 @@ Page({
         wx.showToast({ title: '已上架' });
         this.load();
       })
-      .catch((err) => wx.showToast({ title: err.message || '上架失败', icon: 'none' }));
+      .catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
+        wx.showToast({ title: err.message || '上架失败', icon: 'none' });
+      });
   },
   unpublish(e) {
     admin({ action: 'unpublishVideo', id: e.currentTarget.dataset.id })
@@ -111,7 +117,13 @@ Page({
         wx.showToast({ title: '已下架' });
         this.load();
       })
-      .catch((err) => wx.showToast({ title: err.message || '下架失败', icon: 'none' }));
+      .catch((err) => {
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
+        wx.showToast({ title: err.message || '下架失败', icon: 'none' });
+      });
   },
   remove(e) {
     const id = e.currentTarget.dataset.id;
@@ -129,7 +141,13 @@ Page({
             wx.showToast({ title: '已删除' });
             this.load();
           })
-          .catch((err) => wx.showToast({ title: err.message || '删除失败', icon: 'none' }));
+          .catch((err) => {
+            if (err.code === 'UNAUTHORIZED') {
+              wx.switchTab({ url: '/pages/mine/mine' });
+              return;
+            }
+            wx.showToast({ title: err.message || '删除失败', icon: 'none' });
+          });
       },
     });
   },

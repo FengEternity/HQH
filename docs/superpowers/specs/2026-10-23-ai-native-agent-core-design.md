@@ -1,0 +1,286 @@
+# AI Native Agent Core
+
+日期：2026-10-23  
+状态：架构已定。本仓库落地 Core 契约与 Forseti 上报；Forseti 服务从自己的 GitHub 仓库发布到微信云托管。2026-11-03 修订：问答和视频简介统一使用 TokenHub，由运营工作台按场景选择；配置和云端验收见 `docs/ai-model-setup.md`。
+分支：`dev-agent-core`（从 `dev` 迁出）  
+取代：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md` 中的 Agent harness，以及 `docs/superpowers/specs/2026-09-13-unified-search-context-hub-design.md` 第 3 节冻结的问答接口。
+
+## 1. 结论
+
+`@earendil-works/pi-agent-core` 只负责一轮里的模型循环、工具调用和取消。仓库里的 Agent Core 包在它外面，提供统一回合契约、profile、身份、上下文投影、工具权限和可观测事件。
+
+业务真相留在领域服务。客服线程、工单状态和用户可见消息继续由 `cloudfunctions/ticketing/` 持有。播放页问答使用独立的视频作用域会话。Core 不接管转人工、订单或通知。
+
+第一期用两个 C 端 profile 验证这套内核：播放页 `video_doc@v1`，客服 `customer_service@v1`。以后的搜索助理或运营助手只增加 profile 和领域端口，不另写生成循环。
+
+不接入 `pi-coding-agent`，不向模型提供数据库句柄、任意云函数 action、任意 HTTP、文件系统或 shell。
+
+## 2. 范围
+
+第一期要证明：
+
+- 播放页和客服都走同一个 `runTurn`。
+- 两个场景的会话不合并。播放页只回答当前已发布视频及其关联上架商品。
+- 客服只在领域状态允许时进入模型。转人工之后只追加用户消息。
+- 主体从第一期就区分 `end_user` 与 `operator`。第一期不启用运营 profile，也不允许运营身份调用 C 端 profile。
+- 一次 Agent 回合的调用链出现在 Forseti 里，能按模型、工具、耗时和 token 展开。云函数是否超时仍看云开发监控。
+
+第一期不做：
+
+- 跨场景自动跳转，或把播放页历史并入客服线程。
+- 运营助手、搜索框闲聊、下单、退款、改订单。
+- 抽帧、按播放进度切章节、向量库、知识库全文注入。
+- 把运行时换成腾讯云 ADP，或使用 ADP 的 Agent Harness。
+- 使用 Onesuite-Pilot、Pi Coding Agent 采集器或 APM 探针。这些接入面向主机、容器或 Python/Java 服务，不是微信云函数。
+- 把云开发日志绑定投递到 CLS。那是另一条单向投递，不能代替 Agent 调用链。
+- 把 Forseti 源码并入本仓库，或把它放进 `video-ingest` 容器。
+- 在小程序里运行 Agent 循环，或让客户端上传 prompt、工具列表、openid、权限。
+
+若以后做跨场景引用，只能由用户显式生成一份最小化引用包（视频 id，以及用户选中的消息 id）。客服读取这份引用并写入自己的线程。两个会话仍然分开。
+
+## 3. 分层与调用方向
+
+```mermaid
+flowchart LR
+  client[小程序]
+  domain[领域门禁与消息]
+  core[AgentCore]
+  runtime[pi-agent-core]
+  ports[领域工具端口]
+  client --> domain --> core --> runtime
+  runtime --> ports
+  ports --> core
+  core --> domain
+```
+
+小程序只提交场景坐标和本轮文本。领域服务先确认身份、scope 和状态，再调用 Core。Core 按 profile 投影上下文并执行。工具结果必须来自领域端口。领域服务把用户可见回复写入自己的消息表。
+
+播放页的领域 action 已放在云函数 `agent` 中。客服 action 留在 `ticketing`。`ticketing` 在门禁通过后把回合交给 `agent` 里的 Core，不复制一套循环。
+
+`customer_service` 拒绝小程序直调。请求体里的「已通过门禁」标志无效。调用来源以云函数上下文判定。`video_doc` 可以由小程序调用 `agent`，但 openid 只取 `cloud.getWXContext().OPENID`，视频是否已发布由服务端查询。
+
+## 4. 回合契约
+
+领域服务调用 Core 时使用下面的结构。客户端不能提交 `scope`、`actor` 或 `profileVersion`。
+
+| 字段 | 来源 | 含义 |
+| --- | --- | --- |
+| `profileId` | 领域 action 固定填入 | `video_doc` 或 `customer_service` |
+| `scope` | 领域服务生成 | 已校验的场景作用域，不是全局会话 |
+| `actor` | 服务端身份 | `end_user` 或 `operator`，含主体 id 与授权范围 |
+| `input.text` | 用户 | trim 后非空，最长 500 字 |
+| `input.currentTimeSec` | 播放页可选 | 非负整数秒。只进入本轮投影文案 |
+| `requestId` | 客户端本次发送 | 重试必须复用。换一次发送就换一个 id |
+
+`requestId` 由客户端生成，领域服务原样传入。空值、超 64 字或含空白字符时拒绝，不调用模型。
+
+Core 返回：
+
+| 字段 | 含义 |
+| --- | --- |
+| `ok` | 本轮是否产生可展示结果 |
+| `code` | 失败时的稳定错误码 |
+| `message` | 给用户看的短文案 |
+| `text` | 助手正文。成功时非空 |
+| `cards` | 渲染器放行后的卡片 |
+| `messageId` | 领域消息表中的助手消息 id |
+| `agentRunId` | 控制记录 id |
+| `status` | `succeeded`、`failed` 或 `replayed` |
+
+卡片只有三种：`video`、`shop_product`、`order`。每张卡片含 `type` 与 `id`。id 必须出现在本轮工具结果里。模型写出的链接、未知类型和未见过的 id 由渲染器丢弃。
+
+内部事件不返回给小程序。流式输出第一期关闭；整轮完成后一次返回。
+
+## 5. 主体、scope 与 profile
+
+`actor.type` 只允许 `end_user` 与 `operator`。第一期两个 profile 都要求 `end_user`。`operator` 调用它们时返回 `FORBIDDEN`。运营 profile 以后单独注册，不能靠复用客服 profile 提权。
+
+scope 由领域服务生成，Core 不信任客户端拼接的会话键。
+
+| profile | scope | 隔离 |
+| --- | --- | --- |
+| `video_doc@v1` | 当前用户 + 已发布 `videoId` | 与其他视频、客服线程互不可见 |
+| `customer_service@v1` | 当前用户的一条未关闭客服线程 | 不读取播放页消息表 |
+
+profile 是带版本的服务端模块，不是运营可编辑的 prompt 文档。一个 profile 包含五部分：
+
+- `scopeResolver`：核对场景对象并生成 scope。
+- `policy`：主体、输入长度、工具上限、超时、上下文预算、模型路由。问答模型名按使用场景存在 `admin_config` 文档 `agent_models`。运营工作台从服务端名单选择，默认 `hy3`。未保存时，若 `AGENT_MODEL_NAME` 落在名单内则使用它，否则仍是 `hy3`。
+- `contextProvider`：每一轮重新投影该 profile 需要的材料。
+- `toolset`：本 profile 显式注册的工具。
+- `renderer`：把模型输出收成正文和白名单卡片。
+
+更换 prompt、工具或权限时递增 profile 版本。运行记录保存实际执行的版本。
+
+问答和视频简介统一通过 TokenHub Chat Completions 协议调用。共享调用源码位于 `shared/ai-runtime`，通过检查脚本生成云函数与容器的独立发布副本。客户端只提交业务场景，不能提交供应商、基址、密钥或模型。模型候选名单由服务端维护，候选不等于账户已开通或已经通过工具验收。
+
+运营工作台为播放页问答、客服和视频简介分别保存模型名，仍使用 `admin_config/agent_models`。问答与视频容器读取同一场景配置。场景环境变量、全局 `TOKENHUB_MODEL` 和默认 `hy3` 用作未保存配置的回退，旧 `AGENT_MODEL_NAME` 仅兼容迁移。客服模型仍只保存，自动回复未接入。
+
+接入凭据使用服务端 `TOKENHUB_API_KEY` 和可选 `TOKENHUB_BASE_URL`。云函数与容器的环境变量不共享，分别在云端注入，不能要求开发机持有生产密钥。密钥不存入业务数据库、小程序或 Trace。语音识别继续使用腾讯 ASR 的凭据与协议。
+
+工作台分别验证问答云函数和视频容器：问答测试在 `agent` 内调用相同 TokenHub 客户端；视频简介测试经已鉴权的 `agent` 调用 `video-ingest /ai/probe`，容器自行读取场景配置并请求模型。固定短句通过只代表文字连通，不代表问答工具或真实简介已验收。具体配置、权限和发布步骤以模型接入说明为准。
+
+云函数运行 Node.js 18 或以上，函数时限 60 秒，模型与工具共享 20 秒预算。共享客户端支持取消实际 HTTP 请求，短暂限流或服务故障有限重试，不自动换模型。工具调用按供应商协议回填，显式关闭思考后指定固定工具。`pi-agent-core` 仍是后续运行时目标，当前实现为有界的只读工具回合，不能将本次传输统一视为该运行时已经接入。
+
+### 5.1 `video_doc@v1`
+
+入口是播放页对话区。服务端加载 `videoId`，只有 `status=published` 才继续。草稿、下架和不存在都返回 `NOT_FOUND`，不调用模型，也不把不可见文案写入投影。
+
+投影只包含当前视频的标题、简介、标签、品牌、型号，以及该视频关联的上架商品。已有转写字段可以进入投影。`currentTimeSec` 写成「约第 N 秒」，不触发 seek，也不注册抽帧工具。
+
+工具只有当前视频文档和关联上架商品的只读查询。没有全库 `search`、订单、转人工和任何写入工具。问到其他视频或其他型号时，回答请回讲解搜索或打开对应播放页。不注入那一条视频的正文，也不改 profile。
+
+未登录用户使用微信上下文给出的 OPENID。播放页提问不要求先登录。下单仍走商城。
+
+### 5.2 `customer_service@v1`
+
+入口是客服 tab。scope 是 `ticketing` 已经确认归属的未关闭线程。
+
+投影不塞入某条视频的全部转写。可以包含本轮工具返回的检索摘要和本人订单摘要。
+
+工具：
+
+| 工具 | 类型 | 约束 |
+| --- | --- | --- |
+| `search` | 只读 | 调用统一 `search`。入参和出参使用搜索规格第 2.1 节。不直连 `search_chunks` |
+| `own_orders` | 只读 | 用户 id 只取 `actor`。忽略模型传入的 openid。只返回待付款、已付款、已关闭 |
+| `escalate` | 交接 | 请求领域状态机转人工。不直接改线程文档 |
+
+没有下单、支付、退款和通知工具。没有依据时说明不知道，并提示转人工或去讲解、商城搜索。能引用就出卡片。不编造物流或发货时间。
+
+搜索规格当前只实现 `scene=video`。在商城检索落地前，`search` 工具只发送该规格已经接受的 `scene=video`。Core 不另写一套商品检索。
+
+## 6. 工具治理
+
+工具按能力注册，分只读查询、需确认的业务动作、交接动作。第一期没有需确认的业务动作。
+
+每次执行前 Core 再查四件事：工具属于该 profile 版本、参数符合 schema、`actor` 具有该能力、资源属于当前 scope。领域端口做最后一次归属校验。模型不能提交 openid、员工 id 或「跳过鉴权」。
+
+单轮最多 5 次工具调用。单个工具超时 5 秒。一轮模型与工具的总预算 20 秒，并且必须留在云函数超时之内。超限时停止继续调用，写入失败状态，返回 `TIMEOUT`。已成功的用户消息保留。
+
+## 7. 持久化与恢复
+
+用户看见的消息只有一份，写在领域消息表。
+
+| 场景 | 真相 | 助手消息标记 |
+| --- | --- | --- |
+| 客服 | 现有 `cs_threads`、`cs_messages` | `meta.source=agent`、`profileVersion`、`agentRunId`、卡片摘要 |
+| 播放页 | 日后的 `video_doc_threads`、`video_doc_messages` | 同上 |
+
+播放页集合按用户与 `videoId` 隔离，仅云函数可读写。本文不修改 `ensureCollections`。
+
+`agent_runs` 只保存恢复和幂等所需的控制状态：`requestId`、`agentRunId`、`profileId`、`profileVersion`、`scopeHash`、`actorType`、状态、错误码、创建和更新时间。不保存提示词、消息正文、工具原文、openid 或订单内容。它不用于检索排障，也不用于告警。
+
+同一 scope 同时只有一个 `running`。处理顺序：
+
+1. 领域服务校验身份、scope、状态和 `requestId`。
+2. 内容安全在领域服务完成，沿用现网 `msgSecCheck`。本地可以 `SKIP_CONTENT_CHECK=1`，正式环境不可以。未通过则不写用户消息、不调用 Core。
+3. 幂等键是 `scopeHash + requestId`，不是全局 `requestId`。同一 scope 内该键已成功：返回原来的助手消息，状态 `replayed`，不再调用模型，也不再执行交接工具。
+4. 同一幂等键仍在预算内运行：返回 `IN_PROGRESS`。
+5. 同一 scope 已有另一个运行中的幂等键：返回 `IN_PROGRESS`，不排队。
+6. 通过后先写用户消息，再把 `agent_runs` 置为 `running`。
+7. Core 成功后，领域服务写入助手消息，并把控制记录置为 `succeeded`。失败时保留用户消息，控制记录置为 `failed`，不编造助手正文。
+8. 运行超过总预算仍为 `running`：标为 `failed`。同一个幂等键可以再恢复一次，不新写用户消息。第二次仍失败则停止自动恢复。
+
+交接工具成功后，领域状态机进入人工状态。重放该幂等键不得再次转人工。
+
+## 8. 客服状态门禁
+
+状态机以 `cloudfunctions/ticketing/lib/csThreadState.js` 为准。状态是 `open`、`waiting_human`、`human`、`closed`。不新增 `ai` 状态，也不把 `open` 改名作为接入前置。
+
+`canRunAgent(status)` 与现有 `canAutoRuleReply(status)` 使用同一条件：只有 `open` 为真。`waiting_human`、`human`、`closed` 只追加用户消息，不调用 Core。
+
+`ticketing` 在调用 Core 之前完成本条消息的分流。`canRunAgent` 为假时只能写用户消息并维持人工状态。状态为 `open` 时：
+
+| 输入 | 去向 |
+| --- | --- |
+| `csEscalate`，或 faqId 为 `human`、`missing`、`claim` | 现有状态机，不进入 Core |
+| faqId 为 `howto`，以及其他自由输入 | `customer_service@v1` |
+
+领取账号、转人工和「没有我要的讲解」都不注册成模型工具。Core 不发送工单通知，也不处理会话认领。
+
+## 9. 错误
+
+领域服务把 Core 的错误码映射成现有风格的 `{ ok:false, code, message }`。门禁拒绝、内容安全拒绝和幂等重放使用正常返回，不抛出未捕获异常，避免云函数错误次数把它们算成模型故障。
+
+| 码 | 何时 | 是否调用模型 |
+| --- | --- | --- |
+| `BAD_INPUT` | 文本、`requestId`、profile 或播放位置不合法 | 否 |
+| `NOT_FOUND` | 视频不可见，或客服线程不存在 | 否 |
+| `FORBIDDEN` | 线程不属于当前用户，或主体与 profile 不匹配 | 否 |
+| `CONTENT_REJECTED` | 内容安全未通过 | 否 |
+| `INVALID_STATE` | 当前状态不允许 Agent 或交接 | 否 |
+| `IN_PROGRESS` | 同一回合或同一 scope 已在运行 | 否 |
+| `DOMAIN_UNAVAILABLE` | 视频、线程、搜索或订单端口失败 | 已开始则停止 |
+| `MODEL_UNAVAILABLE` | 模型密钥缺失、配置错误或供应商失败 | 已尝试 |
+| `TIMEOUT` | 工具次数、单工具或总预算超限 | 已开始则停止 |
+| `RATE_LIMITED` | 超过该主体、profile、scope 的频率上限 | 否 |
+
+频率上限的具体数字放在 profile policy 常量里，不由客户端传入。第一期每个用户、每个 profile、每个 scope 每分钟最多 6 次新回合。重放不计数。
+
+用户文案只说明能否重试或需要转人工，不包含供应商错误、堆栈和内部 id。
+
+## 10. 可观测性
+
+可观测性分成两层。Agent 调用链用已有的 Forseti，不改用腾讯云 ADP，也不自建指标库。
+
+| 层 | 落点 | 回答的问题 |
+| --- | --- | --- |
+| Agent 调用链 | Forseti | 哪一步模型或工具失败、耗时和 token |
+| 云函数基础设施 | 云开发日志与腾讯云可观测平台 | 云函数是否报错、超时或被限流 |
+
+曾比较过的三个腾讯云产品不作为调用链后端：
+
+- 腾讯云可观测平台只看云函数、数据库等资源指标，看不到模型调用和工具调用。
+- 腾讯云 ADP 是整套智能体开发平台。它的 AgentOps 调用链属于跑在 ADP 上的智能体。接入它就要换掉 `pi-agent-core` 和本规格的 profile。
+- 腾讯云 Agent 可观测可以接收自研应用的 OTLP，但采集器面向主机和容器里的现成 Agent。本产品已经有 Forseti，调用链不再另接一套。
+
+云函数在用户可见回复落库之后、函数返回之前，把这一轮导出为 OTLP JSON，经 `cloud.callContainer` 发给 Forseti。路径是 `POST /v1/traces`，请求头带 `X-WX-SERVICE: forseti` 和 `Authorization: Basic base64(public_key:secret_key)`。这与 `catalog` 唤醒 `video-ingest` 的调用方式相同，不走公网 URL。`public_key` 和 `secret_key` 只放云函数环境变量。导出失败只记云开发日志，不回滚已经成功的回复，也不抛未捕获异常。
+
+一条回合是一棵 Trace。固定 Span 为 `gate`、`context`、`model`、`tool`、`persist`。Span 只带：
+
+- `status`、`durationMs`、`errorClass`、`enteredModel`
+- 云函数 `requestId`、`agentRunId`、`profileId`、`profileVersion`、`scopeHash`
+- 模型 Span 额外有模型名、`tokenInput`、`tokenOutput`
+- 工具 Span 额外有 `toolName`、`resultCode`
+
+不上传提示词、用户正文、工具参数、工具结果原文、openid、文件 id 和密钥。Forseti 会保存上报内容，所以脱敏在离开云函数之前完成。控制台能展开调用树和用量，不能回放原文。
+
+云开发服务调用日志仍用自己的 `traceId` / `spanId` 关联云函数、数据库和存储。它和 Forseti 的 Trace 不是同一条链路；两边用 `requestId` 对照。
+
+## 10.1 Forseti 部署
+
+Forseti 是独立仓库 `FengEternity/Forseti`，部署单位就是这个 GitHub 仓库，不把源码并入 HQH，也不打进 `video-ingest` 镜像。
+
+发布用微信云托管的「绑定 GitHub 仓库」。授权后拉取指定的已验收分支或标签，构建镜像并发布，配置留在该服务的流水线里。不用手动上传代码包，那种方式上限 2 MiB。不绑定自建账密仓库。流水线不跟踪未验收的功能分支。
+
+API 镜像是仓库里的 `infra/Dockerfile.api`，监听 `18000`。构建上下文是仓库根目录，因为该文件复制整个仓库和 `infra/forseti.docker.json`。控制台若把目标目录当成构建上下文，不能填 `infra/`。
+
+它和 `video-ingest` 同在一个云开发环境，但是另一个服务，名称 `forseti`。`video-ingest` 是最小实例数 0 的工人：`catalog` 调用 `POST /run`，结果写回云数据库和云存储，容器本地文件可以丢。Forseti 的 Trace 在自己的 `/data`，运营还要打开页面查看，所以：
+
+- 最小实例数是 1。缩到 0 时，云函数那一次短上报赶不上冷启动。
+- `/data` 必须是重启后还在的磁盘。没有持久盘就不发布，不能把 Trace 写在临时盘里。
+- Web 工作台若要给人看，单独建服务并打开访问入口，使用 Forseti 自己的登录。`video-ingest` 没有页面，所以关闭公网；这个开关不能照抄到 Forseti Web。云函数只访问 API。
+
+密钥、`FORSETI_SESSION_SECRET` 和管理员口令由云托管环境变量注入，不进 GitHub，也不进 HQH。
+
+## 11. 测试
+
+核心自动化不依赖真实模型：
+
+- Core：非法 profile、主体不匹配、工具不在白名单、伪造 openid、卡片 id 不是本轮工具结果、超限停止。
+- 领域适配：已发布视频才可提问；客服 `open` 才能运行；`waiting_human`、`human`、`closed` 不调用 Core；`claim`、`human`、`missing` 和显式转人工不进入模型。
+- 替身模型：同一幂等键不重复写助手消息、不重复转人工；超时保留用户消息并返回 `TIMEOUT`；内容安全拒绝不写库。
+- 调用链导出：Span 不含提示词、正文、工具原文和 openid；导出失败时用户回复仍成功。
+
+真实模型只做受控 smoke test，不作为上面这些自动化的通过条件。
+
+## 12. 与搜索规格的关系
+
+搜索框继续只调用 `search`，不进入 Agent Core。`search` 不运行 `pi-agent-core`。
+
+客服找片时通过 `search` 工具回到同一套搜索入参和出参。播放页 profile 不获得全库搜索。知识库片段、嵌入供应商和 `scene=product` 仍由搜索规格决定；在那些能力落地前，Core 不直连底表来补齐。
+
+## 13. 实现顺序
+
+本仓库先落地 Core 契约、替身执行器和 Forseti OTLP 上报。随后是播放页 `video_doc@v1`，再把 `customer_service@v1` 接入 `ticketing`。Forseti 容器在微信云托管控制台按第 10.1 节发布，不在本仓库构建。不要在一份改动里同时改检索、支付和工单状态机。

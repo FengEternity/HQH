@@ -1,0 +1,11 @@
+.join-page {
+  justify-content: center;
+}
+
+.join-result {
+  text-align: center;
+}
+
+.join-message {
+  font-size: 30rpx;
+}

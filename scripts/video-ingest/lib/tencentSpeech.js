@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { createTokenHubClient, tokenHubStatus } = require('./ai-runtime');
 
 const ASR_HOST = 'asr.tencentcloudapi.com';
 const ASR_VERSION = '2019-06-14';
@@ -235,27 +236,16 @@ async function writeIntroText({
   env = process.env,
   systemPrompt,
   userPrompt,
+  modelName,
 }) {
-  const config = resolveTencentConfig(env);
-  if (!config || !config.introKey || !config.introModel || !config.chatUrl) {
+  const model = modelName || envValue(env, 'TOKENHUB_INTRO_MODEL') || envValue(env, 'TOKENHUB_MODEL');
+  if (!tokenHubStatus(env).ready || !model) {
     return '';
   }
-  const response = await fetchImpl(config.chatUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.introKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(buildIntroRequest(systemPrompt, userPrompt, config.introModel)),
+  const result = await createTokenHubClient({ env, fetch: fetchImpl }).chat({
+    ...buildIntroRequest(systemPrompt, userPrompt, model), timeoutMs: 20000,
   });
-  const payload = await readJson(response);
-  if (!response.ok) {
-    const message = payload.error && payload.error.message
-      ? payload.error.message
-      : (payload.message || response.status);
-    throw new Error(`腾讯云简介失败：${message}`);
-  }
-  const intro = introFromChatPayload(payload);
+  const intro = introFromChatPayload({ choices: [{ message: result.message }] });
   if (!intro) {
     throw new Error('腾讯云简介为空');
   }

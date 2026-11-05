@@ -25,6 +25,7 @@ Page({
     loading: true,
     error: '',
   },
+  // 正式版发布后删除：连点标题八次进入运营登录。
   tapCount: 0,
   onLoad() {
     whenCloudReady(getApp()).then(() => this.load({ showLoading: true }));

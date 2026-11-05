@@ -63,24 +63,29 @@ function ticketing(data) {
     });
 }
 
-function getTicket() {
-  return wx.getStorageSync('hqh_admin_ticket') || '';
-}
-
-function setTicket(ticket) {
-  wx.setStorageSync('hqh_admin_ticket', ticket);
+function agent(data) {
+  return wx.cloud
+    .callFunction({ name: 'agent', data })
+    .then(unwrapCloudResult)
+    .catch((err) => {
+      throw mapCloudCallError(err, 'agent');
+    });
 }
 
 function admin(data) {
-  return catalog(Object.assign({ ticket: getTicket() }, data));
+  return catalog(data);
 }
 
 function ticketingAdmin(data) {
-  return ticketing(Object.assign({ ticket: getTicket() }, data));
+  return ticketing(data);
 }
 
 function shopAdmin(data) {
-  return shop(Object.assign({ ticket: getTicket() }, data));
+  return shop(data);
+}
+
+function adminMe() {
+  return catalog({ action: 'adminMe' });
 }
 
 module.exports = {
@@ -88,9 +93,9 @@ module.exports = {
   search,
   ticketing,
   shop,
+  agent,
   admin,
   ticketingAdmin,
   shopAdmin,
-  getTicket,
-  setTicket,
+  adminMe,
 };

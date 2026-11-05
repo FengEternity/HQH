@@ -1,4 +1,4 @@
-const { catalog, shop } = require('../../utils/api');
+const { catalog, shop, agent } = require('../../utils/api');
 const { withPosterUrl } = require('../../utils/videoMedia');
 const { formatPriceYuan } = require('../../utils/shopPrice');
 
@@ -12,6 +12,7 @@ Page({
     tab: 'intro',
     inputDraft: '',
     messages: [],
+    askError: '',
     currentTimeSec: 0,
   },
   onLoad(query) {
@@ -70,6 +71,16 @@ Page({
       return;
     }
     this.setData({ tab, currentTimeSec: this._currentTimeSec || 0 });
+    if (tab === 'ask') return this.loadAsk();
+  },
+  loadAsk() {
+    return agent({ action: 'videoDocHistory', videoId: this.data.videoId })
+      .then((result) => {
+        this.setData({ messages: (result && result.messages) || [], askError: '' });
+      })
+      .catch((err) => {
+        this.setData({ askError: err.message || '暂时无法读取问答' });
+      });
   },
   onTimeUpdate(e) {
     const sec = Math.floor(Number(e.detail && e.detail.currentTime) || 0);
@@ -79,8 +90,34 @@ Page({
     this.setData({ inputDraft: e.detail.value });
   },
   onAskSend() {
-    // 预留：agent({ profile: 'video_doc', message, videoId, currentTimeSec })
-    wx.showToast({ title: '本片问答即将开放', icon: 'none' });
+    const text = String(this.data.inputDraft || '').trim();
+    if (!text || this._sending) return Promise.resolve();
+    if (this._pendingText !== text) {
+      this._pendingText = text;
+      this._requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+    }
+    this._sending = true;
+    return agent({
+      action: 'videoDocSend',
+      videoId: this.data.videoId,
+      text,
+      currentTimeSec: this._currentTimeSec || 0,
+      requestId: this._requestId,
+    })
+      .then((result) => {
+        this._pendingText = '';
+        this.setData({
+          messages: (result && result.messages) || [],
+          inputDraft: '',
+          askError: '',
+        });
+      })
+      .catch((err) => {
+        this.setData({ askError: err.message || '发送失败' });
+      })
+      .then(() => {
+        this._sending = false;
+      });
   },
   attachShopCovers(products) {
     const cloudIds = (products || [])

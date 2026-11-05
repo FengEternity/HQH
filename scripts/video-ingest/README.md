@@ -55,7 +55,7 @@ python3 -m venv .video-ingest/venv
 
 - `TCB_ENV_ID`、`TCB_SECRET_ID`、`TCB_SECRET_KEY`、`ADMIN_PIN`
 - `TENCENT_ASR_ENGINE`（当前生产用 `16k_zh`）、`TENCENT_ASR_REGION`（当前生产用 `ap-shanghai`）
-- 需要自动简介时再加 `TOKENHUB_API_KEY`、`TOKENHUB_MODEL`（当前生产用 `hy3`）、`TOKENHUB_BASE_URL`（当前生产用 `https://tokenhub.tencentmaas.com/v1`）
+- 自动简介配置 `TOKENHUB_API_KEY`；模型优先读取同一云环境 `admin_config/agent_models.video_intro`，再读 `TOKENHUB_INTRO_MODEL`、`TOKENHUB_MODEL`，默认 `hy3`。`TOKENHUB_BASE_URL` 默认 `https://tokenhub.tencentmaas.com/v1`。运营工作台的视频简介「测试」会实际调用该容器的固定短句探测；它与问答服务分别验证。密钥不需要放到开发机，见 [统一模型接入说明](../../docs/ai-model-setup.md)。
 
 密钥可沿用 `TCB_SECRET_ID` / `TCB_SECRET_KEY`，也可用 `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` 覆盖。缺引擎或地域时转写直接失败；缺简介密钥、模型或地址时只跳过简介。上面的生产取值只写在云托管环境变量里，代码不带默认值。镜像只装 Node 和 ffmpeg，不再预拉 Whisper 或 Qwen。长片转码加上最长 15 分钟的识别轮询，仍可能超过 30 分钟租约，最大实例保持 1。
 

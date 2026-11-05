@@ -50,7 +50,7 @@ Page({
       })
       .catch((err) => {
         if (err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
+          wx.switchTab({ url: '/pages/mine/mine' });
         }
       });
   },
@@ -81,7 +81,7 @@ Page({
           .catch((err) => {
             wx.hideLoading();
             if (err.code === 'UNAUTHORIZED') {
-              wx.redirectTo({ url: '/pages/admin/login/login' });
+              wx.switchTab({ url: '/pages/mine/mine' });
               return;
             }
             wx.showToast({ title: err.message || '入队失败', icon: 'none' });

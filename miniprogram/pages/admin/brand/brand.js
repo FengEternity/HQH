@@ -28,7 +28,7 @@ Page({
       })
       .catch((err) => {
         if (err.code === 'UNAUTHORIZED') {
-          wx.redirectTo({ url: '/pages/admin/login/login' });
+          wx.switchTab({ url: '/pages/mine/mine' });
           return;
         }
         wx.showToast({ title: err.message || '加载失败', icon: 'none' });
@@ -59,6 +59,10 @@ Page({
       })
       .catch((err) => {
         this.setData({ saving: false });
+        if (err.code === 'UNAUTHORIZED') {
+          wx.switchTab({ url: '/pages/mine/mine' });
+          return;
+        }
         wx.showToast({ title: err.message || '保存失败', icon: 'none' });
       });
   },
@@ -83,6 +87,10 @@ Page({
             setTimeout(() => wx.navigateBack(), 600);
           })
           .catch((err) => {
+            if (err.code === 'UNAUTHORIZED') {
+              wx.switchTab({ url: '/pages/mine/mine' });
+              return;
+            }
             wx.showModal({
               title: '删不掉',
               content: err.message || '删除失败',

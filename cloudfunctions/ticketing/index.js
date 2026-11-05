@@ -20,10 +20,11 @@ const {
   csSetNotify,
 } = require('./lib/csStore');
 const { notifyReplied, readNewTicketTemplateId } = require('./lib/notify');
-const { verifyTicket } = require('./lib/ticket');
+const { requireStaff } = require('./lib/adminStaff');
 const { createWecomClient, createNotifyBinder } = require('./lib/wecomClient');
 const { deliverWecomAdminNotifications } = require('./lib/wecomDelivery');
 const { handleWecomCallback } = require('./lib/wecomCallback');
+const { attachAvatarUrls } = require('./lib/resolveAvatarUrls');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -52,10 +53,8 @@ function codedError(code, message) {
   return error;
 }
 
-function requireAdmin(ticket) {
-  if (!verifyTicket(process.env.ADMIN_PIN, ticket)) {
-    throw codedError('UNAUTHORIZED');
-  }
+async function requireAdmin(db, openid) {
+  await requireStaff(db, openid);
 }
 
 async function checkText(content) {
@@ -144,16 +143,21 @@ async function dispatch(event) {
         notifyAdminsFn: (thread, message) => notifyAdmins(now, thread, message),
       });
     }
-    case 'csAdminList':
-      requireAdmin(event.ticket);
-      return csAdminList(db, { status: event.status, now });
-    case 'csAdminGet':
-      requireAdmin(event.ticket);
-      return Object.assign({}, await csAdminGet(db, { threadId: event.threadId, now }), {
-        viewerOpenid: openid,
-      });
+    case 'csAdminList': {
+      await requireAdmin(db, openid);
+      const listed = await csAdminList(db, { status: event.status, now });
+      // 服务端换临时链，绕过客户端「仅创建者可读写」存储权限
+      const threads = await attachAvatarUrls(listed.threads, (payload) => cloud.getTempFileURL(payload));
+      return Object.assign({}, listed, { threads });
+    }
+    case 'csAdminGet': {
+      await requireAdmin(db, openid);
+      const detail = await csAdminGet(db, { threadId: event.threadId, now });
+      const [thread] = await attachAvatarUrls([detail.thread], (payload) => cloud.getTempFileURL(payload));
+      return Object.assign({}, detail, { thread, viewerOpenid: openid });
+    }
     case 'csAdminReply':
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       await checkText(event.text);
       return csAdminReply(db, {
         threadId: event.threadId,
@@ -163,23 +167,23 @@ async function dispatch(event) {
         notifyUserFn: (thread) => notifyUser(thread.openid, now),
       });
     case 'csAdminClose':
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       return csAdminClose(db, { threadId: event.threadId, openid, now });
     case 'csClaimReply':
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       return csClaimReply(db, { threadId: event.threadId, openid, now });
     case 'csReleaseReply':
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       return csReleaseReply(db, { threadId: event.threadId, openid, now });
     case 'csRegisterNotify':
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       return csRegisterNotify(db, {
         openid,
         templateId: readNewTicketTemplateId(process.env),
         now,
       });
     case 'csUnregisterNotify':
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       return csUnregisterNotify(db, { openid, now });
     case 'csGetProfile':
       return csGetProfile(db, { openid });
@@ -192,7 +196,7 @@ async function dispatch(event) {
         now,
       });
     case 'csBindWecom': {
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       const binder = createNotifyBinder({ env: process.env, client: wecomClient, now });
       return csBindWecom(db, {
         openid,
@@ -205,7 +209,7 @@ async function dispatch(event) {
       });
     }
     case 'csSetNotify': {
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       const binder = createNotifyBinder({ env: process.env, client: wecomClient, now });
       return csSetNotify(db, {
         openid,
@@ -215,7 +219,7 @@ async function dispatch(event) {
       });
     }
     case 'csNotifyConfig':
-      requireAdmin(event.ticket);
+      await requireAdmin(db, openid);
       return Object.assign({ ok: true }, await readWecomNotifyStatus(db, { openid }));
     default:
       throw codedError('UNKNOWN_ACTION');
