@@ -1,4 +1,5 @@
 <view class="page form-page">
+<form bindsubmit="save">
   <view class="form-meta">
     <text class="muted">所属品牌</text>
     <text class="form-meta-value">{{brandName || '—'}}</text>
@@ -11,6 +12,7 @@
       <textarea
         class="field-input field-textarea"
         placeholder="上传视频后从文件名填入"
+        name="title"
         value="{{titleText}}"
         bindinput="onTitle"
         maxlength="120"
@@ -27,6 +29,7 @@
       <textarea
         class="field-input field-textarea"
         placeholder="处理完成后显示在这里"
+        name="intro"
         value="{{introText}}"
         bindinput="onIntro"
         maxlength="500"
@@ -53,6 +56,7 @@
       <textarea
         class="field-input field-textarea"
         placeholder="可留空"
+        name="modelName"
         value="{{modelName}}"
         bindinput="onModel"
         maxlength="80"
@@ -65,6 +69,7 @@
       <textarea
         class="field-input field-textarea"
         placeholder="多个用逗号分隔，如 对中,放样"
+        name="tags"
         value="{{tags}}"
         bindinput="onTags"
         maxlength="200"
@@ -77,10 +82,15 @@
   <view class="form-card">
     <view class="form-section-title">封面与视频</view>
     <view class="media-block">
-      <view class="cover edit-cover">
-        <image wx:if="{{posterUrl}}" class="cover-img" src="{{posterUrl}}" mode="aspectFill" />
-        <text wx:else>{{brandName}}</text>
+      <view class="cover-frame" bindtap="pickCoverPhoto">
+        <image wx:if="{{posterUrl}}" class="cover-frame-img" src="{{posterUrl}}" mode="aspectFill" />
+        <view wx:else class="cover-frame-empty">
+          <text class="cover-frame-empty-title">添加封面</text>
+          <text class="muted">点此从相册选择</text>
+        </view>
+        <view wx:if="{{posterUrl}}" class="cover-frame-badge">更换封面</view>
       </view>
+      <view class="muted cover-note">未选封面时，处理后用片头画面。点这里可换成自己的图，并按 16:9 裁剪；人工封面不会被自动覆盖。</view>
     </view>
     <view class="media-row">
       <view class="media-row-main">
@@ -95,6 +105,7 @@
   </view>
 
   <view class="form-footer">
-    <view class="btn" bindtap="save">保存</view>
+    <button class="btn" form-type="submit" hover-class="none">保存</button>
   </view>
+</form>
 </view>

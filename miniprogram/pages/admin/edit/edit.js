@@ -8,6 +8,28 @@ function noticeAfterPicker(title) {
   }, 400);
 }
 
+function openCoverCrop(src) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(value);
+    };
+    wx.navigateTo({
+      url: `/pages/admin/cover-crop/cover-crop?src=${encodeURIComponent(src)}`,
+      events: {
+        done: (payload) => finish((payload && payload.path) || null),
+        cancel: () => finish(null),
+      },
+      success: (result) => result.eventChannel.emit('init', { src }),
+      fail: () => finish(null),
+    });
+  });
+}
+
 const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
 
 function cleanText(value) {
@@ -247,6 +269,16 @@ Page({
           }
         : copies,
     );
+    if (keepEdits) {
+      // 刷新只补还没写过的简介。标题框里的字可能还没进页面数据，回写会盖回文件名。
+      delete fields.titleText;
+      const humanIntro = withoutPlaceholder(this.data.humanIntro);
+      const currentIntro = this.data.introText == null ? '' : String(this.data.introText);
+      const nextIntro = fields.introText == null ? '' : String(fields.introText);
+      if (humanIntro || (cleanText(currentIntro) && currentIntro !== nextIntro)) {
+        delete fields.introText;
+      }
+    }
     this.setData(
       Object.assign(
         fields,
@@ -373,6 +405,58 @@ Page({
       return this.persist(true);
     }
     return Promise.resolve(this.data.id);
+  },
+  pickCoverPhoto() {
+    return new Promise((resolve, reject) => {
+      wx.chooseMedia({
+        count: 1,
+        mediaType: ['image'],
+        success: (res) => {
+          const picked = res.tempFiles && res.tempFiles[0];
+          const filePath = picked && picked.tempFilePath;
+          if (!filePath) {
+            wx.showToast({ title: '未获取到图片', icon: 'none' });
+            resolve(null);
+            return;
+          }
+          openCoverCrop(filePath)
+            .then((croppedPath) => {
+              if (!croppedPath) {
+                return null;
+              }
+              return this.ensureSaved()
+                .then(() => this.uploadCloudFile('cover', croppedPath, 'jpg'))
+                .then((fileID) => new Promise((done, fail) => {
+                  this.setData({
+                    coverFileId: fileID,
+                    posterUrl: croppedPath,
+                  }, () => {
+                    this.persist(true).then(done).catch(fail);
+                  });
+                }));
+            })
+            .then((saved) => {
+              if (saved) {
+                wx.showToast({ title: '封面已更新', icon: 'none' });
+              }
+              resolve(saved || null);
+            })
+            .catch((err) => {
+              wx.showToast({ title: (err && err.message) || '封面失败', icon: 'none' });
+              reject(err);
+            });
+        },
+        fail: (err) => {
+          const message = err && err.errMsg ? String(err.errMsg) : '';
+          if (/cancel/i.test(message)) {
+            resolve(null);
+            return;
+          }
+          wx.showToast({ title: '没有选到图片', icon: 'none' });
+          resolve(null);
+        },
+      });
+    });
   },
   uploadCloudFile(kind, filePath, ext) {
     const cloudPath = `${kind}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
@@ -517,7 +601,29 @@ Page({
         wx.showToast({ title: err.message || '重试失败', icon: 'none' });
       });
   },
-  save() {
+  save(event) {
+    const form = event && event.detail && event.detail.value;
+    if (form && typeof form === 'object') {
+      const titleText = Object.prototype.hasOwnProperty.call(form, 'title')
+        ? form.title
+        : this.data.titleText;
+      const introText = Object.prototype.hasOwnProperty.call(form, 'intro')
+        ? form.intro
+        : this.data.introText;
+      const fields = draftFieldState({
+        humanTitle: humanCopyFromInput(titleText, this.data.autoTitle),
+        autoTitle: this.data.autoTitle,
+        humanIntro: humanCopyFromInput(introText, this.data.autoIntro),
+        autoIntro: this.data.autoIntro,
+      }, { titleText, introText });
+      if (Object.prototype.hasOwnProperty.call(form, 'modelName')) {
+        fields.modelName = form.modelName;
+      }
+      if (Object.prototype.hasOwnProperty.call(form, 'tags')) {
+        fields.tags = form.tags;
+      }
+      this.setData(fields);
+    }
     this.persist(false).catch((err) => {
       if (err.code === 'UNAUTHORIZED') {
         wx.switchTab({ url: '/pages/mine/mine' });

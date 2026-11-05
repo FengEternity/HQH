@@ -2,6 +2,8 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 let pageConfig;
 global.Page = (config) => {
@@ -372,6 +374,246 @@ describe('pickVideo', () => {
       assert.equal(context.data.autoTitle, '已有标题');
       assert.equal(context.data.titleText, '已有标题');
       assert.equal(context.data.videoFileId, 'cloud://video');
+    } finally {
+      global.wx = originalWx;
+    }
+  });
+
+  it('保存时用表单里的标题，页面数据还停留在文件名也写入手改名称', () => {
+    const saved = [];
+    const context = {
+      data: {
+        brandId: 'b1',
+        id: 'v1',
+        humanTitle: '',
+        autoTitle: 'NS2611021636327571',
+        titleText: 'NS2611021636327571',
+        humanIntro: '',
+        autoIntro: '自动简介',
+        introText: '自动简介',
+        modelName: '',
+        tags: '',
+        coverFileId: '',
+        videoFileId: 'cloud://v',
+      },
+      setData(patch, callback) {
+        this.data = { ...this.data, ...patch };
+        if (callback) {
+          callback();
+        }
+      },
+      persist(silent) {
+        saved.push({
+          silent,
+          humanTitle: this.data.humanTitle,
+          titleText: this.data.titleText,
+          modelName: this.data.modelName,
+          tags: this.data.tags,
+        });
+        return Promise.resolve('v1');
+      },
+    };
+
+    pageConfig.save.call(context, {
+      detail: {
+        value: {
+          title: '中海达点放样',
+          intro: '自动简介',
+          modelName: 'iRTK5',
+          tags: '对中',
+        },
+      },
+    });
+
+    assert.equal(context.data.humanTitle, '中海达点放样');
+    assert.equal(context.data.titleText, '中海达点放样');
+    assert.equal(context.data.humanIntro, '');
+    assert.equal(saved[0].humanTitle, '中海达点放样');
+    assert.equal(saved[0].modelName, 'iRTK5');
+    assert.equal(saved[0].tags, '对中');
+
+    pageConfig.save.call(context, {
+      detail: {
+        value: {
+          title: 'NS2611021636327571',
+          intro: '自动简介',
+        },
+      },
+    });
+    assert.equal(context.data.humanTitle, '');
+    assert.equal(saved[1].humanTitle, '');
+
+    const wxml = fs.readFileSync(path.join(__dirname, 'edit.wxml'), 'utf8');
+    assert.match(wxml, /bindsubmit="save"/);
+    assert.match(wxml, /name="title"/);
+    assert.match(wxml, /name="intro"/);
+    assert.match(wxml, /name="modelName"/);
+    assert.match(wxml, /name="tags"/);
+    assert.match(wxml, /form-type="submit"/);
+    assert.doesNotMatch(wxml, /bindtap="save"/);
+  });
+
+  it('处理中的刷新保留正在编辑的标题，没有手写简介时仍填入生成稿', () => {
+    const context = {
+      data: {
+        id: 'v1',
+        titleText: '手改名称',
+        humanTitle: '',
+        autoTitle: 'NS2611021636327571',
+        introText: '',
+        humanIntro: '',
+        autoIntro: '',
+        modelName: '旧型号',
+        tags: '旧标签',
+        coverFileId: '',
+        posterUrl: '',
+      },
+      setData(patch, callback) {
+        this.data = { ...this.data, ...patch };
+        if (callback) {
+          callback();
+        }
+      },
+      watchIngest() {},
+      stopWatchIngest() {},
+    };
+
+    pageConfig.applyVideo.call(
+      context,
+      video({
+        autoTitle: 'NS2611021636327571',
+        humanTitle: '',
+        autoIntro: '生成的简介',
+        humanIntro: '',
+        modelName: '新型号',
+        tags: ['新标签'],
+        ingest: { ...video().ingest, phase: 'running' },
+      }),
+      'b1',
+      { keepEdits: true },
+    );
+
+    assert.equal(context.data.titleText, '手改名称');
+    assert.equal(context.data.introText, '生成的简介');
+    assert.equal(context.data.modelName, '旧型号');
+    assert.equal(context.data.tags, '旧标签');
+
+    context.data.introText = '手写简介';
+    context.data.humanIntro = '手写简介';
+    pageConfig.applyVideo.call(
+      context,
+      video({
+        autoTitle: 'NS2611021636327571',
+        humanTitle: '',
+        autoIntro: '另一版生成稿',
+        humanIntro: '',
+        ingest: { ...video().ingest, phase: 'running' },
+      }),
+      'b1',
+      { keepEdits: true },
+    );
+    assert.equal(context.data.titleText, '手改名称');
+    assert.equal(context.data.introText, '手写简介');
+  });
+
+  it('点封面从相册选图，裁剪确认后上传并保存，取消裁剪不改原封面', async () => {
+    const calls = [];
+    const originalWx = global.wx;
+    global.wx = {
+      chooseMedia(options) {
+        calls.push({ type: 'chooseMedia', options });
+        options.success({
+          tempFiles: [{ tempFilePath: 'wxfile://album.jpg' }],
+        });
+      },
+      navigateTo(options) {
+        calls.push({ type: 'navigateTo', url: options.url });
+        options.success({ eventChannel: { emit() {} } });
+        options.events.done({ path: 'wxfile://crop.jpg' });
+      },
+      showLoading() {},
+      hideLoading() {},
+      showToast() {},
+      cloud: {
+        uploadFile() {
+          calls.push({ type: 'upload' });
+          return Promise.resolve({ fileID: 'cloud://custom-cover' });
+        },
+      },
+    };
+    const saved = [];
+    const context = {
+      data: {
+        id: 'v1',
+        brandId: 'b1',
+        coverFileId: 'cloud://auto-cover',
+        posterUrl: 'https://example.com/first-frame.jpg',
+        humanTitle: '',
+        autoTitle: '片头标题',
+        humanIntro: '',
+        autoIntro: '',
+        modelName: '',
+        tags: '',
+        videoFileId: 'cloud://video',
+      },
+      setData(patch, callback) {
+        this.data = { ...this.data, ...patch };
+        if (callback) {
+          callback();
+        }
+      },
+      ensureSaved() {
+        return Promise.resolve(this.data.id);
+      },
+      uploadCloudFile(kind, filePath, ext) {
+        calls.push({ type: 'uploadCloudFile', kind, filePath, ext });
+        return Promise.resolve('cloud://custom-cover');
+      },
+      persist(silent) {
+        saved.push({
+          silent,
+          coverFileId: this.data.coverFileId,
+          posterUrl: this.data.posterUrl,
+        });
+        return Promise.resolve(this.data.id);
+      },
+    };
+
+    try {
+      await pageConfig.pickCoverPhoto.call(context);
+      assert.deepEqual(calls[0].options.mediaType, ['image']);
+      assert.equal(calls[0].options.count, 1);
+      assert.match(calls[1].url, /\/pages\/admin\/cover-crop\/cover-crop\?src=/);
+      assert.match(decodeURIComponent(calls[1].url), /wxfile:\/\/album\.jpg/);
+      assert.deepEqual(calls[2], {
+        type: 'uploadCloudFile',
+        kind: 'cover',
+        filePath: 'wxfile://crop.jpg',
+        ext: 'jpg',
+      });
+      assert.equal(context.data.coverFileId, 'cloud://custom-cover');
+      assert.equal(context.data.posterUrl, 'wxfile://crop.jpg');
+      assert.deepEqual(saved, [{
+        silent: true,
+        coverFileId: 'cloud://custom-cover',
+        posterUrl: 'wxfile://crop.jpg',
+      }]);
+
+      saved.length = 0;
+      context.data.coverFileId = 'cloud://auto-cover';
+      context.data.posterUrl = 'https://example.com/first-frame.jpg';
+      global.wx.navigateTo = (options) => {
+        options.success({ eventChannel: { emit() {} } });
+        options.events.cancel();
+      };
+      await pageConfig.pickCoverPhoto.call(context);
+      assert.equal(context.data.coverFileId, 'cloud://auto-cover');
+      assert.equal(context.data.posterUrl, 'https://example.com/first-frame.jpg');
+      assert.equal(saved.length, 0);
+
+      const wxml = fs.readFileSync(path.join(__dirname, 'edit.wxml'), 'utf8');
+      assert.match(wxml, /bindtap="pickCoverPhoto"/);
+      assert.match(wxml, /更换封面/);
     } finally {
       global.wx = originalWx;
     }
