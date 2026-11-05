@@ -207,58 +207,40 @@ describe('home catalog failures', () => {
 });
 
 describe('explainer search', () => {
-  it('keeps keyword and ai search in one bar with a mode list', () => {
+  it('keeps keyword and ai search in one bar with an ai toggle', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'index.wxml'), 'utf8');
     assert.match(wxml, /bindtap="onModeTap"/);
     assert.match(wxml, /bindtap="onSearchConfirm"/);
     assert.match(wxml, /bindconfirm="onSearchConfirm"/);
-    assert.match(wxml, /aria-label="搜索模式"/);
+    assert.match(wxml, /aria-label="\{\{queryMode === 'ai' \? '关闭 AI 搜索' : '开启 AI 搜索'\}\}"/);
     assert.match(wxml, /aria-label="搜索"/);
-    assert.match(wxml, /关键词/);
-    assert.match(wxml, /AI 搜索/);
+    assert.match(wxml, /class="ai-toggle \{\{queryMode === 'ai' \? 'ai-toggle-on' : ''\}\}/);
+    assert.match(wxml, /class="ai-toggle-mark">AI</);
+    assert.doesNotMatch(wxml, /search-chevron/);
     assert.match(wxml, /型号、菜单名或操作/);
     assert.match(wxml, /用一句话描述想看的讲解/);
     assert.match(wxml, /可以换个型号或菜单名，也可以把问题发给客服/);
     assert.match(wxml, /bindtap="onSearchMiss"/);
     assert.match(wxml, /联系客服/);
-    assert.match(wxml, /关键词结果/);
+    assert.match(wxml, /按名称找到的/);
   });
 
-  it('chooses a search mode from the action sheet', () => {
+  it('toggles ai search from the logo', () => {
     const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
-    const sheets = [];
-    global.wx = {
-      showActionSheet(options) {
-        sheets.push(options.itemList);
-        options.success({ tapIndex: 1 });
-      },
-    };
 
     page.onModeTap();
-
-    assert.deepEqual(sheets, [['关键词', 'AI 搜索']]);
     assert.equal(page.data.queryMode, 'ai');
 
-    global.wx.showActionSheet = (options) => {
-      options.success({ tapIndex: 0 });
-    };
     page.onModeTap();
     assert.equal(page.data.queryMode, 'keyword');
   });
 
-  it('does not open the mode list while a search is running', () => {
-    let opened = false;
-    global.wx = {
-      showActionSheet() {
-        opened = true;
-      },
-    };
+  it('does not toggle ai search while a search is running', () => {
     const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
     page.setData({ searching: true, queryMode: 'keyword' });
 
     page.onModeTap();
 
-    assert.equal(opened, false);
     assert.equal(page.data.queryMode, 'keyword');
   });
 
@@ -320,7 +302,7 @@ describe('explainer search', () => {
     assert.equal(calls[0].mode, 'ai');
     assert.equal(calls[1].mode, 'keyword');
     assert.equal(page.data.aiLabel, 'AI 搜索结果');
-    assert.equal(page.data.noticeText, '语义检索暂不可用，以下为关键词结果');
+    assert.equal(page.data.noticeText, '按描述来找暂时不可用，以下是按名称找到的');
     assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['v2']);
   });
 
@@ -338,7 +320,7 @@ describe('explainer search', () => {
 
     assert.equal(page.data.searched, true);
     assert.equal(page.data.results.length, 0);
-    assert.equal(page.data.noticeText, '语义检索暂不可用');
+    assert.equal(page.data.noticeText, '按描述来找暂时不可用');
     assert.equal(page.data.aiLabel, 'AI 搜索结果');
   });
 

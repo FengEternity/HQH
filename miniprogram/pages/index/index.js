@@ -133,12 +133,7 @@ Page({
     if (this.data.searching) {
       return;
     }
-    wx.showActionSheet({
-      itemList: ['关键词', 'AI 搜索'],
-      success: (res) => {
-        this.setData({ queryMode: res.tapIndex === 1 ? 'ai' : 'keyword' });
-      },
-    });
+    this.setData({ queryMode: this.data.queryMode === 'ai' ? 'keyword' : 'ai' });
   },
   onSearchConfirm() {
     const queryMode = this.data.queryMode === 'ai' ? 'ai' : 'keyword';
