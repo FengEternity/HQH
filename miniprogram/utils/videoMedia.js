@@ -1,15 +1,71 @@
 'use strict';
 
-// wx.cloud.uploadFile 会把 timeout 交给 wx.uploadFile。不传时平台默认 60 秒，
-// 管理端长视频经常在这一分钟被掐断。
+// 云开发 uploadFile 没有 timeout 参数。把 timeout 传进去时，返回值可能不再是会结束的 Promise，
+// 页面上的「上传中」就关不掉。时长上限放在 app.json 的 networkTimeout.uploadFile。
 const VIDEO_UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 
-function cloudUploadOptions({ kind, cloudPath, filePath }) {
-  const options = { cloudPath, filePath };
-  if (kind === 'video') {
-    options.timeout = VIDEO_UPLOAD_TIMEOUT_MS;
+function cloudUploadOptions({ cloudPath, filePath }) {
+  return { cloudPath, filePath };
+}
+
+function uploadFailure(err, fallback) {
+  const raw = err && (err.errMsg || err.message);
+  const text = String(raw || '').replace(/^cloud\.uploadFile:fail\s*/i, '').trim();
+  if (!text || text.length > 14) {
+    return new Error(fallback);
   }
-  return options;
+  return new Error(text);
+}
+
+function beginCloudUpload(uploadFile, options, hooks) {
+  const timeoutMs = hooks && hooks.timeoutMs;
+  const setTimer = (hooks && hooks.setTimer) || setTimeout;
+  const clearTimerFn = (hooks && hooks.clearTimer) || clearTimeout;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    let task;
+    const finish = (error, result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer != null) {
+        clearTimerFn(timer);
+      }
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(result);
+    };
+    try {
+      task = uploadFile(Object.assign({}, options, {
+        success: (res) => finish(null, res),
+        fail: (err) => finish(uploadFailure(err, '上传失败')),
+      }));
+    } catch (err) {
+      finish(uploadFailure(err, '上传失败'));
+      return;
+    }
+    if (!settled && timeoutMs > 0) {
+      timer = setTimer(() => {
+        if (task && typeof task.abort === 'function') {
+          task.abort();
+        }
+        finish(new Error('上传超时'));
+      }, timeoutMs);
+    }
+    if (task && typeof task.then === 'function') {
+      task.then(
+        (res) => finish(null, res),
+        (err) => finish(uploadFailure(err, '上传失败')),
+      );
+    }
+    if (task && typeof task.onProgressUpdate === 'function' && hooks && hooks.onProgress) {
+      task.onProgressUpdate(hooks.onProgress);
+    }
+  });
 }
 
 function isHttpPosterUrl(value) {
@@ -58,6 +114,7 @@ function displayedPoster({
 
 module.exports = {
   VIDEO_UPLOAD_TIMEOUT_MS,
+  beginCloudUpload,
   cloudUploadOptions,
   withPosterUrl,
   withPosterUrls,

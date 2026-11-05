@@ -206,24 +206,6 @@ page {
   margin: 8rpx 0 4rpx;
 }
 
-.search-row {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-  margin: 20rpx 0 8rpx;
-}
-
-.search-input {
-  flex: 1;
-  margin-bottom: 0;
-}
-
-.search-btn {
-  flex-shrink: 0;
-  padding: 18rpx 22rpx;
-  font-size: 26rpx;
-}
-
 .brand-pill {
   display: inline-block;
   background: #ffffff;

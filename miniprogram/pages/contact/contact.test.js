@@ -40,6 +40,9 @@ function loadPage({ ticketing, storage = {}, replyTplId = '', wechatSubscribePau
     },
     setClipboardData() {},
     showToast() {},
+    removeStorageSync(key) {
+      delete storage[key];
+    },
   };
 
   require(pagePath);
@@ -61,6 +64,26 @@ afterEach(() => {
 });
 
 describe('contact page', () => {
+  it('fills an empty composer from a search miss once', async () => {
+    const { page, storage } = loadPage({
+      ticketing: async () => ({ ok: true, thread: null, messages: [] }),
+      storage: { hqh_search_miss_draft: '没找到讲解：怎么计算' },
+    });
+
+    page.onLoad();
+    await page.onShow();
+
+    assert.equal(page.data.draft, '没找到讲解：怎么计算');
+    assert.equal(storage.hqh_search_miss_draft, undefined);
+
+    storage.hqh_search_miss_draft = '没找到讲解：另一条';
+    page.data.draft = '正在输入';
+    await page.onShow();
+
+    assert.equal(page.data.draft, '正在输入');
+    assert.equal(storage.hqh_search_miss_draft, undefined);
+  });
+
   it('onShow loads the server timeline and maps message metadata', async () => {
     const calls = [];
     const { page } = loadPage({

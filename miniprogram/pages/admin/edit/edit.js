@@ -1,6 +1,13 @@
 const { admin } = require('../../../utils/api');
 const { emptyIntroHint, gateFailureNote, pendingIntroHint } = require('../../../utils/introReview');
-const { withPosterUrl, displayedPoster, posterUrlFromList, cloudUploadOptions } = require('../../../utils/videoMedia');
+const {
+  beginCloudUpload,
+  cloudUploadOptions,
+  displayedPoster,
+  posterUrlFromList,
+  VIDEO_UPLOAD_TIMEOUT_MS,
+  withPosterUrl,
+} = require('../../../utils/videoMedia');
 
 function noticeAfterPicker(title) {
   setTimeout(() => {
@@ -209,6 +216,7 @@ Page({
     coverFileId: '',
     videoFileId: '',
     posterUrl: '',
+    uploadHint: '',
     ingestPhase: 'idle',
     ingestHint: '',
     introSource: 'placeholder',
@@ -460,17 +468,32 @@ Page({
   },
   uploadCloudFile(kind, filePath, ext) {
     const cloudPath = `${kind}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
-    wx.showLoading({ title: '上传中' });
-    return wx.cloud
-      .uploadFile(cloudUploadOptions({ kind, cloudPath, filePath }))
-      .then((up) => {
-        wx.hideLoading();
-        return up.fileID;
-      })
-      .catch(() => {
-        wx.hideLoading();
+    if (typeof wx.hideLoading === 'function') {
+      wx.hideLoading();
+    }
+    this.setData({ uploadHint: '正在上传…' });
+    return beginCloudUpload(
+      (options) => wx.cloud.uploadFile(options),
+      cloudUploadOptions({ cloudPath, filePath }),
+      {
+        timeoutMs: kind === 'video' ? VIDEO_UPLOAD_TIMEOUT_MS : 60 * 1000,
+        onProgress: (event) => {
+          const progress = event && event.progress;
+          if (typeof progress === 'number') {
+            this.setData({ uploadHint: `正在上传 ${progress}%` });
+          }
+        },
+      },
+    ).then((up) => {
+      this.setData({ uploadHint: '' });
+      if (!up || !up.fileID) {
         throw new Error('上传失败');
-      });
+      }
+      return up.fileID;
+    }).catch((err) => {
+      this.setData({ uploadHint: '' });
+      throw new Error((err && err.message) || '上传失败');
+    });
   },
   onShow() {
     this.watchIngest();
@@ -480,6 +503,9 @@ Page({
   },
   onUnload() {
     this.stopWatchIngest();
+    if (typeof wx !== 'undefined' && wx.hideLoading) {
+      wx.hideLoading();
+    }
   },
   watchIngest() {
     if (!this.data.id || !this.data.ingestBusy) {

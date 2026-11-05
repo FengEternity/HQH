@@ -1,6 +1,6 @@
 # 讲解搜索内部方案
 
-状态：讨论稿，2026-10-22。给 Mentor 看拆分结果。还没替换 `2026-10-21-hybrid-video-search-design.md`。
+状态：讨论稿，2026-10-22。召回阶段用余弦门槛滤空的规则，已由 `2026-11-05-three-lane-video-search-design.md` 取代。索引字段、哈希和建块方式仍以本文为准。
 
 对外契约在 `2026-10-22-hybrid-video-search-interface.md`。小程序只认那一份。这份写检索和建索引怎么做；改这里不用改已发布的小程序，只要搜索栏看到的 `items` 和 `notice` 仍符合接口稿。
 
@@ -199,9 +199,7 @@ flowchart TB
 
 `dot(a, b) / (|a| |b|)`
 
-只对 `status` 为 `ready` 且 `contentHash` 与当前文案一致的块计算余弦。`stale`、`failed`、哈希过期、零向量、维度不是 1024、模型名不一致的块不参与，也不算进 `indexed`。在已上架视频里求交后，丢掉低于门槛的块，再取余弦最高的最多 8 条。一个都没过门槛时，这一路是 0 条，不往列表后面补片子。并列时 `publishedAt` 新的在前，再按 `sourceId` 固定次序。余弦分不放进 `items`。
-
-门槛是一个常数，放在 `search` 云函数的配置里，不发给客户端。已用当时已上架的片子做「该中 / 不该中」试算，定为 0.678。同一品牌里连接、导入、升级仍可能叠在一起；以后要更准时只改这个数，不必重新嵌入。嵌入失败或覆盖不全时，`notice` 仍按 §7。
+只对 `status` 为 `ready` 且 `contentHash` 与当前文案一致的块计算余弦。`stale`、`failed`、哈希过期、零向量、维度不是 1024、模型名不一致的块不参与，也不算进 `indexed`。在已上架视频里求交后，按余弦从高到低取最多 8 条。低于 0.678 的块可以留下；这条门槛不再把 RAG 召回滤成 0 条。并列时 `publishedAt` 新的在前，再按 `sourceId` 固定次序。余弦分不放进 `items`。合并顺序和 `notice` 以 `2026-11-05-three-lane-video-search-design.md` 为准。
 
 已上架集合与关键词路同一次 `videos` 读取（现网 `limit` 1000、`status=published`），这次多取视频上的 `contentHash`，不取转写。不在这批结果里的块丢掉。
 
@@ -209,7 +207,7 @@ flowchart TB
 
 ## 7. 合并，以及怎样变成 `notice`
 
-同一 `type + id` 只留一条。两路分数不放在一起比，不做 RRF。
+合并顺序、`notice` 和空结果文案已改到 `2026-11-05-three-lane-video-search-design.md` 第 6 节。下面这段是 2026-10-22 的两路合并记录，不再作为实现依据。
 
 顺序：
 

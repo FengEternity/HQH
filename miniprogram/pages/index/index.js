@@ -1,11 +1,25 @@
 const { catalog, search } = require('../../utils/api');
 const { searchNoticeText } = require('./searchNotice');
 const { withPosterUrls } = require('../../utils/videoMedia');
+const { saveSearchMissDraft } = require('../../utils/searchMissDraft');
 const { whenCloudReady } = require('../../utils/cloudReady');
 const {
   callWithVisitorRetry,
   visitorCatalogMessage,
 } = require('../../utils/catalogVisitorError');
+
+function decorateSearchItems(items) {
+  return withPosterUrls(items || []).map((item) =>
+    Object.assign({}, item, {
+      initial: String(item.brandName || '优').slice(0, 1),
+    }),
+  );
+}
+
+function itemsNotIn(items, others) {
+  const ids = new Set((others || []).map((item) => item.id));
+  return items.filter((item) => !ids.has(item.id));
+}
 
 Page({
   data: {
@@ -14,8 +28,11 @@ Page({
     shelves: [],
     results: [],
     searchItems: [],
+    keywordItems: [],
+    keywordResults: [],
     brandId: '',
     query: '',
+    queryMode: 'keyword',
     searched: false,
     searching: false,
     searchMode: '',
@@ -93,6 +110,8 @@ Page({
       searched: false,
       results: [],
       searchItems: [],
+      keywordItems: [],
+      keywordResults: [],
       searchMode: '',
       aiLabel: '',
       notice: '',
@@ -101,17 +120,33 @@ Page({
   },
   paintSearchResults() {
     const brandId = this.data.brandId;
-    const results = (this.data.searchItems || []).filter((item) => !brandId || item.brandId === brandId);
-    this.setData({ results });
+    const match = (item) => !brandId || item.brandId === brandId;
+    this.setData({
+      results: (this.data.searchItems || []).filter(match),
+      keywordResults: (this.data.keywordItems || []).filter(match),
+    });
   },
   onQuery(e) {
     this.setData({ query: e.detail.value });
   },
-  onSearch() {
-    return this.submitSearch('keyword');
+  onModeTap() {
+    if (this.data.searching) {
+      return;
+    }
+    wx.showActionSheet({
+      itemList: ['关键词', 'AI 搜索'],
+      success: (res) => {
+        this.setData({ queryMode: res.tapIndex === 1 ? 'ai' : 'keyword' });
+      },
+    });
   },
-  onAiSearch() {
-    return this.submitSearch('ai');
+  onSearchConfirm() {
+    const queryMode = this.data.queryMode === 'ai' ? 'ai' : 'keyword';
+    return this.submitSearch(queryMode);
+  },
+  onSearchMiss() {
+    saveSearchMissDraft(this.data.query);
+    wx.switchTab({ url: '/pages/contact/contact' });
   },
   submitSearch(mode) {
     const query = (this.data.query || '').trim();
@@ -126,23 +161,29 @@ Page({
     const seq = (this._searchSeq || 0) + 1;
     this._searchSeq = seq;
     this.setData({ searching: true, error: '' });
-    return callWithVisitorRetry(() => search({ scene: 'video', query, mode: searchMode }))
-      .then((res) => {
+    const request = searchMode === 'ai'
+      ? () => Promise.all([
+        search({ scene: 'video', query, mode: 'ai' }),
+        search({ scene: 'video', query, mode: 'keyword' }),
+      ]).then(([ai, keyword]) => ({ ai, keyword }))
+      : () => search({ scene: 'video', query, mode: 'keyword' }).then((ai) => ({ ai, keyword: null }));
+    return callWithVisitorRetry(request)
+      .then(({ ai, keyword }) => {
         if (seq !== this._searchSeq) {
           return;
         }
-        const searchItems = withPosterUrls(res.items || []).map((item) =>
-          Object.assign({}, item, {
-            initial: String(item.brandName || '优').slice(0, 1),
-          }),
-        );
-        const notice = searchMode === 'ai' ? (res.notice || '') : '';
+        const keywordItems = keyword ? decorateSearchItems(keyword.items) : [];
+        const merged = decorateSearchItems(ai.items);
+        const searchItems = searchMode === 'ai' ? itemsNotIn(merged, keywordItems) : merged;
+        const notice = searchMode === 'ai' ? (ai.notice || '') : '';
+        const noticeItems = keywordItems.length ? keywordItems : searchItems;
         this.setData({
           searchItems,
+          keywordItems,
           searchMode,
           aiLabel: searchMode === 'ai' ? 'AI 搜索结果' : '',
           notice,
-          noticeText: searchMode === 'ai' ? searchNoticeText(notice, searchItems) : '',
+          noticeText: searchMode === 'ai' ? searchNoticeText(notice, noticeItems) : '',
           searching: false,
           searched: true,
           error: '',

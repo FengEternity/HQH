@@ -9,6 +9,7 @@ const {
   withPosterUrls,
   displayedPoster,
   posterUrlFromList,
+  beginCloudUpload,
   cloudUploadOptions,
   VIDEO_UPLOAD_TIMEOUT_MS,
 } = require('./videoMedia');
@@ -119,8 +120,48 @@ describe('posterUrlFromList', () => {
   });
 });
 
+describe('beginCloudUpload', () => {
+  it('finishes from the success callback when no promise is returned', async () => {
+    const result = await beginCloudUpload((options) => {
+      options.success({ fileID: 'cloud://video' });
+      return { abort() {} };
+    }, {
+      cloudPath: 'video/a.mp4',
+      filePath: '/tmp/a.mp4',
+    }, {
+      timeoutMs: 1000,
+      setTimer: () => 1,
+      clearTimer() {},
+    });
+    assert.equal(result.fileID, 'cloud://video');
+  });
+
+  it('stops a cloud upload that never calls back', async () => {
+    let aborted = false;
+    await assert.rejects(
+      beginCloudUpload(() => ({
+        abort() {
+          aborted = true;
+        },
+      }), {
+        cloudPath: 'video/a.mp4',
+        filePath: '/tmp/a.mp4',
+      }, {
+        timeoutMs: 10,
+        setTimer: (fn) => {
+          fn();
+          return 1;
+        },
+        clearTimer() {},
+      }),
+      { message: '上传超时' },
+    );
+    assert.equal(aborted, true);
+  });
+});
+
 describe('cloudUploadOptions', () => {
-  it('gives video uploads longer than the 60s wx.uploadFile default', () => {
+  it('does not pass timeout to cloud uploadFile', () => {
     assert.ok(VIDEO_UPLOAD_TIMEOUT_MS > 60 * 1000);
     assert.deepEqual(
       cloudUploadOptions({
@@ -131,7 +172,6 @@ describe('cloudUploadOptions', () => {
       {
         cloudPath: 'video/a.mp4',
         filePath: '/tmp/a.mp4',
-        timeout: VIDEO_UPLOAD_TIMEOUT_MS,
       },
     );
   });

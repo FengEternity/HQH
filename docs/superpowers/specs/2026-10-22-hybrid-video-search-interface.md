@@ -1,6 +1,6 @@
 # 讲解搜索对外接口
 
-状态：讨论稿，2026-10-22。给 Mentor 看拆分结果。还没替换 `2026-10-21-hybrid-video-search-design.md`。
+状态：讨论稿，2026-10-22。AI 搜索改调 `agent` 的 `video_search@v1`，三路召回见 `2026-11-05-three-lane-video-search-design.md`。关键词按钮仍按本文调 `search`。`items` 的字段仍以本文为准。
 
 内部怎么检索、怎么建索引，写在 `2026-10-22-hybrid-video-search-scheme.md`。那边可以改。这份只写发布后小程序必须照着调用的契约。
 

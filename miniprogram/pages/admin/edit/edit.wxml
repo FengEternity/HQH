@@ -102,6 +102,7 @@
       <view class="btn btn-ghost media-upload-btn" bindtap="pickLocalVideo">{{localVideoLabel}}</view>
       <view class="btn btn-ghost media-upload-btn" bindtap="pickChatVideo">从聊天记录</view>
     </view>
+    <view wx:if="{{uploadHint}}" class="muted cover-note">{{uploadHint}}</view>
   </view>
 
   <view class="form-footer">

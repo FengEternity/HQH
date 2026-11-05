@@ -212,10 +212,10 @@ L2 开工验收必须包含：上架/改文案/下架后该 `sourceId` 的 chunk
 
 本节不再冻结 profile 和投影。问答架构见 `docs/superpowers/specs/2026-10-23-ai-native-agent-core-design.md`。`dev-ai-search` 仍不实现问答。
 
-和搜索有关的约束保持不变：
+和搜索有关的约束以 `2026-11-05-three-lane-video-search-design.md` 为准：
 
-- 搜索框不进入 Agent Core。`search` 不运行 `pi-agent-core`。
-- 客服找片、找货时调用 tool `search`，入参和出参使用本文 §2.1。Agent 不直连 `search_chunks`。
+- 关键词按钮只调 `search`。AI 搜索进 `agent` 的 `video_search@v1`，作为三路召回里的一路。`search` 不运行 Agent 循环。
+- 客服找片以后挂 `find_videos`。Agent 不直连 `search_chunks`。
 - 播放页 profile 没有全库 `search`。它只回答当前已发布视频和关联上架商品。
 - 本期 `search` 只接受 `scene=video`。商城检索落地前，客服工具不发送 `scene=product`。
 - 搜索日志不记录原始 query、消息正文和 OPENID。Agent 日志的字段限制见 2026-10-23 规格第 10 节。

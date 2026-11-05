@@ -1,4 +1,5 @@
 const { ticketing } = require('../../utils/api');
+const { takeSearchMissDraft } = require('../../utils/searchMissDraft');
 const { contact } = require('../../config.js');
 const { readLabel } = require('../../utils/readReceipt');
 
@@ -54,6 +55,10 @@ Page({
     });
   },
   onShow() {
+    const pending = takeSearchMissDraft();
+    if (pending && !String(this.data.draft || '').trim()) {
+      this.setData({ draft: pending });
+    }
     this.armSeenRefresh();
     return this.loadHistory();
   },

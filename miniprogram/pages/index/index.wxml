@@ -8,18 +8,38 @@
     </view>
   </view>
 
-  <view class="search-row">
+  <view class="search-bar">
     <input
-      class="input search-input"
-      placeholder="参数计算，或问 怎么算参数"
+      class="search-bar-input"
+      placeholder="{{queryMode === 'ai' ? '用一句话描述想看的讲解' : '型号、菜单名或操作'}}"
       value="{{query}}"
       confirm-type="search"
       bindinput="onQuery"
-      bindconfirm="onSearch"
+      bindconfirm="onSearchConfirm"
     />
-    <view class="search-actions">
-      <view class="btn search-btn {{searching ? 'search-btn-off' : ''}}" bindtap="onSearch">搜索</view>
-      <view class="btn search-btn {{searching ? 'search-btn-off' : ''}}" bindtap="onAiSearch">AI 搜索</view>
+    <view
+      class="search-mode {{queryMode === 'ai' ? 'search-mode-ai' : ''}} {{searching ? 'search-control-off' : ''}}"
+      hover-class="search-mode-on"
+      bindtap="onModeTap"
+      aria-role="button"
+      aria-label="搜索模式"
+    >
+      <text class="search-mode-label">{{queryMode === 'ai' ? 'AI 搜索' : '关键词'}}</text>
+      <view class="search-chevron"></view>
+    </view>
+    <view
+      class="search-submit {{searching ? 'search-control-off' : ''}}"
+      hover-class="search-submit-on"
+      bindtap="onSearchConfirm"
+      aria-role="button"
+      aria-label="搜索"
+    >
+      <view class="search-submit-face">
+        <view class="search-glyph">
+          <view class="search-glyph-ring"></view>
+          <view class="search-glyph-handle"></view>
+        </view>
+      </view>
     </view>
   </view>
 
@@ -62,10 +82,18 @@
   <view wx:elif="{{searching}}" class="empty">正在搜索…</view>
 
   <view wx:elif="{{searched}}">
+    <block wx:if="{{results.length === 0 && (searchMode !== 'ai' || keywordResults.length === 0)}}">
+      <view wx:if="{{noticeText}}" class="search-notice">{{noticeText}}</view>
+      <view class="search-miss">
+        <view class="search-miss-title">没有找到相关视频</view>
+        <view class="search-miss-copy">可以换个型号或菜单名，也可以把问题发给客服。</view>
+        <view class="btn search-miss-btn" bindtap="onSearchMiss" aria-role="button" aria-label="联系客服">联系客服</view>
+      </view>
+    </block>
+    <block wx:else>
     <view wx:if="{{aiLabel}}" class="search-ai-label">{{aiLabel}}</view>
     <view wx:if="{{noticeText}}" class="search-notice">{{noticeText}}</view>
-    <view wx:if="{{results.length === 0 && !noticeText && searchMode !== 'ai'}}" class="empty">没有找到相关视频。可以换品牌名、型号或操作关键词，或点上方品牌浏览。</view>
-    <view wx:elif="{{results.length === 0 && !noticeText}}" class="empty">没有找到相关视频</view>
+    <view wx:if="{{results.length === 0 && !noticeText}}" class="search-section-empty">没有找到相关视频</view>
     <view class="grid" wx:if="{{results.length}}">
       <view
         class="tile"
@@ -88,6 +116,33 @@
         </view>
       </view>
     </view>
+    <block wx:if="{{searchMode === 'ai'}}">
+      <view class="search-section-label">关键词结果</view>
+      <view wx:if="{{keywordResults.length === 0}}" class="search-section-empty">没有找到相关视频</view>
+      <view class="grid" wx:if="{{keywordResults.length}}">
+        <view
+          class="tile"
+          wx:for="{{keywordResults}}"
+          wx:key="id"
+          data-id="{{item.id}}"
+          bindtap="onVideoTap"
+        >
+          <view class="cover">
+            <image wx:if="{{item.posterUrl}}" class="cover-img" src="{{item.posterUrl}}" mode="aspectFill" />
+            <text wx:else>{{item.brandName}}</text>
+            <view class="mark">{{item.initial}}</view>
+          </view>
+          <view class="tile-body">
+            <view class="tile-title">{{item.title}}</view>
+            <view class="meta-sub">
+              <view class="muted">{{item.modelName}}</view>
+              <text class="chip" wx:for="{{item.tags}}" wx:for-item="tag" wx:key="*this">{{tag}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </block>
+    </block>
   </view>
 
   <view wx:else>

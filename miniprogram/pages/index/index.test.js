@@ -168,7 +168,7 @@ describe('home catalog failures', () => {
 
     await page.load({ showLoading: true });
     page.setData({ query: '怎么算参数' });
-    await page.onSearch();
+    await page.onSearchConfirm();
 
     assert.equal(page.data.error, '目录暂时打不开，请再试一次');
     assert.equal(page.data.searched, false);
@@ -191,7 +191,7 @@ describe('home catalog failures', () => {
     );
     page.setData({ query: '怎么算参数', brands: [{ _id: 'b1' }], shelves: [{ id: 'b1' }] });
 
-    await page.onSearch();
+    await page.onSearchConfirm();
 
     assert.equal(calls.length, 2);
     assert.equal(calls[0].scene, 'video');
@@ -207,12 +207,79 @@ describe('home catalog failures', () => {
 });
 
 describe('explainer search', () => {
-  it('keeps keyword search beside a separate ai search button', () => {
+  it('keeps keyword and ai search in one bar with a mode list', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'index.wxml'), 'utf8');
-    assert.match(wxml, /bindtap="onSearch">搜索/);
-    assert.match(wxml, /bindtap="onAiSearch">AI 搜索/);
-    assert.match(wxml, /bindconfirm="onSearch"/);
-    assert.match(wxml, /可以换品牌名、型号或操作关键词/);
+    assert.match(wxml, /bindtap="onModeTap"/);
+    assert.match(wxml, /bindtap="onSearchConfirm"/);
+    assert.match(wxml, /bindconfirm="onSearchConfirm"/);
+    assert.match(wxml, /aria-label="搜索模式"/);
+    assert.match(wxml, /aria-label="搜索"/);
+    assert.match(wxml, /关键词/);
+    assert.match(wxml, /AI 搜索/);
+    assert.match(wxml, /型号、菜单名或操作/);
+    assert.match(wxml, /用一句话描述想看的讲解/);
+    assert.match(wxml, /可以换个型号或菜单名，也可以把问题发给客服/);
+    assert.match(wxml, /bindtap="onSearchMiss"/);
+    assert.match(wxml, /联系客服/);
+    assert.match(wxml, /关键词结果/);
+  });
+
+  it('chooses a search mode from the action sheet', () => {
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
+    const sheets = [];
+    global.wx = {
+      showActionSheet(options) {
+        sheets.push(options.itemList);
+        options.success({ tapIndex: 1 });
+      },
+    };
+
+    page.onModeTap();
+
+    assert.deepEqual(sheets, [['关键词', 'AI 搜索']]);
+    assert.equal(page.data.queryMode, 'ai');
+
+    global.wx.showActionSheet = (options) => {
+      options.success({ tapIndex: 0 });
+    };
+    page.onModeTap();
+    assert.equal(page.data.queryMode, 'keyword');
+  });
+
+  it('does not open the mode list while a search is running', () => {
+    let opened = false;
+    global.wx = {
+      showActionSheet() {
+        opened = true;
+      },
+    };
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
+    page.setData({ searching: true, queryMode: 'keyword' });
+
+    page.onModeTap();
+
+    assert.equal(opened, false);
+    assert.equal(page.data.queryMode, 'keyword');
+  });
+
+  it('opens customer service with the missed query', () => {
+    const storage = {};
+    const tabs = [];
+    global.wx = {
+      setStorageSync(key, value) {
+        storage[key] = value;
+      },
+      switchTab(options) {
+        tabs.push(options.url);
+      },
+    };
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
+    page.setData({ query: ' 怎么计算 ' });
+
+    page.onSearchMiss();
+
+    assert.equal(storage.hqh_search_miss_draft, '没找到讲解：怎么计算');
+    assert.deepEqual(tabs, ['/pages/contact/contact']);
   });
 
   it('does not call search for a blank query', async () => {
@@ -223,7 +290,7 @@ describe('explainer search', () => {
     });
     page.setData({ query: '   ' });
 
-    await page.onSearch();
+    await page.onSearchConfirm();
 
     assert.equal(calls, 0);
     assert.equal(page.data.searched, false);
@@ -245,14 +312,16 @@ describe('explainer search', () => {
     });
     page.setData({ query: '对中' });
 
-    await page.onAiSearch();
+    page.setData({ queryMode: 'ai' });
+    await page.onSearchConfirm();
     page.onBrandTap({ currentTarget: { dataset: { id: 'b2' } } });
 
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
     assert.equal(calls[0].mode, 'ai');
+    assert.equal(calls[1].mode, 'keyword');
     assert.equal(page.data.aiLabel, 'AI 搜索结果');
     assert.equal(page.data.noticeText, '语义检索暂不可用，以下为关键词结果');
-    assert.deepEqual(page.data.results.map((item) => item.id), ['v2']);
+    assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['v2']);
   });
 
   it('keeps an empty semantic failure distinct from no results', async () => {
@@ -264,7 +333,8 @@ describe('explainer search', () => {
     }));
     page.setData({ query: '怎么算' });
 
-    await page.onAiSearch();
+    page.setData({ queryMode: 'ai' });
+    await page.onSearchConfirm();
 
     assert.equal(page.data.searched, true);
     assert.equal(page.data.results.length, 0);
@@ -285,7 +355,7 @@ describe('explainer search', () => {
     });
     page.setData({ query: 'iRTK5' });
 
-    await page.onSearch();
+    await page.onSearchConfirm();
 
     assert.deepEqual(calls, [{ scene: 'video', mode: 'keyword', query: 'iRTK5' }]);
     assert.equal(page.data.searchMode, 'keyword');
@@ -306,12 +376,42 @@ describe('explainer search', () => {
     });
     page.setData({ query: '怎么对中' });
 
-    await page.onAiSearch();
+    page.setData({ queryMode: 'ai' });
+    await page.onSearchConfirm();
 
     assert.equal(calls[0].mode, 'ai');
+    assert.equal(calls[1].mode, 'keyword');
     assert.equal(page.data.searchMode, 'ai');
     assert.equal(page.data.aiLabel, 'AI 搜索结果');
     assert.equal(page.data.noticeText, '');
+    assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['v1']);
+    assert.deepEqual(page.data.results, []);
+  });
+
+  it('keeps vector-only hits above the keyword results', async () => {
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async (data) => {
+      if (data.mode === 'keyword') {
+        return {
+          ok: true,
+          scene: 'video',
+          items: [{ id: 'kw', title: '参数计算', brandId: 'b1', brandName: '南方', modelName: '', tags: [] }],
+        };
+      }
+      return {
+        ok: true,
+        scene: 'video',
+        items: [
+          { id: 'kw', title: '参数计算', brandId: 'b1', brandName: '南方', modelName: '', tags: [] },
+          { id: 'ai', title: '坐标换算', brandId: 'b2', brandName: '华测', modelName: '', tags: [] },
+        ],
+      };
+    });
+    page.setData({ query: '怎么计算', queryMode: 'ai' });
+
+    await page.onSearchConfirm();
+
+    assert.deepEqual(page.data.results.map((item) => item.id), ['ai']);
+    assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['kw']);
   });
 
   it('does not call ai search for a blank query', async () => {
@@ -322,7 +422,8 @@ describe('explainer search', () => {
     });
     page.setData({ query: '   ', searched: true, aiLabel: 'AI 搜索结果', searchMode: 'ai' });
 
-    await page.onAiSearch();
+    page.setData({ queryMode: 'ai' });
+    await page.onSearchConfirm();
 
     assert.equal(calls, 0);
     assert.equal(page.data.searched, false);
