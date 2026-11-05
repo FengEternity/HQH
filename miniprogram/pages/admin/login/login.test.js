@@ -97,3 +97,43 @@ it('bootstraps the first admin without storing a legacy ticket', async () => {
   assert.deepEqual(calls, [{ action: 'adminLogin', pin: '1234' }]);
   assert.deepEqual(events, [['redirect', '/pages/admin/home/home']]);
 });
+
+it('returns to the requested admin page after login', async () => {
+  const events = [];
+  global.wx = {
+    redirectTo({ url }) {
+      events.push(url);
+    },
+    showToast() {},
+  };
+  const page = loadPage({
+    catalog: async () => ({ ok: true }),
+    adminMe: async () => ({ ok: true, initialized: true, enabled: false }),
+  });
+  page.onLoad({ next: '/pages/admin/catalog/catalog' });
+  page.data.pin = '1234';
+
+  await page.onLogin();
+
+  assert.deepEqual(events, ['/pages/admin/catalog/catalog']);
+});
+
+it('ignores a next target outside the admin pages', async () => {
+  const events = [];
+  global.wx = {
+    redirectTo({ url }) {
+      events.push(url);
+    },
+    showToast() {},
+  };
+  const page = loadPage({
+    catalog: async () => ({ ok: true }),
+    adminMe: async () => ({ ok: true }),
+  });
+  page.onLoad({ next: '/pages/mine/mine' });
+  page.data.pin = '1234';
+
+  await page.onLogin();
+
+  assert.deepEqual(events, ['/pages/admin/home/home']);
+});

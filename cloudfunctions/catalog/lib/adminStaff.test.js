@@ -9,6 +9,7 @@ const {
   requireStaff,
   requireAdminRole,
   bootstrapAdmin,
+  admitAdminByPin,
   listStaff,
   updateStaff,
   createInvite,
@@ -196,6 +197,84 @@ describe('adminStaff', () => {
       enabledAdminOpenids: ['first'],
       updatedAt: 100,
     });
+  });
+
+  it('admits the current wechat with the pin after initialization', async () => {
+    const db = createMemoryDb({
+      admin_config: {
+        staff: {
+          initialized: true,
+          initializedAt: 1,
+          initializedBy: 'first',
+          enabledAdminOpenids: ['first'],
+          updatedAt: 1,
+        },
+      },
+      admin_users: {
+        first: staff('first', 'admin', true, 1),
+      },
+    });
+
+    const result = await admitAdminByPin(db, {
+      openid: 'second',
+      pin: 'correct',
+      expectedPin: 'correct',
+      now: 200,
+    });
+
+    assert.equal(result.role, 'admin');
+    assert.equal(result.enabled, true);
+    assert.equal(result.openid, 'second');
+    assert.deepEqual(db.dump('admin_config', 'staff').enabledAdminOpenids, ['first', 'second']);
+    assert.equal(db.dump('admin_config', 'staff').initializedBy, 'first');
+  });
+
+  it('rejects a bad pin after initialization without writing', async () => {
+    const db = createMemoryDb({
+      admin_config: {
+        staff: {
+          initialized: true,
+          enabledAdminOpenids: ['first'],
+        },
+      },
+    });
+
+    await assert.rejects(
+      admitAdminByPin(db, {
+        openid: 'second',
+        pin: 'wrong',
+        expectedPin: 'correct',
+        now: 200,
+      }),
+      assertCode('INVALID_PIN'),
+    );
+    assert.equal(db.dump('admin_users', 'second'), undefined);
+    assert.deepEqual(db.dump('admin_config', 'staff').enabledAdminOpenids, ['first']);
+  });
+
+  it('does not re-enable a disabled wechat with the pin', async () => {
+    const db = createMemoryDb({
+      admin_config: {
+        staff: {
+          initialized: true,
+          enabledAdminOpenids: ['first'],
+        },
+      },
+      admin_users: {
+        second: staff('second', 'operator', false, 50),
+      },
+    });
+
+    await assert.rejects(
+      admitAdminByPin(db, {
+        openid: 'second',
+        pin: 'correct',
+        expectedPin: 'correct',
+        now: 200,
+      }),
+      assertCode('STAFF_DISABLED'),
+    );
+    assert.equal(db.dump('admin_users', 'second').enabled, false);
   });
 
   it('rejects bootstrap after initialization', async () => {

@@ -96,4 +96,36 @@ describe('admin catalog reprocess entry', () => {
     await page.onShow();
     assert.equal(page.data.ingestLabel, '进入');
   });
+
+  it('opens the pin page once instead of returning to mine', async () => {
+    const events = [];
+    global.wx = {
+      navigateTo() {},
+      redirectTo({ url }) {
+        events.push(['redirect', url]);
+      },
+      switchTab({ url }) {
+        events.push(['switchTab', url]);
+      },
+      showToast() {},
+    };
+    const page = loadPage({
+      admin: async () => {
+        const err = new Error('未授权');
+        err.code = 'UNAUTHORIZED';
+        throw err;
+      },
+    });
+
+    await page.onLoad();
+    await page.onShow();
+
+    assert.deepEqual(events.map((item) => item[0]), ['redirect']);
+    const url = events[0][1];
+    assert.match(url, /^\/pages\/admin\/login\/login\?next=/);
+    assert.equal(
+      decodeURIComponent(url.split('next=')[1]),
+      '/pages/admin/catalog/catalog',
+    );
+  });
 });

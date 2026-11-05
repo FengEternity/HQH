@@ -10,6 +10,13 @@ Page({
   onLoad() {
     this.load({ showLoading: true });
   },
+  openLogin() {
+    if (this._authLeft) return;
+    this._authLeft = true;
+    wx.redirectTo({
+      url: '/pages/admin/login/login?next=' + encodeURIComponent('/pages/admin/catalog/catalog'),
+    });
+  },
   onShow() {
     const jobs = [this.loadIngest()];
     if (this._loadedOnce) {
@@ -30,7 +37,7 @@ Page({
       })
       .catch((err) => {
         if (err && err.code === 'UNAUTHORIZED') {
-          wx.switchTab({ url: '/pages/mine/mine' });
+          this.openLogin();
           return;
         }
         this.setData({
@@ -59,8 +66,8 @@ Page({
       })
       .catch((err) => {
         this.setData({ loading: false });
-        if (err.code === 'UNAUTHORIZED') {
-          wx.switchTab({ url: '/pages/mine/mine' });
+        if (err && err.code === 'UNAUTHORIZED') {
+          this.openLogin();
           return;
         }
         wx.showToast({ title: err.message || '加载失败', icon: 'none' });

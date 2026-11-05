@@ -1,7 +1,18 @@
 const { catalog } = require('../../../utils/api');
 
+function safeAdminNext(raw) {
+  const next = String(raw || '');
+  if (!next.startsWith('/pages/admin/')) return '';
+  if (next.startsWith('/pages/admin/login')) return '';
+  if (next.indexOf('..') >= 0) return '';
+  return next;
+}
+
 Page({
   data: { pin: '', showPin: true },
+  onLoad(query) {
+    this._next = safeAdminNext(query && query.next);
+  },
   onShow() {
     this.setData({ showPin: true });
   },
@@ -16,7 +27,7 @@ Page({
     }
     return catalog({ action: 'adminLogin', pin })
       .then(() => {
-        wx.redirectTo({ url: '/pages/admin/home/home' });
+        wx.redirectTo({ url: this._next || '/pages/admin/home/home' });
       })
       .catch((err) => {
         wx.showToast({ title: err.message || '登录失败', icon: 'none' });

@@ -10,6 +10,7 @@ const { requireCatalogAccess } = require('./lib/adminAccess');
 const {
   getAdminState,
   bootstrapAdmin,
+  admitAdminByPin,
   listStaff,
   updateStaff,
   createInvite,
@@ -301,13 +302,26 @@ async function initDb() {
 
 async function adminLogin(event, openid) {
   const pin = process.env.ADMIN_PIN;
+  const now = Date.now();
   if (openid) {
-    await bootstrapAdmin(db, {
-      openid,
-      pin: event.pin,
-      expectedPin: pin,
-      now: Date.now(),
-    });
+    try {
+      await bootstrapAdmin(db, {
+        openid,
+        pin: event.pin,
+        expectedPin: pin,
+        now,
+      });
+    } catch (error) {
+      if (!error || error.code !== 'ALREADY_INITIALIZED') {
+        throw error;
+      }
+      await admitAdminByPin(db, {
+        openid,
+        pin: event.pin,
+        expectedPin: pin,
+        now,
+      });
+    }
     return { ok: true };
   }
   if (!pin || event.pin !== pin) {

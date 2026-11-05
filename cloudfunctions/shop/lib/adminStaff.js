@@ -118,6 +118,44 @@ async function bootstrapAdmin(db, { openid, pin, expectedPin, now }) {
   });
 }
 
+async function admitAdminByPin(db, { openid, pin, expectedPin, now }) {
+  if (!openid || !expectedPin || pin !== expectedPin) {
+    throw domainError('INVALID_PIN', '口令不正确');
+  }
+  return await db.runTransaction(async (transaction) => {
+    const existing = await getDocument(transaction, ADMIN_USERS, openid);
+    if (existing && existing.enabled) {
+      return existing;
+    }
+    if (existing && existing.enabled === false) {
+      throw domainError('STAFF_DISABLED', '需要管理员重新启用');
+    }
+
+    const config = await getDocument(transaction, ADMIN_CONFIG, STAFF_CONFIG_ID);
+    const record = {
+      openid,
+      role: 'admin',
+      enabled: true,
+      createdAt: existing && existing.createdAt ? existing.createdAt : now,
+      updatedAt: now,
+    };
+    await transaction.collection(ADMIN_USERS).doc(openid).set({ data: record });
+    await transaction.collection(ADMIN_CONFIG).doc(STAFF_CONFIG_ID).set({
+      data: {
+        ...(config || {}),
+        initialized: true,
+        initializedAt: (config && config.initializedAt) || now,
+        initializedBy: (config && config.initializedBy) || openid,
+        enabledAdminOpenids: [
+          ...new Set([...enabledAdminOpenids(config), openid]),
+        ],
+        updatedAt: now,
+      },
+    });
+    return record;
+  });
+}
+
 function staffRank(record) {
   if (!record.enabled) {
     return 2;
@@ -268,6 +306,7 @@ module.exports = {
   requireStaff,
   requireAdminRole,
   bootstrapAdmin,
+  admitAdminByPin,
   listStaff,
   updateStaff,
   createInvite,

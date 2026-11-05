@@ -6,7 +6,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const affectedPages = new Map([
-  ['catalog/catalog.js', 2],
   ['brand/brand.js', 3],
   ['videos/videos.js', 4],
   ['ingest/ingest.js', 2],
@@ -44,7 +43,6 @@ function unauthorizedBlocks(source) {
 describe('admin unauthorized fallback', () => {
   it('covers the exact affected admin page set', () => {
     assert.deepEqual([...affectedPages.keys()], [
-      'catalog/catalog.js',
       'brand/brand.js',
       'videos/videos.js',
       'ingest/ingest.js',
@@ -79,4 +77,19 @@ describe('admin unauthorized fallback', () => {
       assert.equal((mineRoutes || []).length, expectedRoutes);
     });
   }
+
+  it('catalog sends unauthorized readers to the pin page', () => {
+    const source = readPage('catalog/catalog.js');
+    const branches = unauthorizedBlocks(source);
+    assert.equal(branches.length, 2);
+    assert.doesNotMatch(
+      source,
+      /switchTab\(\{\s*url:\s*['"]\/pages\/mine\/mine['"]\s*\}\)/,
+    );
+    for (const branch of branches) {
+      assert.match(branch, /openLogin\(\)/);
+    }
+    assert.match(source, /\/pages\/admin\/login\/login\?next=/);
+    assert.match(source, /\/pages\/admin\/catalog\/catalog/);
+  });
 });

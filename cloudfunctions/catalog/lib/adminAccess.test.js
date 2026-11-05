@@ -191,6 +191,8 @@ describe('adminAccess', () => {
     assert.match(functionBody(source, 'adminMe'), /getAdminState\(db, openid\)/);
     assert.doesNotMatch(functionBody(source, 'adminMe'), /requireCatalogAccess/);
     assert.match(functionBody(source, 'adminLogin'), /bootstrapAdmin\(db,/);
+    assert.match(functionBody(source, 'adminLogin'), /admitAdminByPin\(db,/);
+    assert.match(functionBody(source, 'adminLogin'), /ALREADY_INITIALIZED/);
     assert.match(functionBody(source, 'adminLogin'), /issueTicket\(/);
   });
 
