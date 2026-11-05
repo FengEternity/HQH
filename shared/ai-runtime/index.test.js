@@ -1,22 +1,25 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTokenHubClient, tokenHubStatus, resolveTextModel, loadTextModel, createProbeProof, verifyProbeProof } = require('./index');
+const { createTokenHubClient, chatStatus, tokenHubStatus, resolveTextModel, loadTextModel, createProbeProof, verifyProbeProof } = require('./index');
 
-const env = { TOKENHUB_API_KEY: 'fixture-key' };
+const env = { TCB_ENV_ID: 'env-id', TCB_API_KEY: 'fixture-key' };
+const embedEnv = { TOKENHUB_API_KEY: 'fixture-key' };
 const response = (body, status = 200) => ({ status, text: async () => JSON.stringify(body) });
 
 test('缺少配置时明确未就绪，不发请求也不泄露密钥', async () => {
-  assert.deepEqual(tokenHubStatus({}).missing, ['TOKENHUB_API_KEY']);
-  assert.equal(tokenHubStatus(env).ready, true);
-  assert.equal(JSON.stringify(tokenHubStatus(env)).includes('fixture-key'), false);
+  assert.deepEqual(chatStatus({}).missing, ['TCB_ENV_ID', 'TCB_API_KEY']);
+  assert.equal(chatStatus(env).ready, true);
+  assert.equal(JSON.stringify(chatStatus(env)).includes('fixture-key'), false);
   let called = false;
   await assert.rejects(createTokenHubClient({ env: {}, fetch: async () => { called = true; } }).chat({ model: 'hy3', messages: [] }), { code: 'NOT_CONFIGURED' });
   assert.equal(called, false);
-  assert.equal(tokenHubStatus({ ...env, TOKENHUB_BASE_URL: 'http://example.com/v1' }).ready, false);
+  assert.equal(chatStatus({ ...env, TCB_ENV_ID: 'https://evil.example' }).ready, false);
+  assert.equal(tokenHubStatus(embedEnv).ready, true);
+  assert.equal(tokenHubStatus({ ...embedEnv, TOKENHUB_BASE_URL: 'http://example.com/v1' }).ready, false);
 });
 
-test('chat 使用标准 TokenHub 请求，保留工具回合并归一化用量', async () => {
+test('chat 走云开发资源点通道，保留工具回合并归一化用量', async () => {
   let seen;
   const trace = [];
   const client = createTokenHubClient({ env, onAttempt: (span) => trace.push(span), fetch: async (url, options) => {
@@ -24,7 +27,8 @@ test('chat 使用标准 TokenHub 请求，保留工具回合并归一化用量',
     return response({ model: 'hy3-actual', choices: [{ message: { role: 'assistant', content: null, tool_calls: [{ id: 'call-1', type: 'function', function: { name: 'lookup', arguments: '{}' } }] } }], usage: { prompt_tokens: 4, completion_tokens: 2 } });
   }});
   const result = await client.chat({ model: 'hy3', messages: [{ role: 'user', content: 'fixture-prompt' }], tools: [{ type: 'function', function: { name: 'lookup', parameters: { type: 'object' } } }] });
-  assert.equal(seen.url, 'https://tokenhub.tencentmaas.com/v1/chat/completions');
+  assert.equal(seen.url, 'https://env-id.api.tcloudbasegateway.com/v1/ai/cloudbase/chat/completions');
+  assert.equal(trace[0].provider, 'cloudbase');
   assert.equal(seen.options.headers.Authorization, 'Bearer fixture-key');
   assert.equal(result.message.tool_calls[0].id, 'call-1');
   assert.equal(result.model, 'hy3-actual');
@@ -62,7 +66,7 @@ test('仅临时状态有限重试；格式错误不当作正常答案', async ()
 });
 
 test('embedding 校验维度与数值，不混用错误模型', async () => {
-  const make = body => createTokenHubClient({ env, fetch: async () => response(body) });
+  const make = body => createTokenHubClient({ env: embedEnv, fetch: async () => response(body) });
   const ok = await make({ model: 'embed', data: [{ embedding: [1, 0] }] }).embed({ model: 'embed', input: '文本', dimensions: 2 });
   assert.deepEqual(ok.embedding, [1, 0]);
   await assert.rejects(make({ data: [{ embedding: [1] }] }).embed({ model: 'embed', input: '文本', dimensions: 2 }), { code: 'BAD_DIMENSION' });

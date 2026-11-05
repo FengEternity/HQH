@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 
-const VERSION = 'tokenhub-v1';
+const VERSION = 'cloudbase-v1';
 const DEFAULT_BASE_URL = 'https://tokenhub.tencentmaas.com/v1';
 const TEXT_MODELS = ['hy3', 'hy4-preview', 'deepseek-v4.1-flash-1017', 'deepseek-v4.1-flash',
   'deepseek/deepseek-flash', 'deepseek-v4-pro', 'deepseek-v4-pro-0813', 'glm-5.3-flashx',
@@ -55,6 +55,24 @@ function verifyProbeProof(secret, proof, now = Date.now()) {
   return crypto.timingSafeEqual(Buffer.from(proof), Buffer.from(expected));
 }
 
+function envIdOk(value) {
+  return /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/.test(value);
+}
+
+function chatStatus(env = process.env) {
+  const missing = [];
+  const envId = String(env.TCB_ENV_ID || '').trim();
+  if (!envIdOk(envId)) missing.push('TCB_ENV_ID');
+  if (!String(env.TCB_API_KEY || '').trim()) missing.push('TCB_API_KEY');
+  return {
+    provider: 'cloudbase',
+    version: VERSION,
+    ready: missing.length === 0,
+    missing,
+    baseUrl: missing.includes('TCB_ENV_ID') ? '' : `https://${envId}.api.tcloudbasegateway.com/v1/ai/cloudbase`,
+  };
+}
+
 function tokenHubStatus(env = process.env) {
   const missing = [];
   if (!String(env.TOKENHUB_API_KEY || '').trim()) missing.push('TOKENHUB_API_KEY');
@@ -67,7 +85,11 @@ function tokenHubStatus(env = process.env) {
     missing.push('TOKENHUB_BASE_URL');
     baseUrl = '';
   }
-  return { provider: 'tokenhub', version: VERSION, ready: missing.length === 0, missing, baseUrl };
+  return { provider: 'tokenhub', version: 'tokenhub-v1', ready: missing.length === 0, missing, baseUrl };
+}
+
+function withKey(status, apiKey) {
+  return Object.assign({}, status, { apiKey: String(apiKey || '').trim() });
 }
 
 function count(value) {
@@ -92,9 +114,8 @@ function createTokenHubClient(options = {}) {
   const now = options.now || Date.now;
   const sleep = options.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
 
-  async function post(path, payload, input, validate) {
-    const status = tokenHubStatus(env);
-    if (!status.ready) throw failure('NOT_CONFIGURED');
+  async function post(target, path, payload, input, validate) {
+    if (!target.ready) throw failure('NOT_CONFIGURED');
     if (typeof fetchImpl !== 'function') throw failure('UNAVAILABLE');
     const duration = Number(input.timeoutMs) || 20000;
     const deadline = Math.min(Number(input.deadline) || Infinity, now() + duration);
@@ -112,9 +133,9 @@ function createTokenHubClient(options = {}) {
       try {
         result = await Promise.race([
           (async () => {
-            const response = await fetchImpl(status.baseUrl + path, {
+            const response = await fetchImpl(target.baseUrl + path, {
               method: 'POST',
-              headers: { Authorization: 'Bearer ' + String(env.TOKENHUB_API_KEY).trim(), 'Content-Type': 'application/json' },
+              headers: { Authorization: 'Bearer ' + target.apiKey, 'Content-Type': 'application/json' },
               body: JSON.stringify(payload), signal: controller.signal, redirect: 'error',
             });
             if (response.status < 200 || response.status >= 300) throw failure(statusCode(response.status), response.status);
@@ -143,7 +164,7 @@ function createTokenHubClient(options = {}) {
       }
       if (typeof options.onAttempt === 'function') {
         try {
-          await options.onAttempt({ provider: 'tokenhub', version: VERSION, operation: path === '/embeddings' ? 'embed' : 'chat', model: (result && result.model) || payload.model, attempt: attempt + 1, startedAt, durationMs: Math.max(0, now() - startedAt), code: error ? error.code : 'ok', usage: usage(result) });
+          await options.onAttempt({ provider: target.provider, version: target.version, operation: path === '/embeddings' ? 'embed' : 'chat', model: (result && result.model) || payload.model, attempt: attempt + 1, startedAt, durationMs: Math.max(0, now() - startedAt), code: error ? error.code : 'ok', usage: usage(result) });
         } catch { /* 观测失败不改变模型结果。 */ }
       }
       if (!error) return result;
@@ -156,7 +177,7 @@ function createTokenHubClient(options = {}) {
   }
 
   return {
-    status: () => tokenHubStatus(env),
+    status: () => chatStatus(env),
     async chat(input) {
       const { model, messages } = input;
       if (!model || !Array.isArray(messages)) throw failure('BAD_INPUT');
@@ -164,7 +185,7 @@ function createTokenHubClient(options = {}) {
       for (const key of ['tools', 'tool_choice', 'temperature', 'max_tokens', 'thinking', 'reasoning_effort']) {
         if (input[key] !== undefined) payload[key] = input[key];
       }
-      const body = await post('/chat/completions', payload, input, body => {
+      const body = await post(withKey(chatStatus(env), env.TCB_API_KEY), '/chat/completions', payload, input, body => {
         const message = body.choices && body.choices[0] && body.choices[0].message;
         if (!message || (typeof message.content !== 'string' && !Array.isArray(message.content) && !Array.isArray(message.tool_calls))) throw failure('BAD_RESPONSE');
       });
@@ -173,7 +194,7 @@ function createTokenHubClient(options = {}) {
     },
     async embed(input) {
       if (!input.model || typeof input.input !== 'string' || !input.input.trim() || input.input.length > 2000) throw failure('BAD_INPUT');
-      const body = await post('/embeddings', { model: input.model, input: input.input, encoding_format: 'float' }, input, body => {
+      const body = await post(withKey(tokenHubStatus(env), env.TOKENHUB_API_KEY), '/embeddings', { model: input.model, input: input.input, encoding_format: 'float' }, input, body => {
         if (body.model && body.model !== input.model) throw failure('BAD_RESPONSE');
         const vector = body.data && body.data[0] && body.data[0].embedding;
         if (!Array.isArray(vector) || vector.length !== input.dimensions) throw failure('BAD_DIMENSION');
@@ -185,4 +206,4 @@ function createTokenHubClient(options = {}) {
   };
 }
 
-module.exports = { VERSION, DEFAULT_BASE_URL, TEXT_MODELS, resolveTextModel, loadTextModel, createTokenHubClient, tokenHubStatus, createProbeProof, verifyProbeProof };
+module.exports = { VERSION, DEFAULT_BASE_URL, TEXT_MODELS, resolveTextModel, loadTextModel, createTokenHubClient, chatStatus, tokenHubStatus, createProbeProof, verifyProbeProof };

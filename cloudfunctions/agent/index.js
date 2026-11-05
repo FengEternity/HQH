@@ -12,6 +12,17 @@ const { createProbeProof } = require('./lib/ai-runtime');
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 60000 });
 const db = cloud.database();
 
+function runtimeEnv() {
+  const env = Object.assign({}, process.env);
+  if (!String(env.TCB_ENV_ID || '').trim()) {
+    try {
+      const ctx = cloud.getWXContext() || {};
+      if (ctx.ENV) env.TCB_ENV_ID = ctx.ENV;
+    } catch { /* 本地调用没有云上下文。 */ }
+  }
+  return env;
+}
+
 async function checkText(content) {
   if (process.env.SKIP_CONTENT_CHECK === '1') return;
   const text = String(content || '').trim();
@@ -72,7 +83,7 @@ exports.main = async (event) => {
     if (action === 'agentModelConfig' || action === 'agentModelSave' || action === 'agentModelTest') {
       return await handleAgentModelAction(db, event, {
         openid,
-        env: process.env,
+        env: runtimeEnv(),
         now: Date.now(),
         probeVideoIntro,
       });
@@ -87,8 +98,8 @@ exports.main = async (event) => {
       loadLinkedProducts: (id) => loadLinkedVideoProducts(db, id),
       checkContent: checkText,
       executor: createVideoDocExecutor({
-        env: process.env,
-        loadModelName: () => loadPlaceModelName(db, 'video_doc', process.env),
+        env: runtimeEnv(),
+        loadModelName: () => loadPlaceModelName(db, 'video_doc', runtimeEnv()),
       }),
       exportTrace,
     });

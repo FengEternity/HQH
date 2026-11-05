@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createVideoDocExecutor, probeAgentModel, resolveAgentModelName } = require('./videoDocModel');
 const { runVideoDocTurn } = require('./videoDocTurn');
-const env = { TOKENHUB_API_KEY: 'fixture-key', TOKENHUB_MODEL: 'hy3' };
+const env = { TCB_ENV_ID: 'env-id', TCB_API_KEY: 'fixture-key', TOKENHUB_MODEL: 'hy3' };
 const response = (message, usage = { prompt_tokens: 3, completion_tokens: 2 }) => ({ status: 200, text: async () => JSON.stringify({ model: 'hy3', choices: [{ message }], usage }) });
 const lookup = { id: 'call-1', type: 'function', function: { name: 'lookup_current_video_doc', arguments: '{}' } };
 const turnInput = {
@@ -12,12 +12,12 @@ const turnInput = {
   loadLinkedProducts: async () => [{ id: 'sku-1', name: '脚架', status: 'published' }],
 };
 
-test('播放页通过 TokenHub 工具回合取得当前视频并过滤伪造卡片', async () => {
+test('播放页通过云开发资源点的工具回合取得当前视频并过滤伪造卡片', async () => {
   const calls = [];
   const executor = createVideoDocExecutor({ env, fetch: async (url, options) => {
     const body = JSON.parse(options.body);
     calls.push(body);
-    assert.equal(url, 'https://tokenhub.tencentmaas.com/v1/chat/completions');
+    assert.equal(url, 'https://env-id.api.tcloudbasegateway.com/v1/ai/cloudbase/chat/completions');
     assert.equal(JSON.stringify(body).includes('fixture-key'), false);
     if (calls.length === 1) return response({ role: 'assistant', content: null, tool_calls: [lookup] });
     assert.equal(body.messages.at(-1).role, 'tool');
@@ -52,7 +52,7 @@ test('工具调用超限停止，未知工具和未取依据的答案拒绝', as
   await assert.rejects(runVideoDocTurn({ ...turnInput, executor: make({ content: '没有调用工具的答案' }) }), { code: 'MODEL_UNAVAILABLE' });
 });
 
-test('运营连通测试调用同一 TokenHub 客户端且只返回脱敏错误', async () => {
+test('运营连通测试调用同一资源点客户端且只返回脱敏错误', async () => {
   const result = await probeAgentModel({ modelName: 'hy3', env, fetch: async (url, options) => {
     const body = JSON.parse(options.body);
     assert.equal(body.tools, undefined);

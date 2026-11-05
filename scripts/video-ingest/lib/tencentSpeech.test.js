@@ -23,7 +23,7 @@ describe('tencentSpeech', () => {
     assert.equal(config.asrEngine, '16k_zh');
     assert.equal(config.region, 'ap-shanghai');
     assert.equal(config.introModel, 'hy3');
-    assert.equal(config.chatUrl, 'https://tokenhub.tencentmaas.com/v1/chat/completions');
+    assert.equal(config.chatUrl, 'https://env-id.api.tcloudbasegateway.com/v1/ai/cloudbase/chat/completions');
   });
 
   it('未设置引擎、地域、模型和接口地址时不回落到写死值', () => {
@@ -134,9 +134,9 @@ describe('tencentSpeech', () => {
 
   it('简介调用不依赖 ASR 密钥，并接受运营保存的场景模型', async () => {
     const intro = await writeIntroText({
-      env: { TOKENHUB_API_KEY: 'fixture-key' }, modelName: 'hy4-preview',
+      env: { TCB_ENV_ID: 'env-id', TCB_API_KEY: 'fixture-key' }, modelName: 'hy4-preview',
       systemPrompt: '系统', userPrompt: '口播', fetch: async (url, options) => {
-        assert.equal(url, 'https://tokenhub.tencentmaas.com/v1/chat/completions');
+        assert.equal(url, 'https://env-id.api.tcloudbasegateway.com/v1/ai/cloudbase/chat/completions');
         assert.equal(JSON.parse(options.body).model, 'hy4-preview');
         return jsonResponse({ choices: [{ message: { content: '本期讲解整平。' } }] });
       },
@@ -149,7 +149,8 @@ function speechEnv(overrides = {}) {
   return {
     TCB_SECRET_ID: 'id',
     TCB_SECRET_KEY: 'key',
-    TOKENHUB_API_KEY: 'hub',
+    TCB_ENV_ID: 'env-id',
+    TCB_API_KEY: 'hub',
     TENCENT_ASR_ENGINE: '16k_zh',
     TENCENT_ASR_REGION: 'ap-shanghai',
     TOKENHUB_MODEL: 'hy3',

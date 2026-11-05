@@ -2,7 +2,7 @@
 
 const { assignmentPatch, publicModelConfig, resolvePlaceModel, isListedModel } = require('./agentModels');
 const { probeAgentModel } = require('./videoDocModel');
-const { tokenHubStatus } = require('./ai-runtime');
+const { chatStatus } = require('./ai-runtime');
 
 const ADMIN_USERS = 'admin_users';
 const ADMIN_CONFIG = 'admin_config';
@@ -64,7 +64,7 @@ async function handleAgentModelAction(db, event, deps) {
   const env = (deps && deps.env) || {};
   if (action === 'agentModelConfig') {
     const stored = await getDocument(db, ADMIN_CONFIG, CONFIG_ID);
-    return { ok: true, ...publicModelConfig(stored, env), connection: tokenHubStatus(env) };
+    return { ok: true, ...publicModelConfig(stored, env), connection: chatStatus(env) };
   }
   if (action === 'agentModelSave') {
     let patch;
@@ -77,7 +77,7 @@ async function handleAgentModelAction(db, event, deps) {
     await db.collection(ADMIN_CONFIG).doc(CONFIG_ID).set({
       data: Object.assign({}, patch, { updatedAt: deps && deps.now }),
     });
-    return { ok: true, ...publicModelConfig(patch, env), connection: tokenHubStatus(env) };
+    return { ok: true, ...publicModelConfig(patch, env), connection: chatStatus(env) };
   }
   if (action === 'agentModelTest') {
     try {

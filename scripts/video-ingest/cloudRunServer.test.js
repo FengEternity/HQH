@@ -19,7 +19,7 @@ test('云托管自检在缺配置时不假报可用，也不泄露配置值', as
 });
 
 test('简介自检读取同一场景配置，在容器本身发起固定模型请求', async () => {
-  const env = { TOKENHUB_API_KEY: 'fixture-key', TCB_ENV_ID: 'env', TCB_SECRET_ID: 'id', TCB_SECRET_KEY: 'secret', ADMIN_PIN: 'pin' };
+  const env = { TCB_API_KEY: 'fixture-key', TCB_ENV_ID: 'env', TCB_SECRET_ID: 'id', TCB_SECRET_KEY: 'secret', ADMIN_PIN: 'pin' };
   const { server } = createServer({ env, createApp: () => ({ database: () => ({ collection: () => ({ doc: () => ({ get: async () => ({ data: { video_intro: 'hy4-preview' } }) }) }) }) }),
     fetch: async (url, options) => {
       const body = JSON.parse(options.body);

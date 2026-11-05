@@ -35,7 +35,7 @@ Page({
         this.paint();
         const ready = Boolean(result.connection && result.connection.ready);
         this.setData({ error: '', connectionReady: ready,
-          connectionText: ready ? '问答服务已配置 TokenHub，可测试模型连通性' : '问答服务尚未就绪，请由部署人员完成服务端接入设置',
+          connectionText: ready ? '问答服务已接上云开发资源点，可测试模型连通性' : '问答服务尚未就绪，请由部署人员完成服务端接入设置',
         });
       })
       .catch((err) => this.fail(err, '加载失败'));

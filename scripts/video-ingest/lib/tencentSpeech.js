@@ -1,7 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { createTokenHubClient, tokenHubStatus } = require('./ai-runtime');
+const { createTokenHubClient, chatStatus } = require('./ai-runtime');
 
 const ASR_HOST = 'asr.tencentcloudapi.com';
 const ASR_VERSION = '2019-06-14';
@@ -29,9 +29,8 @@ function resolveTencentConfig(env = process.env) {
     secretKey,
     region: envValue(env, 'TENCENT_ASR_REGION'),
     asrEngine: envValue(env, 'TENCENT_ASR_ENGINE'),
-    introKey: envValue(env, 'TOKENHUB_API_KEY'),
     introModel: envValue(env, 'TOKENHUB_MODEL'),
-    chatUrl: chatCompletionsUrl(envValue(env, 'TOKENHUB_BASE_URL')),
+    chatUrl: chatCompletionsUrl(chatStatus(env).baseUrl),
   };
 }
 
@@ -239,7 +238,7 @@ async function writeIntroText({
   modelName,
 }) {
   const model = modelName || envValue(env, 'TOKENHUB_INTRO_MODEL') || envValue(env, 'TOKENHUB_MODEL');
-  if (!tokenHubStatus(env).ready || !model) {
+  if (!chatStatus(env).ready || !model) {
     return '';
   }
   const result = await createTokenHubClient({ env, fetch: fetchImpl }).chat({

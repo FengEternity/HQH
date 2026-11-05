@@ -63,7 +63,7 @@ describe('agent model actions', () => {
   it('loads the saved video model inside the cloud function entry', () => {
     const source = fs.readFileSync(require.resolve('../index.js'), 'utf8');
     assert.equal(source.includes('handleAgentModelAction'), true);
-    assert.equal(source.includes("loadPlaceModelName(db, 'video_doc', process.env)"), true);
+    assert.equal(source.includes("loadPlaceModelName(db, 'video_doc', runtimeEnv())"), true);
   });
 
   it('lets enabled staff read and save a place without storing secrets or the caller id', async () => {
@@ -119,7 +119,7 @@ describe('agent model actions', () => {
       { action: 'agentModelTest', model: 'hy3' },
       {
         openid: 'op-1',
-        env: { TOKENHUB_API_KEY: 'fixture-key' },
+        env: { TCB_ENV_ID: 'env-id', TCB_API_KEY: 'fixture-key' },
         fetch: async () => { throw new Error('sk-live'); },
       },
     );

@@ -13,7 +13,7 @@ const { pipeline } = require('node:stream/promises');
 const cloudbase = require('@cloudbase/node-sdk');
 
 const { transcribeSpeech, writeIntroText, resolveTencentConfig } = require('./lib/tencentSpeech');
-const { loadTextModel, tokenHubStatus } = require('./lib/ai-runtime');
+const { loadTextModel, chatStatus } = require('./lib/ai-runtime');
 const { PLACEHOLDER_INTRO } = require('./lib/autoIntro');
 const {
   INTRO_SYSTEM_PROMPT,
@@ -423,7 +423,7 @@ function createJobDependencies({
           }
         }
         log('tencent asr: ready');
-        if (!tokenHubStatus(env).ready) {
+        if (!chatStatus(env).ready) {
           log('tencent intro skipped: missing config');
           return { segments, intro: '', grounded: false };
         }

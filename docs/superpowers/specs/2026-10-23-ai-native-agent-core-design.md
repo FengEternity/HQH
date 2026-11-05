@@ -1,7 +1,7 @@
 # AI Native Agent Core
 
 日期：2026-10-23  
-状态：架构已定。本仓库落地 Core 契约与 Forseti 上报；Forseti 服务从自己的 GitHub 仓库发布到微信云托管。2026-11-03 修订：问答和视频简介统一使用 TokenHub，由运营工作台按场景选择；配置和云端验收见 `docs/ai-model-setup.md`。
+状态：架构已定。本仓库落地 Core 契约与 Forseti 上报；Forseti 服务从自己的 GitHub 仓库发布到微信云托管。2026-11-03 修订：问答和视频简介统一使用 TokenHub，由运营工作台按场景选择；配置和云端验收见 `docs/ai-model-setup.md`。2026-11-05 修订：AI 搜索的召回见 `2026-11-05-three-lane-video-search-design.md`，新增 profile `video_search@v1`。
 分支：`dev-agent-core`（从 `dev` 迁出）  
 取代：`docs/superpowers/specs/2026-09-09-survey-instrument-ai-native-mall-design.md` 中的 Agent harness，以及 `docs/superpowers/specs/2026-09-13-unified-search-context-hub-design.md` 第 3 节冻结的问答接口。
 
@@ -116,7 +116,7 @@ profile 是带版本的服务端模块，不是运营可编辑的 prompt 文档�
 
 运营工作台为播放页问答、客服和视频简介分别保存模型名，仍使用 `admin_config/agent_models`。问答与视频容器读取同一场景配置。场景环境变量、全局 `TOKENHUB_MODEL` 和默认 `hy3` 用作未保存配置的回退，旧 `AGENT_MODEL_NAME` 仅兼容迁移。客服模型仍只保存，自动回复未接入。
 
-接入凭据使用服务端 `TOKENHUB_API_KEY` 和可选 `TOKENHUB_BASE_URL`。云函数与容器的环境变量不共享，分别在云端注入，不能要求开发机持有生产密钥。密钥不存入业务数据库、小程序或 Trace。语音识别继续使用腾讯 ASR 的凭据与协议。
+问答和简介的接入凭据使用服务端 `TCB_ENV_ID` 与云开发环境 `TCB_API_KEY`，请求走 `cloudbase` 资源点通道。云函数与容器的环境变量不共享，分别在云端注入，不能要求开发机持有生产密钥。密钥不存入业务数据库、小程序或 Trace。搜索向量仍使用 `TOKENHUB_API_KEY`。语音识别继续使用腾讯 ASR 的凭据与协议。
 
 工作台分别验证问答云函数和视频容器：问答测试在 `agent` 内调用相同 TokenHub 客户端；视频简介测试经已鉴权的 `agent` 调用 `video-ingest /ai/probe`，容器自行读取场景配置并请求模型。固定短句通过只代表文字连通，不代表问答工具或真实简介已验收。具体配置、权限和发布步骤以模型接入说明为准。
 
@@ -277,9 +277,9 @@ API 镜像是仓库里的 `infra/Dockerfile.api`，监听 `18000`。构建上下
 
 ## 12. 与搜索规格的关系
 
-搜索框继续只调用 `search`，不进入 Agent Core。`search` 不运行 `pi-agent-core`。
+关键词按钮只调用 `search`。AI 搜索调用 `agent` 的 `video_search@v1`。三路召回、`find_videos` 和合并规则见 `2026-11-05-three-lane-video-search-design.md`。`search` 不运行 Agent 循环。
 
-客服找片时通过 `search` 工具回到同一套搜索入参和出参。播放页 profile 不获得全库搜索。知识库片段、嵌入供应商和 `scene=product` 仍由搜索规格决定；在那些能力落地前，Core 不直连底表来补齐。
+`video_doc` 不获得全库检索。客服找片以后挂同一个 `find_videos`。知识库片段、嵌入供应商和 `scene=product` 仍由搜索规格决定；在那些能力落地前，Core 不直连底表来补齐。
 
 ## 13. 实现顺序
 

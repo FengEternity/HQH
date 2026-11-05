@@ -4,7 +4,7 @@ const http = require('node:http');
 const os = require('node:os');
 
 const cloudbase = require('@cloudbase/node-sdk');
-const { createTokenHubClient, tokenHubStatus, loadTextModel, verifyProbeProof } = require('./lib/ai-runtime');
+const { createTokenHubClient, chatStatus, loadTextModel, verifyProbeProof } = require('./lib/ai-runtime');
 const { introFromChatPayload } = require('./lib/tencentSpeech');
 
 const { runOnce } = require('./lib/workerLoop');
@@ -74,7 +74,7 @@ function createServer({
         if (env.ADMIN_PIN && !verifyProbeProof(env.ADMIN_PIN, request.headers && request.headers['x-hqh-ai-proof'])) {
           const error = new Error('UNAUTHORIZED'); error.code = 'UNAUTHORIZED'; throw error;
         }
-        if (!tokenHubStatus(env).ready || !hasAllCredentials(credentials)) {
+        if (!chatStatus(env).ready || !hasAllCredentials(credentials)) {
           const error = new Error('NOT_CONFIGURED'); error.code = 'NOT_CONFIGURED'; throw error;
         }
         const app = createApp({ env: credentials.envId, secretId: credentials.secretId, secretKey: credentials.secretKey });

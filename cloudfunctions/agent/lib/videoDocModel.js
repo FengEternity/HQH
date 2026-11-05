@@ -1,7 +1,7 @@
 'use strict';
 
 const { isListedModel, resolvePlaceModel } = require('./agentModels');
-const { createTokenHubClient, tokenHubStatus } = require('./ai-runtime');
+const { createTokenHubClient, chatStatus } = require('./ai-runtime');
 const TOOL_CAP = 5;
 const TURN_BUDGET_MS = 20000;
 const TOOL_TIMEOUT_MS = 5000;
@@ -122,7 +122,7 @@ async function probeAgentModel({ modelName, env = process.env, fetch }) {
 
 function createVideoDocExecutor(options = {}) {
   const env = options.env || process.env;
-  if (!tokenHubStatus(env).ready) return null;
+  if (!chatStatus(env).ready) return null;
   return async input => {
     let modelName = resolveAgentModelName(env);
     if (typeof options.loadModelName === 'function') {
