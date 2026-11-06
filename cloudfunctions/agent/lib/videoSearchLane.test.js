@@ -71,6 +71,29 @@ describe('runVideoSearchLoop', () => {
     ]);
   });
 
+  it('keeps the cards already found when picking fails', async () => {
+    let calls = 0;
+    const result = await runVideoSearchLoop({
+      model: 'hy3',
+      query: '怎么设置账号',
+      now: () => 0,
+      budgetMs: 20000,
+      maxCalls: 3,
+      findVideos: async () => [card],
+      chat: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return { message: { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'find_videos', arguments: '{"query":"账号设置"}' } }] } };
+        }
+        const error = new Error('UNAVAILABLE');
+        error.code = 'UNAVAILABLE';
+        throw error;
+      },
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.proposedIds, ['cors']);
+  });
+
   it('fails closed when the model throws', async () => {
     const result = await runVideoSearchLoop({
       model: 'hy3',

@@ -82,6 +82,7 @@ async function handleVideoSearch(event) {
     // 内容安全拒绝或检查本身失败，都只按第三路不可用处理，前两路照出。
     agentFailed = true;
   }
+  await emit({ key: 'understand', label: '理解这句话', state: 'running' });
   await emit({ key: 'library', label: '检索已有讲解', state: 'running' });
   const searchPromise = cloud
     .callFunction({ name: 'search', data: { scene: 'video', query, mode: 'ai' } })

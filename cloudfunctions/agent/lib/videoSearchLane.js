@@ -121,7 +121,13 @@ async function runVideoSearchLoop({ chat, model, query, findVideos, now, budgetM
       await onStep(step);
     }
   };
-  const fail = (error) => ({ ok: false, error, proposedIds: [], cardById, calls });
+  const fail = (error) => {
+    const proposedIds = Object.keys(cardById);
+    if (proposedIds.length) {
+      return { ok: true, proposedIds, cardById, calls };
+    }
+    return { ok: false, error, proposedIds: [], cardById, calls };
+  };
   await report({ key: 'understand', label: '理解这句话', state: 'running' });
   for (let turn = 0; turn < maxCalls + 3; turn += 1) {
     const remaining = deadline - now();
