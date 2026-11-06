@@ -4,7 +4,7 @@ const cloud = require('wx-server-sdk');
 const crypto = require('crypto');
 const { resolveSearchMode, runSearch } = require('./lib/searchIndex');
 const { attachResultPosters } = require('./lib/resolvePosterUrls');
-const { readCatalogChunks, writeCatalogChunks } = require('./lib/searchCatalogCache');
+const { createReadCache, readCatalogChunks, writeCatalogChunks } = require('./lib/searchCatalogCache');
 const { verifyTicket } = require('./lib/ticket');
 const { expandQuery } = require('./lib/keywordSearch');
 const { contentHash } = require('./lib/chunkText');
@@ -40,7 +40,10 @@ function missingDocument(error) {
 const PUBLISHED_PAGE_SIZE = 1000;
 const PUBLISHED_HARD_CAP = 5000;
 
-async function loadPublishedVideos() {
+const videosCache = createReadCache();
+const synonymsCache = createReadCache();
+
+async function loadPublishedVideosFresh() {
   const { rows, truncated } = await loadAllPages(async (skip, limit) => {
     const res = await db
       .collection('videos')
@@ -69,9 +72,34 @@ async function loadPublishedVideos() {
   return { videos: rows, truncated };
 }
 
-async function loadSynonyms() {
+async function loadPublishedVideos() {
+  const cached = videosCache.read(Date.now());
+  if (cached) {
+    return cached;
+  }
+  const loaded = await loadPublishedVideosFresh();
+  videosCache.write(loaded, Date.now());
+  return loaded;
+}
+
+async function loadSynonymsFresh() {
   const res = await db.collection('synonyms').limit(200).get();
   return res.data || [];
+}
+
+async function loadSynonyms() {
+  const cached = synonymsCache.read(Date.now());
+  if (cached) {
+    return cached;
+  }
+  const loaded = await loadSynonymsFresh();
+  synonymsCache.write(loaded, Date.now());
+  return loaded;
+}
+
+function invalidateCatalogReads() {
+  videosCache.invalidate();
+  synonymsCache.invalidate();
 }
 
 async function readVideo(id) {
@@ -254,6 +282,7 @@ async function handleReindex(event) {
     badInput();
   }
   const outcome = await indexOne(videoId);
+  invalidateCatalogReads();
   return { ok: true, videoId, status: outcome.kind };
 }
 
@@ -263,6 +292,7 @@ async function handleDeleteChunk(event) {
     badInput();
   }
   await removeChunk(videoId);
+  invalidateCatalogReads();
   return { ok: true, videoId };
 }
 

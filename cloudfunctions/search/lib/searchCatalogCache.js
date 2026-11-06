@@ -33,11 +33,28 @@ function createCatalogCache({ ttlMs = CATALOG_TTL_MS } = {}) {
   };
 }
 
+function createReadCache({ ttlMs = CATALOG_TTL_MS } = {}) {
+  let entry = null;
+  return {
+    read(now) {
+      if (!entry || Number(now) - entry.storedAt >= ttlMs) return null;
+      return entry.value;
+    },
+    write(value, now) {
+      entry = { value, storedAt: Number(now) || 0 };
+    },
+    invalidate() {
+      entry = null;
+    },
+  };
+}
+
 const shared = createCatalogCache();
 
 module.exports = {
   CATALOG_TTL_MS,
   createCatalogCache,
+  createReadCache,
   publishedFingerprint,
   readCatalogChunks: (videos, now) => shared.read(videos, now),
   writeCatalogChunks: (videos, chunks, now) => shared.write(videos, chunks, now),
