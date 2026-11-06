@@ -228,6 +228,9 @@ describe('explainer search', () => {
     assert.match(wxml, /用一句话描述想看的讲解/);
     assert.match(wxml, /可以换个型号或菜单名，也可以把问题发给客服/);
     assert.match(wxml, /bindtap="onSearchMiss"/);
+    assert.match(wxml, /bindtap="onClearQuery"/);
+    assert.match(wxml, /aria-label="清除"/);
+    assert.match(wxml, /wx:if="\{\{query\}\}"/);
     assert.match(wxml, /联系客服/);
     assert.match(wxml, /按名称找到的/);
   });
@@ -370,13 +373,55 @@ describe('explainer search', () => {
 
     await page.onSearchConfirm();
 
-    assert.deepEqual(calls, [{ action: 'videoSearch', query: '怎么设置账号' }]);
+    const videoCalls = calls.filter((item) => item.action === 'videoSearch');
+    const traceCalls = calls.filter((item) => item.action === 'videoSearchTrace');
+    assert.equal(videoCalls.length, 1);
+    assert.equal(videoCalls[0].query, '怎么设置账号');
+    assert.match(videoCalls[0].runId, /^[A-Za-z0-9_-]{8,64}$/);
+    assert.equal(traceCalls[0].runId, videoCalls[0].runId);
     assert.equal(page.data.searchMode, 'ai');
     assert.equal(page.data.aiLabel, 'AI 搜索结果');
     assert.equal(page.data.noticeText, '');
     assert.deepEqual(page.data.results.map((item) => item.id), ['cors']);
     assert.deepEqual(page.data.keywordResults, []);
     assert.equal(page.data.agentMerged, true);
+    assert.deepEqual(page.data.searchSteps, []);
+  });
+
+  it('replaces the waiting line with the agent steps while the search is running', async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const page = loadPage(
+      async () => ({ ok: true, brands: [], videos: [] }),
+      async () => { throw fail('FAIL', 'search 不该被调用'); },
+      async (data) => {
+        if (data.action === 'videoSearchTrace') {
+          return {
+            ok: true,
+            steps: [
+              { key: 'understand', label: '理解这句话', state: 'done', detail: '' },
+              { key: 'find:账号设置', label: '查找「账号设置」', state: 'running', detail: '' },
+            ],
+          };
+        }
+        await gate;
+        return { ok: true, scene: 'video', items: [] };
+      },
+    );
+    page.setData({ query: '怎么设置账号', queryMode: 'ai' });
+    const pending = page.onSearchConfirm();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(page.data.searching, true);
+    assert.equal(page.data.searchSteps[1].label, '查找「账号设置」');
+    assert.equal(page.data.searchSteps[1].state, 'running');
+
+    release();
+    await pending;
+    assert.equal(page.data.searching, false);
+    assert.deepEqual(page.data.searchSteps, []);
   });
 
   it('falls back to the two lane search when the agent call fails', async () => {
@@ -403,7 +448,9 @@ describe('explainer search', () => {
 
     await page.onSearchConfirm();
 
-    assert.equal(agentCalls.length, 1);
+    const videoCalls = agentCalls.filter((item) => item.action === 'videoSearch');
+    assert.equal(videoCalls.length, 1);
+    assert.equal(videoCalls[0].query, '怎么计算');
     assert.deepEqual(searchCalls, [{ scene: 'video', mode: 'ai', query: '怎么计算' }]);
     assert.equal(page.data.agentMerged, false);
     assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['kw']);
@@ -426,6 +473,78 @@ describe('explainer search', () => {
 
     assert.deepEqual(page.data.results.map((item) => item.id), ['ai']);
     assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['kw']);
+  });
+
+  it('restores the catalog when the query is cleared', () => {
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
+    page.setData({
+      query: 'iRTK5',
+      searched: true,
+      searching: false,
+      searchMode: 'ai',
+      aiLabel: 'AI 搜索结果',
+      results: [{ id: 'v1' }],
+      searchItems: [{ id: 'v1' }],
+      noticeText: '只搜了一部分',
+      brands: [{ _id: 'b1', name: '中海达' }],
+      allVideos: [{ _id: 'v9', brandId: 'b1', title: '目录视频', brandName: '中海达' }],
+    });
+
+    page.onQuery({ detail: { value: '   ' } });
+
+    assert.equal(page.data.query, '   ');
+    assert.equal(page.data.searched, false);
+    assert.equal(page.data.searching, false);
+    assert.deepEqual(page.data.results, []);
+    assert.equal(page.data.aiLabel, '');
+    assert.equal(page.data.noticeText, '');
+    assert.equal(page.data.shelves.length, 1);
+  });
+
+  it('drops an in-flight search when the query is cleared', async () => {
+    let release;
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    const page = loadPage(
+      async () => ({ ok: true, brands: [], videos: [] }),
+      () => pending,
+    );
+    page.setData({
+      query: 'iRTK5',
+      brands: [{ _id: 'b1', name: '中海达' }],
+      allVideos: [{ _id: 'v9', brandId: 'b1', title: '目录视频', brandName: '中海达' }],
+    });
+
+    const pendingSearch = page.onSearchConfirm();
+    page.onClearQuery();
+    release({
+      ok: true,
+      scene: 'video',
+      items: [{ id: 'v1', title: '晚到', brandId: 'b1', brandName: '中海达', modelName: '', tags: [] }],
+    });
+    await pendingSearch;
+
+    assert.equal(page.data.query, '');
+    assert.equal(page.data.searched, false);
+    assert.equal(page.data.searching, false);
+    assert.deepEqual(page.data.results, []);
+    assert.equal(page.data.shelves.length, 1);
+  });
+
+  it('keeps the current results while the query is only edited', () => {
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }));
+    page.setData({
+      query: 'iRTK5',
+      searched: true,
+      results: [{ id: 'v1' }],
+    });
+
+    page.onQuery({ detail: { value: 'iRTK' } });
+
+    assert.equal(page.data.query, 'iRTK');
+    assert.equal(page.data.searched, true);
+    assert.deepEqual(page.data.results, [{ id: 'v1' }]);
   });
 
   it('does not call ai search for a blank query', async () => {

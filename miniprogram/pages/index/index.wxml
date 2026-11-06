@@ -9,14 +9,24 @@
   </view>
 
   <view class="search-bar">
-    <input
-      class="search-bar-input"
-      placeholder="{{queryMode === 'ai' ? '用一句话描述想看的讲解' : '型号、菜单名或操作'}}"
-      value="{{query}}"
-      confirm-type="search"
-      bindinput="onQuery"
-      bindconfirm="onSearchConfirm"
-    />
+    <view class="search-bar-field">
+      <input
+        class="search-bar-input"
+        placeholder="{{queryMode === 'ai' ? '用一句话描述想看的讲解' : '型号、菜单名或操作'}}"
+        value="{{query}}"
+        confirm-type="search"
+        bindinput="onQuery"
+        bindconfirm="onSearchConfirm"
+      />
+      <view
+        wx:if="{{query}}"
+        class="search-clear"
+        hover-class="search-clear-on"
+        bindtap="onClearQuery"
+        aria-role="button"
+        aria-label="清除"
+      >×</view>
+    </view>
     <view
       class="ai-toggle {{queryMode === 'ai' ? 'ai-toggle-on' : ''}} {{searching ? 'search-control-off' : ''}}"
       hover-class="ai-toggle-press"
@@ -74,6 +84,16 @@
           <view class="skel-line"></view>
           <view class="skel-line skel-line-short"></view>
         </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:elif="{{searching && searchSteps.length}}" class="search-trace">
+    <view class="search-trace-item" wx:for="{{searchSteps}}" wx:key="key">
+      <view class="search-trace-mark {{item.state}}"></view>
+      <view class="search-trace-line">
+        <text class="search-trace-label">{{item.label}}</text>
+        <text wx:if="{{item.detail}}" class="search-trace-detail">{{item.detail}}</text>
       </view>
     </view>
   </view>

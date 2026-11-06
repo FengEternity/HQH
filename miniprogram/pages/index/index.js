@@ -18,6 +18,10 @@ function decorateSearchItems(items) {
   );
 }
 
+function createSearchRunId() {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
 Page({
   data: {
     brands: [],
@@ -37,6 +41,7 @@ Page({
     notice: '',
     noticeText: '',
     agentMerged: false,
+    searchSteps: [],
     loading: true,
     error: '',
   },
@@ -49,6 +54,9 @@ Page({
     if (!this._loadedOnce) return;
     if (this._homeLoadedAt && Date.now() - this._homeLoadedAt < HOME_CACHE_MS) return;
     this.load({ showLoading: false });
+  },
+  onUnload() {
+    this.stopSearchTrace();
   },
   load(options) {
     const showLoading = !options || options.showLoading !== false;
@@ -115,6 +123,7 @@ Page({
       notice: '',
       noticeText: '',
       agentMerged: false,
+      searchSteps: [],
     });
   },
   paintSearchResults() {
@@ -126,7 +135,24 @@ Page({
     });
   },
   onQuery(e) {
-    this.setData({ query: e.detail.value });
+    const query = e.detail.value;
+    this.setData({ query });
+    if (!(query || '').trim()) {
+      this.leaveSearch();
+    }
+  },
+  onClearQuery() {
+    this.setData({ query: '' });
+    this.leaveSearch();
+  },
+  leaveSearch() {
+    if (!this.data.searched && !this.data.searching) {
+      return;
+    }
+    this._searchSeq = (this._searchSeq || 0) + 1;
+    this.stopSearchTrace();
+    this.setData({ searching: false });
+    this.paintShelves();
   },
   onModeTap() {
     if (this.data.searching) {
@@ -154,12 +180,22 @@ Page({
     const searchMode = mode === 'ai' ? 'ai' : 'keyword';
     const seq = (this._searchSeq || 0) + 1;
     this._searchSeq = seq;
-    this.setData({ searching: true, error: '' });
+    const runId = searchMode === 'ai' ? createSearchRunId() : '';
+    this.setData({
+      searching: true,
+      error: '',
+      searchSteps: searchMode === 'ai'
+        ? [{ key: 'understand', label: '理解这句话', state: 'running', detail: '' }]
+        : [],
+    });
+    if (runId) {
+      this.startSearchTrace(runId, seq);
+    }
     const request = () => {
       if (searchMode !== 'ai') {
         return search({ scene: 'video', query, mode: searchMode }).then((ai) => ({ ai }));
       }
-      return agent({ action: 'videoSearch', query })
+      return agent({ action: 'videoSearch', query, runId })
         .then((agentResult) => {
           if (!agentResult || !Array.isArray(agentResult.items)) {
             throw new Error('agent_unavailable');
@@ -187,6 +223,7 @@ Page({
             searched: true,
             error: '',
             agentMerged: true,
+            searchSteps: [],
           });
           this.paintSearchResults();
           return;
@@ -210,6 +247,7 @@ Page({
           searched: true,
           error: '',
           agentMerged: false,
+          searchSteps: [],
         });
         this.paintSearchResults();
       })
@@ -222,13 +260,43 @@ Page({
           !(this.data.shelves && this.data.shelves.length) && !this.data.brands.length;
         this.setData({
           searching: false,
+          searchSteps: [],
           error: stillEmpty ? visitorCatalogMessage('load') : '',
         });
         wx.showToast({
           title: searchMode === 'ai' ? '搜索失败，请重试' : visitorCatalogMessage('search'),
           icon: 'none',
         });
+      })
+      .finally(() => {
+        this.stopSearchTrace(seq);
       });
+  },
+  startSearchTrace(runId, seq) {
+    this.stopSearchTrace();
+    this._traceSeq = seq;
+    const pull = () => {
+      agent({ action: 'videoSearchTrace', runId }).then((res) => {
+        if (seq !== this._searchSeq || !this.data.searching) {
+          return;
+        }
+        const steps = res && Array.isArray(res.steps) ? res.steps : [];
+        if (steps.length) {
+          this.setData({ searchSteps: steps });
+        }
+      }).catch(() => {});
+    };
+    pull();
+    this._traceTimer = setInterval(pull, 700);
+  },
+  stopSearchTrace(seq) {
+    if (seq != null && seq !== this._traceSeq) {
+      return;
+    }
+    if (this._traceTimer) {
+      clearInterval(this._traceTimer);
+      this._traceTimer = 0;
+    }
   },
   onBrandTap(e) {
     const id = e.currentTarget.dataset.id || '';

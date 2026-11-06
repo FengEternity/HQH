@@ -37,12 +37,14 @@ describe('runVideoSearchLoop', () => {
 
   it('rewrites once, calls the tool, and finishes with the proposed ids', async () => {
     const seen = [];
+    const steps = [];
     const result = await runVideoSearchLoop({
       model: 'hy3',
       query: '怎么设置账号',
       now: () => 0,
       budgetMs: 20000,
       maxCalls: 3,
+      onStep: async (step) => { steps.push(`${step.key}:${step.state}:${step.detail || ''}`); },
       findVideos: async (query) => { seen.push(query); return [card]; },
       chat: async ({ messages, tool_choice }) => {
         const toolTurns = messages.filter((m) => m.role === 'tool').length;
@@ -58,6 +60,15 @@ describe('runVideoSearchLoop', () => {
     assert.deepEqual(result.calls, ['账号设置']);
     assert.deepEqual(result.proposedIds, ['cors']);
     assert.ok(result.cardById.cors);
+    assert.deepEqual(steps, [
+      'understand:running:',
+      'understand:done:',
+      'find:账号设置:running:',
+      'find:账号设置:done:找到 1 条',
+      'pick:running:',
+      'understand:done:',
+      'pick:done:1 条',
+    ]);
   });
 
   it('fails closed when the model throws', async () => {

@@ -45,8 +45,9 @@ function usableChunk(video, chunk, modelName) {
   return magnitudeSquared(chunk.embedding) > 0;
 }
 
-function selectVectorHits({ videos, chunks, queryEmbedding, model }) {
+function selectVectorHits({ videos, chunks, queryEmbedding, model, threshold }) {
   const modelName = model || EMBEDDING_MODEL;
+  const floor = typeof threshold === 'number' && Number.isFinite(threshold) ? threshold : null;
   const byId = new Map();
   for (const chunk of chunks || []) {
     if (chunk && chunk.sourceId) {
@@ -82,9 +83,10 @@ function selectVectorHits({ videos, chunks, queryEmbedding, model }) {
     }
     return String(left.video._id).localeCompare(String(right.video._id));
   });
+  const passing = floor == null ? hits : hits.filter((hit) => hit.cosine >= floor);
   return {
     expected,
-    hits: hits.slice(0, 8),
+    hits: passing.slice(0, 8),
     indexed,
   };
 }

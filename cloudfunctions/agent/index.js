@@ -10,6 +10,7 @@ const { handleAgentModelAction, loadPlaceModelName } = require('./lib/agentModel
 const { writeVideoIntro } = require('./lib/writeVideoIntro');
 const { createTokenHubClient } = require('./lib/ai-runtime');
 const { mergeThreeLaneItems, runVideoSearchLoop } = require('./lib/videoSearchLane');
+const { createTraceWriter, readSearchTrace } = require('./lib/searchTrace');
 
 const VIDEO_SEARCH_BUDGET_MS = 20000;
 const VIDEO_SEARCH_MAX_CALLS = 3;
@@ -73,6 +74,7 @@ async function handleVideoSearch(event) {
   if (!query) {
     return { ok: true, scene: 'video', items: [] };
   }
+  const emit = createTraceWriter({ db, runId: event && event.runId });
   let agentFailed = false;
   try {
     await checkText(query);
@@ -80,10 +82,12 @@ async function handleVideoSearch(event) {
     // 内容安全拒绝或检查本身失败，都只按第三路不可用处理，前两路照出。
     agentFailed = true;
   }
+  await emit({ key: 'library', label: '检索已有讲解', state: 'running' });
   const searchPromise = cloud
     .callFunction({ name: 'search', data: { scene: 'video', query, mode: 'ai' } })
     .then((res) => (res && res.result) || { ok: false, code: 'FAIL' })
-    .catch(() => ({ ok: false, code: 'FAIL' }));
+    .catch(() => ({ ok: false, code: 'FAIL' }))
+    .finally(() => emit({ key: 'library', label: '检索已有讲解', state: 'done' }));
   const lanePromise = agentFailed
     ? Promise.resolve({ ok: false, error: 'CONTENT_REJECTED', proposedIds: [], cardById: {}, calls: [] })
     : (async () => {
@@ -97,6 +101,7 @@ async function handleVideoSearch(event) {
         now: Date.now,
         budgetMs: VIDEO_SEARCH_BUDGET_MS,
         maxCalls: VIDEO_SEARCH_MAX_CALLS,
+        onStep: emit,
       });
     })().catch(() => ({ ok: false, error: 'UNAVAILABLE', proposedIds: [], cardById: {}, calls: [] }));
   const [searchResult, lane] = await Promise.all([searchPromise, lanePromise]);
@@ -121,6 +126,9 @@ exports.main = async (event) => {
   try {
     const openid = cloud.getWXContext().OPENID;
     const action = event && event.action;
+    if (action === 'videoSearchTrace') {
+      return { ok: true, steps: await readSearchTrace(db, event && event.runId) };
+    }
     if (action === 'videoSearch') {
       return await handleVideoSearch(event);
     }

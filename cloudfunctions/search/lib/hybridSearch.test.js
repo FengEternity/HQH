@@ -139,7 +139,7 @@ describe('vector merge', () => {
     assert.equal(res.items[0].score, undefined);
   });
 
-  it('keeps the nearest video when its cosine is below the old threshold', () => {
+  it('drops a video whose cosine is below the threshold', () => {
     const item = video({ contentHash: 'hash-1', searchBlob: '无关' });
     const res = runSearch({
       scene: 'video',
@@ -150,10 +150,23 @@ describe('vector merge', () => {
       queryEmbedding: axis(0),
       threshold: 0.5,
     });
-    assert.deepEqual(res.items.map((row) => row.id), ['v1']);
-    assert.deepEqual(res.semanticOnlyItems.map((row) => row.id), ['v1']);
+    assert.deepEqual(res.items, []);
+    assert.deepEqual(res.semanticOnlyItems, []);
     assert.deepEqual(res.keywordItems, []);
-    assert.equal(res.notice, undefined);
+  });
+
+  it('keeps a video whose cosine is exactly the threshold', () => {
+    const item = video({ contentHash: 'hash-1', searchBlob: '无关' });
+    const res = runSearch({
+      scene: 'video',
+      mode: 'ai',
+      query: '怎么架设',
+      videos: [item],
+      chunks: [readyChunk('v1', 'hash-1', 0)],
+      queryEmbedding: axis(0),
+      threshold: 1,
+    });
+    assert.deepEqual(res.semanticOnlyItems.map((row) => row.id), ['v1']);
   });
 
   it('reports semantic_unavailable when embed fails or the library is over 500', () => {

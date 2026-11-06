@@ -11,6 +11,15 @@
   box-sizing: border-box;
 }
 
+.search-bar-field {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  gap: 8rpx;
+}
+
 .search-bar-input {
   flex: 1;
   width: 0;
@@ -23,6 +32,24 @@
   background: transparent;
   color: #18181b;
   font-size: 28rpx;
+}
+
+.search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+  background: #f4f4f5;
+  color: #71717a;
+  font-size: 28rpx;
+  line-height: 1;
+}
+
+.search-clear-on {
+  opacity: 0.7;
 }
 
 .ai-toggle {
@@ -107,6 +134,55 @@
 
 .search-control-off {
   opacity: 0.55;
+}
+
+.search-trace {
+  margin-top: 36rpx;
+  padding: 8rpx 12rpx 0;
+}
+
+.search-trace-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 16rpx 0;
+}
+
+.search-trace-mark {
+  width: 14rpx;
+  height: 14rpx;
+  margin-top: 12rpx;
+  border-radius: 50%;
+  background: #d4d4d8;
+  flex-shrink: 0;
+}
+
+.search-trace-mark.running {
+  background: #4b6fdb;
+  animation: search-trace-pulse 1s ease-in-out infinite;
+}
+
+.search-trace-mark.done {
+  background: #3f3f46;
+}
+
+.search-trace-label {
+  color: #18181b;
+  font-size: 28rpx;
+  line-height: 1.45;
+}
+
+.search-trace-detail {
+  margin-left: 12rpx;
+  color: #71717a;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+@keyframes search-trace-pulse {
+  0%,
+  100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
 .search-ai-label {

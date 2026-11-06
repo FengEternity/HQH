@@ -107,7 +107,7 @@ function toolCallQuery(call) {
   }
 }
 
-async function runVideoSearchLoop({ chat, model, query, findVideos, now, budgetMs, maxCalls }) {
+async function runVideoSearchLoop({ chat, model, query, findVideos, now, budgetMs, maxCalls, onStep }) {
   const startedAt = now();
   const deadline = startedAt + budgetMs;
   const calls = [];
@@ -116,13 +116,22 @@ async function runVideoSearchLoop({ chat, model, query, findVideos, now, budgetM
     { role: 'system', content: VIDEO_SEARCH_SYSTEM },
     { role: 'user', content: query },
   ];
+  const report = async (step) => {
+    if (typeof onStep === 'function') {
+      await onStep(step);
+    }
+  };
   const fail = (error) => ({ ok: false, error, proposedIds: [], cardById, calls });
+  await report({ key: 'understand', label: '理解这句话', state: 'running' });
   for (let turn = 0; turn < maxCalls + 3; turn += 1) {
     const remaining = deadline - now();
     if (remaining <= 0) {
       return fail('TIMEOUT');
     }
     const toolChoice = calls.length >= maxCalls ? 'none' : 'auto';
+    if (toolChoice === 'none' || calls.length > 0) {
+      await report({ key: 'pick', label: '挑选相关讲解', state: 'running' });
+    }
     let reply;
     try {
       reply = await chat({
@@ -136,12 +145,20 @@ async function runVideoSearchLoop({ chat, model, query, findVideos, now, budgetM
     } catch (error) {
       return fail((error && error.code) || 'UNAVAILABLE');
     }
+    await report({ key: 'understand', label: '理解这句话', state: 'done' });
     const message = reply && reply.message;
     const toolCalls = (message && Array.isArray(message.tool_calls) && message.tool_calls) || [];
     if (!toolCalls.length) {
+      const proposedIds = parseProposedIds(message && message.content);
+      await report({
+        key: 'pick',
+        label: '挑选相关讲解',
+        state: 'done',
+        detail: proposedIds.length ? `${proposedIds.length} 条` : '',
+      });
       return {
         ok: true,
-        proposedIds: parseProposedIds(message && message.content),
+        proposedIds,
         cardById,
         calls,
       };
@@ -153,6 +170,7 @@ async function runVideoSearchLoop({ chat, model, query, findVideos, now, budgetM
         const toolQuery = toolCallQuery(call);
         if (toolQuery) {
           calls.push(toolQuery);
+          await report({ key: `find:${toolQuery}`, label: `查找「${toolQuery}」`, state: 'running' });
           try {
             cards = (await findVideos(toolQuery)) || [];
           } catch (error) {
@@ -163,6 +181,12 @@ async function runVideoSearchLoop({ chat, model, query, findVideos, now, budgetM
               cardById[String(card.id)] = card;
             }
           }
+          await report({
+            key: `find:${toolQuery}`,
+            label: `查找「${toolQuery}」`,
+            state: 'done',
+            detail: cards.length ? `找到 ${cards.length} 条` : '没有对上名称',
+          });
         }
       }
       messages.push({
