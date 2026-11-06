@@ -15,6 +15,7 @@ const { auditChunks, scorePublishedVideos } = require('./lib/vectorRank');
 const { COSINE_THRESHOLD, EMBEDDING_MODEL, INDEX_BATCH_SIZE, MAX_INPUT_CHARS, VECTOR_CAP } = require('./lib/searchConfig');
 const { resolveQueryEmbedding } = require('./lib/queryEmbeddingCache');
 const { loadAllPages } = require('./lib/pagedRead');
+const { findVideos } = require('./lib/findVideos');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -444,7 +445,19 @@ async function handleAudit() {
   };
 }
 
+async function handleFindVideos(event) {
+  const query = String((event && event.query) || '').trim();
+  if (!query) {
+    return { ok: true, cards: [] };
+  }
+  const [loaded, synonyms] = await Promise.all([loadPublishedVideos(), loadSynonyms()]);
+  return { ok: true, cards: findVideos(loaded.videos, query, synonyms) };
+}
+
 async function handle(event) {
+  if (event && event.action === 'findVideos') {
+    return handleFindVideos(event);
+  }
   if (event && event.action) {
     return handleOps(event);
   }

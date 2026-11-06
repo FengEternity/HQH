@@ -42,7 +42,45 @@ function mergeVideos(keywordVideos, vectorHits) {
   return ordered;
 }
 
+function mergeThreeLanes(keywordVideos, agentVideos, ragHits) {
+  const seen = new Set();
+  const ordered = [];
+  const push = (video) => {
+    const id = String(video && video._id);
+    if (!video || seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    ordered.push(video);
+  };
+  for (const video of keywordVideos || []) {
+    push(video);
+  }
+  for (const video of agentVideos || []) {
+    push(video);
+  }
+  for (const hit of ragHits || []) {
+    push(hit && hit.video);
+  }
+  return ordered;
+}
+
+function decideThreeLaneNotice(state) {
+  if (state && state.agentFailed) {
+    return 'agent_unavailable';
+  }
+  if (state && (state.embedError || state.overCap || (state.expected > 0 && !state.indexed))) {
+    return 'semantic_unavailable';
+  }
+  if (state && state.expected > 0 && state.indexed < state.expected) {
+    return 'coverage_incomplete';
+  }
+  return '';
+}
+
 module.exports = {
   decideNotice,
+  decideThreeLaneNotice,
+  mergeThreeLanes,
   mergeVideos,
 };
