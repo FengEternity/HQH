@@ -23,4 +23,9 @@ describe('searchNoticeText', () => {
     assert.equal(searchNoticeText('library_overflow', []), '讲解较多，本次只搜到其中一部分');
     assert.equal(searchNoticeText('library_overflow', [{ id: 'v1' }]), '讲解较多，本次只搜到其中一部分');
   });
+
+  it('labels an agent outage without hiding the other lanes', () => {
+    assert.equal(searchNoticeText('agent_unavailable', []), 'AI 找片暂时不可用');
+    assert.equal(searchNoticeText('agent_unavailable', [{ id: 'v1' }]), 'AI 找片暂时不可用，以下是其他结果');
+  });
 });

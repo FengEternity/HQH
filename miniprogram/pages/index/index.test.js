@@ -17,14 +17,20 @@ function fail(code, message) {
   return err;
 }
 
-function loadPage(catalog, search) {
+function loadPage(catalog, search, agent) {
   delete require.cache[pagePath];
   const api = require(apiPath);
   const originalCatalog = api.catalog;
   const originalSearch = api.search;
+  const originalAgent = api.agent;
   api.catalog = catalog;
   api.search = search || (async () => {
     const err = new Error('search 调用失败');
+    err.code = 'FAIL';
+    throw err;
+  });
+  api.agent = agent || (async () => {
+    const err = new Error('agent 调用失败');
     err.code = 'FAIL';
     throw err;
   });
@@ -36,6 +42,7 @@ function loadPage(catalog, search) {
   require(pagePath);
   api.catalog = originalCatalog;
   api.search = originalSearch;
+  api.agent = originalAgent;
 
   return Object.assign({}, definition, {
     data: JSON.parse(JSON.stringify(definition.data)),
@@ -345,31 +352,64 @@ describe('explainer search', () => {
     assert.deepEqual(page.data.results.map((item) => item.id), ['v1']);
   });
 
-  it('ai search sends the ai mode and labels the result', async () => {
+  it('routes ai search to the agent and renders one merged list', async () => {
     const calls = [];
-    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async (data) => {
-      calls.push(data);
-      return {
-        ok: true,
-        scene: 'video',
-        items: [{ id: 'v1', title: '甲', brandId: 'b1', brandName: '中海达', modelName: '', tags: [] }],
-      };
-    });
-    page.setData({ query: '怎么对中' });
+    const page = loadPage(
+      async () => ({ ok: true, brands: [], videos: [] }),
+      async () => { throw fail('FAIL', 'search 不该被调用'); },
+      async (data) => {
+        calls.push(data);
+        return {
+          ok: true,
+          scene: 'video',
+          items: [{ id: 'cors', title: '南方CORS设置', brandId: 'b1', brandName: '南方', modelName: '', tags: [] }],
+        };
+      },
+    );
+    page.setData({ query: '怎么设置账号', queryMode: 'ai' });
 
-    page.setData({ queryMode: 'ai' });
     await page.onSearchConfirm();
 
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].mode, 'ai');
+    assert.deepEqual(calls, [{ action: 'videoSearch', query: '怎么设置账号' }]);
     assert.equal(page.data.searchMode, 'ai');
     assert.equal(page.data.aiLabel, 'AI 搜索结果');
     assert.equal(page.data.noticeText, '');
-    assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['v1']);
-    assert.deepEqual(page.data.results, []);
+    assert.deepEqual(page.data.results.map((item) => item.id), ['cors']);
+    assert.deepEqual(page.data.keywordResults, []);
+    assert.equal(page.data.agentMerged, true);
   });
 
-  it('keeps vector-only hits above the keyword results', async () => {
+  it('falls back to the two lane search when the agent call fails', async () => {
+    const agentCalls = [];
+    const searchCalls = [];
+    const page = loadPage(
+      async () => ({ ok: true, brands: [], videos: [] }),
+      async (data) => {
+        searchCalls.push(data);
+        return {
+          ok: true,
+          scene: 'video',
+          items: [{ id: 'kw', title: '参数计算', brandId: 'b1', brandName: '南方', modelName: '', tags: [] }],
+          keywordItems: [{ id: 'kw', title: '参数计算', brandId: 'b1', brandName: '南方', modelName: '', tags: [] }],
+          semanticOnlyItems: [],
+        };
+      },
+      async (data) => {
+        agentCalls.push(data);
+        throw fail('FUNCTION_NOT_FOUND', 'agent 云函数未部署');
+      },
+    );
+    page.setData({ query: '怎么计算', queryMode: 'ai' });
+
+    await page.onSearchConfirm();
+
+    assert.equal(agentCalls.length, 1);
+    assert.deepEqual(searchCalls, [{ scene: 'video', mode: 'ai', query: '怎么计算' }]);
+    assert.equal(page.data.agentMerged, false);
+    assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['kw']);
+  });
+
+  it('keeps vector-only hits above the keyword results on the fallback path', async () => {
     const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async () => ({
       ok: true,
       scene: 'video',

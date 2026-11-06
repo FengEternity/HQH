@@ -2,6 +2,9 @@
 
 function searchNoticeText(notice, items) {
   const count = Array.isArray(items) ? items.length : 0;
+  if (notice === 'agent_unavailable') {
+    return count ? 'AI 找片暂时不可用，以下是其他结果' : 'AI 找片暂时不可用';
+  }
   if (notice === 'library_overflow') {
     return '讲解较多，本次只搜到其中一部分';
   }

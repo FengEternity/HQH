@@ -1,4 +1,4 @@
-const { catalog, search } = require('../../utils/api');
+const { agent, catalog, search } = require('../../utils/api');
 const { searchNoticeText } = require('./searchNotice');
 const { withPosterUrls } = require('../../utils/videoMedia');
 const { saveSearchMissDraft } = require('../../utils/searchMissDraft');
@@ -36,6 +36,7 @@ Page({
     aiLabel: '',
     notice: '',
     noticeText: '',
+    agentMerged: false,
     loading: true,
     error: '',
   },
@@ -113,6 +114,7 @@ Page({
       aiLabel: '',
       notice: '',
       noticeText: '',
+      agentMerged: false,
     });
   },
   paintSearchResults() {
@@ -153,10 +155,40 @@ Page({
     const seq = (this._searchSeq || 0) + 1;
     this._searchSeq = seq;
     this.setData({ searching: true, error: '' });
-    const request = () => search({ scene: 'video', query, mode: searchMode }).then((ai) => ({ ai }));
+    const request = () => {
+      if (searchMode !== 'ai') {
+        return search({ scene: 'video', query, mode: searchMode }).then((ai) => ({ ai }));
+      }
+      return agent({ action: 'videoSearch', query })
+        .then((agentResult) => {
+          if (!agentResult || !Array.isArray(agentResult.items)) {
+            throw new Error('agent_unavailable');
+          }
+          return { agentResult };
+        })
+        .catch(() => search({ scene: 'video', query, mode: 'ai' }).then((ai) => ({ ai })));
+    };
     return callWithVisitorRetry(request)
-      .then(({ ai, keyword }) => {
+      .then(({ ai, agentResult }) => {
         if (seq !== this._searchSeq) {
+          return;
+        }
+        if (agentResult) {
+          const searchItems = decorateSearchItems(agentResult.items);
+          const notice = agentResult.notice || '';
+          this.setData({
+            searchItems,
+            keywordItems: [],
+            searchMode,
+            aiLabel: 'AI 搜索结果',
+            notice,
+            noticeText: searchNoticeText(notice, searchItems),
+            searching: false,
+            searched: true,
+            error: '',
+            agentMerged: true,
+          });
+          this.paintSearchResults();
           return;
         }
         const merged = decorateSearchItems(ai.items);
@@ -177,6 +209,7 @@ Page({
           searching: false,
           searched: true,
           error: '',
+          agentMerged: false,
         });
         this.paintSearchResults();
       })

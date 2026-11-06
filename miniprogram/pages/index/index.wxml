@@ -115,7 +115,7 @@
         </view>
       </view>
     </view>
-    <block wx:if="{{searchMode === 'ai'}}">
+    <block wx:if="{{searchMode === 'ai' && !agentMerged}}">
       <view class="search-section-label">按名称找到的</view>
       <view wx:if="{{keywordResults.length === 0}}" class="search-section-empty">没有找到相关视频</view>
       <view class="grid" wx:if="{{keywordResults.length}}">
