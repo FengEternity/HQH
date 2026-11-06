@@ -7,7 +7,7 @@ const MODELS = TEXT_MODELS.map(id => ({ id }));
 const PLACES = [
   { id: 'video_doc', label: '播放页问答', hint: '讲解页提问时使用' },
   { id: 'customer_service', label: '客服', hint: '已保存，客服回复接入后按这个名字调用' },
-  { id: 'video_intro', label: '视频简介', hint: '视频处理容器生成简介时使用' },
+  { id: 'video_intro', label: '视频简介', hint: '处理成片时写简介使用' },
 ];
 
 function clean(value) {

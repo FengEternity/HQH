@@ -49,15 +49,15 @@ python3 -m venv .video-ingest/venv
 
 ## 自动处理 worker
 
-云托管服务 `video-ingest`（仓库根目录 `Dockerfile`）轮询 `catalog` 领取任务，在容器内完成下载、`ffprobe`、必要的 H.264+AAC 转码、封面和抽音频。转写调用腾讯云录音文件识别，简介调用 TokenHub。它不会调用 `publishVideo`。音频会以临时链接交给腾讯云语音识别，用完即删；画面和关键帧不出容器。没有句子时任务仍标记可播放，字幕记为失败，不再改走本机模型。简介只有通过证据闸门才回写，否则保留占位。
+云托管服务 `video-ingest`（仓库根目录 `Dockerfile`）轮询 `catalog` 领取任务，在容器内完成下载、`ffprobe`、必要的 H.264+AAC 转码、封面和抽音频。转写调用腾讯云录音文件识别。简介由云函数 `agent` 按已保存的 `video_intro` 模型生成，容器只提交标题、品牌、口播和术语表。它不会调用 `publishVideo`。音频会以临时链接交给腾讯云语音识别，用完即删；画面和关键帧不出容器。没有句子时任务仍标记可播放，字幕记为失败，不再改走本机模型。简介只有通过证据闸门才回写，否则保留占位。
 
 启动前在进程环境配置这些值，不要写入仓库或命令行：
 
 - `TCB_ENV_ID`、`TCB_SECRET_ID`、`TCB_SECRET_KEY`、`ADMIN_PIN`
 - `TENCENT_ASR_ENGINE`（当前生产用 `16k_zh`）、`TENCENT_ASR_REGION`（当前生产用 `ap-shanghai`）
-- 自动简介配置 `TCB_ENV_ID` 和云开发环境的 `TCB_API_KEY`，从资源点扣费。模型优先读取同一云环境 `admin_config/agent_models.video_intro`，再读 `TOKENHUB_INTRO_MODEL`、`TOKENHUB_MODEL`，默认 `hy3`。运营工作台的视频简介「测试」会实际调用该容器的固定短句探测；它与问答服务分别验证。密钥不需要放到开发机，见 [统一模型接入说明](../../docs/ai-model-setup.md)。
+- 自动简介不在容器里调用模型。容器用 `ADMIN_PIN` 签一个 60 秒签名，调用云函数 `agent` 的 `writeVideoIntro`。模型密钥和 `video_intro` 模型名都在 `agent`。见 [统一模型接入说明](../../docs/ai-model-setup.md)。
 
-密钥可沿用 `TCB_SECRET_ID` / `TCB_SECRET_KEY`，也可用 `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` 覆盖。缺引擎或地域时转写直接失败；缺简介密钥、模型或地址时只跳过简介。上面的生产取值只写在云托管环境变量里，代码不带默认值。镜像只装 Node 和 ffmpeg，不再预拉 Whisper 或 Qwen。长片转码加上最长 15 分钟的识别轮询，仍可能超过 30 分钟租约，最大实例保持 1。
+密钥可沿用 `TCB_SECRET_ID` / `TCB_SECRET_KEY`，也可用 `TENCENTCLOUD_SECRET_ID` / `TENCENTCLOUD_SECRET_KEY` 覆盖。缺引擎或地域时转写直接失败；缺 `ADMIN_PIN` 时只跳过简介。上面的生产取值只写在云托管环境变量里，代码不带默认值。镜像只装 Node 和 ffmpeg，不再预拉 Whisper 或 Qwen。长片转码加上最长 15 分钟的识别轮询，仍可能超过 30 分钟租约，最大实例保持 1。
 
 ```bash
 # 需本机已配置上面列出的环境变量

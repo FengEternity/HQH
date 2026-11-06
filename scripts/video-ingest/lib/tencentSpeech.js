@@ -1,21 +1,12 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { createTokenHubClient, chatStatus } = require('./ai-runtime');
 
 const ASR_HOST = 'asr.tencentcloudapi.com';
 const ASR_VERSION = '2019-06-14';
 
 function envValue(env, name) {
   return String(env[name] || '').trim();
-}
-
-function chatCompletionsUrl(base) {
-  const trimmed = String(base || '').trim().replace(/\/$/, '');
-  if (!trimmed) {
-    return '';
-  }
-  return trimmed.endsWith('/chat/completions') ? trimmed : `${trimmed}/chat/completions`;
 }
 
 function resolveTencentConfig(env = process.env) {
@@ -29,8 +20,6 @@ function resolveTencentConfig(env = process.env) {
     secretKey,
     region: envValue(env, 'TENCENT_ASR_REGION'),
     asrEngine: envValue(env, 'TENCENT_ASR_ENGINE'),
-    introModel: envValue(env, 'TOKENHUB_MODEL'),
-    chatUrl: chatCompletionsUrl(chatStatus(env).baseUrl),
   };
 }
 
@@ -124,28 +113,6 @@ function segmentsFromAsrData(data, durationSec) {
   return segments;
 }
 
-function introFromChatPayload(payload) {
-  const message = payload && payload.choices && payload.choices[0] && payload.choices[0].message;
-  const content = message ? message.content : '';
-  const text = Array.isArray(content)
-    ? content.map((part) => (part && part.text) || '').join('')
-    : String(content || '');
-  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-}
-
-function buildIntroRequest(systemPrompt, userPrompt, model) {
-  return {
-    model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.2,
-    max_tokens: 256,
-    thinking: { type: 'disabled' },
-    reasoning_effort: 'none',
-  };
-}
 
 async function readJson(response) {
   const text = await response.text();
@@ -230,33 +197,9 @@ async function transcribeSpeech({
   throw new Error('腾讯云转写超时');
 }
 
-async function writeIntroText({
-  fetch: fetchImpl = globalThis.fetch,
-  env = process.env,
-  systemPrompt,
-  userPrompt,
-  modelName,
-}) {
-  const model = modelName || envValue(env, 'TOKENHUB_INTRO_MODEL') || envValue(env, 'TOKENHUB_MODEL');
-  if (!chatStatus(env).ready || !model) {
-    return '';
-  }
-  const result = await createTokenHubClient({ env, fetch: fetchImpl }).chat({
-    ...buildIntroRequest(systemPrompt, userPrompt, model), timeoutMs: 20000,
-  });
-  const intro = introFromChatPayload({ choices: [{ message: result.message }] });
-  if (!intro) {
-    throw new Error('腾讯云简介为空');
-  }
-  return intro;
-}
-
 module.exports = {
   resolveTencentConfig,
   signTc3,
   segmentsFromAsrData,
-  introFromChatPayload,
-  buildIntroRequest,
   transcribeSpeech,
-  writeIntroText,
 };

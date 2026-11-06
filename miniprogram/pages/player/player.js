@@ -13,6 +13,9 @@ Page({
     inputDraft: '',
     messages: [],
     askError: '',
+    asking: false,
+    askBusy: false,
+    askAnchor: '',
     currentTimeSec: 0,
   },
   onLoad(query) {
@@ -76,7 +79,11 @@ Page({
   loadAsk() {
     return agent({ action: 'videoDocHistory', videoId: this.data.videoId })
       .then((result) => {
-        this.setData({ messages: (result && result.messages) || [], askError: '' });
+        this.setData({
+          messages: (result && result.messages) || [],
+          askError: '',
+          askAnchor: this.nextAskAnchor(),
+        });
       })
       .catch((err) => {
         this.setData({ askError: err.message || '暂时无法读取问答' });
@@ -87,7 +94,76 @@ Page({
     this._currentTimeSec = sec;
   },
   onAskInput(e) {
-    this.setData({ inputDraft: e.detail.value });
+    const value = e.detail.value;
+    if (this._ignoreInput) {
+      this._ignoreInput = false;
+      if (value === this._pendingText) {
+        this.setData({ inputDraft: '' });
+        return;
+      }
+    }
+    this.setData({ inputDraft: value });
+  },
+  nextAskAnchor() {
+    return this.data.askAnchor === 'ask-end' ? 'ask-end-b' : 'ask-end';
+  },
+  onUnload() {
+    this._unloaded = true;
+    this._revealToken = (this._revealToken || 0) + 1;
+    if (this._revealTimer) clearTimeout(this._revealTimer);
+  },
+  revealMessages(messages) {
+    const list = messages || [];
+    const last = list[list.length - 1];
+    const done = (next) => {
+      this.setData({
+        messages: next,
+        asking: false,
+        askError: '',
+        askAnchor: this.nextAskAnchor(),
+      });
+    };
+    if (!last || last.role !== 'assistant' || !last.text) {
+      done(list);
+      return Promise.resolve();
+    }
+    const full = last.text;
+    const chunk = Math.max(4, Math.ceil(full.length / 36));
+    if (full.length <= chunk) {
+      done(list);
+      return Promise.resolve();
+    }
+    const token = (this._revealToken = (this._revealToken || 0) + 1);
+    const delay = Number.isFinite(this._revealDelayMs) ? this._revealDelayMs : 28;
+    let shown = 0;
+    const paint = (count) => {
+      const complete = count >= full.length;
+      shown = count;
+      done(list.map((item, index) => {
+        if (index !== list.length - 1) return item;
+        return Object.assign({}, item, {
+          text: full.slice(0, count),
+          streaming: !complete,
+        });
+      }));
+    };
+    paint(chunk);
+    return new Promise((resolve) => {
+      const tick = () => {
+        if (this._revealToken !== token) {
+          resolve();
+          return;
+        }
+        const count = Math.min(full.length, shown + chunk);
+        paint(count);
+        if (count < full.length) {
+          this._revealTimer = setTimeout(tick, delay);
+        } else {
+          resolve();
+        }
+      };
+      this._revealTimer = setTimeout(tick, delay);
+    });
   },
   onAskSend() {
     const text = String(this.data.inputDraft || '').trim();
@@ -96,7 +172,21 @@ Page({
       this._pendingText = text;
       this._requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
     }
+    const localId = 'local-' + this._requestId;
     this._sending = true;
+    this._ignoreInput = true;
+    this._revealToken = (this._revealToken || 0) + 1;
+    if (this._revealTimer) clearTimeout(this._revealTimer);
+    this.setData({
+      inputDraft: '',
+      askError: '',
+      asking: true,
+      askBusy: true,
+      askAnchor: this.nextAskAnchor(),
+      messages: (this.data.messages || []).filter((item) => item.id !== localId).concat([
+        { id: localId, role: 'user', text },
+      ]),
+    });
     return agent({
       action: 'videoDocSend',
       videoId: this.data.videoId,
@@ -106,17 +196,23 @@ Page({
     })
       .then((result) => {
         this._pendingText = '';
-        this.setData({
-          messages: (result && result.messages) || [],
-          inputDraft: '',
-          askError: '',
-        });
+        this._ignoreInput = false;
+        return this.revealMessages((result && result.messages) || []);
       })
       .catch((err) => {
-        this.setData({ askError: err.message || '发送失败' });
+        this._ignoreInput = false;
+        this.setData({
+          askError: err.message || '发送失败',
+          asking: false,
+          inputDraft: String(this.data.inputDraft || '').trim() ? this.data.inputDraft : text,
+          askAnchor: this.nextAskAnchor(),
+          messages: (this.data.messages || []).filter((item) => item.id !== localId),
+        });
       })
       .then(() => {
         this._sending = false;
+        if (this._unloaded) return;
+        this.setData({ askBusy: false, asking: false });
       });
   },
   attachShopCovers(products) {

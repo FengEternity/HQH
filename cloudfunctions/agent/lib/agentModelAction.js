@@ -84,17 +84,12 @@ async function handleAgentModelAction(db, event, deps) {
       if (!isListedModel(event && event.model)) {
         const error = new Error('BAD_INPUT'); error.code = 'BAD_INPUT'; throw error;
       }
-      const result = event.place === 'video_intro'
-        ? await deps.probeVideoIntro()
-        : await probeAgentModel({
-          modelName: event && event.model,
-          env,
-          fetch: deps && deps.fetch,
-        });
-      if (event.place === 'video_intro' && result.model !== event.model) {
-        return { ok: false, code: 'CONFIG_CHANGED', message: '模型配置已变化，请刷新后重试' };
-      }
-      return { ok: true, model: result.model, text: result.text, message: event.place === 'video_intro' ? '视频处理服务可以调用' : '问答服务可以调用' };
+      const result = await probeAgentModel({
+        modelName: event && event.model,
+        env,
+        fetch: deps && deps.fetch,
+      });
+      return { ok: true, model: result.model, text: result.text, message: '问答服务可以调用' };
     } catch (error) {
       if (error && error.code === 'BAD_INPUT') {
         return { ok: false, code: 'BAD_INPUT', message: '请选择列表中的模型' };

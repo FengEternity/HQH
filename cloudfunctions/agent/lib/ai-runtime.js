@@ -2,6 +2,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const http = require('node:http');
+const https = require('node:https');
 
 const VERSION = 'cloudbase-v1';
 const DEFAULT_BASE_URL = 'https://tokenhub.tencentmaas.com/v1';
@@ -41,19 +43,29 @@ function failure(code, status) {
   return error;
 }
 
-function createProbeProof(secret, now = Date.now()) {
+function createServiceProof(secret, purpose, now = Date.now()) {
   if (!secret) throw failure('NOT_CONFIGURED');
+  if (typeof purpose !== 'string' || !/^[a-z0-9:-]{1,80}$/.test(purpose)) throw failure('BAD_INPUT');
   const timestamp = String(now);
-  const signature = crypto.createHmac('sha256', secret).update('video-ingest:ai-probe:' + timestamp).digest('hex');
+  const signature = crypto.createHmac('sha256', secret).update(purpose + ':' + timestamp).digest('hex');
   return timestamp + '.' + signature;
 }
 
-function verifyProbeProof(secret, proof, now = Date.now()) {
-  if (!secret || typeof proof !== 'string') return false;
+function verifyServiceProof(secret, purpose, proof, now = Date.now()) {
+  if (!secret || typeof purpose !== 'string' || typeof proof !== 'string') return false;
+  if (!/^[a-z0-9:-]{1,80}$/.test(purpose)) return false;
   const match = proof.match(/^(\d{13})\.([a-f0-9]{64})$/);
   if (!match || Math.abs(now - Number(match[1])) > 60000) return false;
-  const expected = createProbeProof(secret, Number(match[1]));
+  const expected = createServiceProof(secret, purpose, Number(match[1]));
   return crypto.timingSafeEqual(Buffer.from(proof), Buffer.from(expected));
+}
+
+function createProbeProof(secret, now = Date.now()) {
+  return createServiceProof(secret, 'video-ingest:ai-probe', now);
+}
+
+function verifyProbeProof(secret, proof, now = Date.now()) {
+  return verifyServiceProof(secret, 'video-ingest:ai-probe', proof, now);
 }
 
 function envIdOk(value) {
@@ -109,15 +121,67 @@ function statusCode(status) {
   return 'UNAVAILABLE';
 }
 
+function nodeFetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const transport = target.protocol === 'https:' ? https : http;
+    const headers = Object.assign({}, options.headers);
+    if (options.body != null && headers['Content-Length'] == null && headers['content-length'] == null) {
+      headers['Content-Length'] = Buffer.byteLength(options.body);
+    }
+    let settled = false;
+    const request = transport.request({
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port || undefined,
+      path: `${target.pathname}${target.search}`,
+      method: options.method || 'GET',
+      headers,
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        if (settled) return;
+        settled = true;
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolve({ status: response.statusCode, text: async () => text });
+      });
+    });
+    const stop = () => {
+      settled = true;
+      request.destroy();
+    };
+    request.on('error', (error) => {
+      if (!settled) reject(error);
+    });
+    if (options.signal) {
+      if (options.signal.aborted) {
+        settled = true;
+        request.destroy();
+        reject(failure('TIMEOUT'));
+        return;
+      }
+      options.signal.addEventListener('abort', stop, { once: true });
+    }
+    if (options.body != null) request.write(options.body);
+    request.end();
+  });
+}
+
+function selectFetch(explicit) {
+  if (typeof explicit === 'function') return explicit;
+  if (typeof globalThis.fetch === 'function') return globalThis.fetch;
+  return nodeFetch;
+}
+
 function createTokenHubClient(options = {}) {
   const env = options.env || process.env;
-  const fetchImpl = options.fetch || globalThis.fetch;
+  const fetchImpl = selectFetch(options.fetch);
   const now = options.now || Date.now;
   const sleep = options.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
 
   async function post(target, path, payload, input, validate) {
     if (!target.ready) throw failure('NOT_CONFIGURED');
-    if (typeof fetchImpl !== 'function') throw failure('UNAVAILABLE');
     const duration = Number(input.timeoutMs) || 20000;
     const deadline = Math.min(Number(input.deadline) || Infinity, now() + duration);
     const maxRetries = Math.min(2, Math.max(0, Number(input.maxRetries ?? 1) || 0));
@@ -156,8 +220,14 @@ function createTokenHubClient(options = {}) {
         ]);
       } catch (caught) {
         const codes = new Set(['TIMEOUT', 'AUTH', 'QUOTA', 'RATE_LIMITED', 'UNAVAILABLE', 'BAD_RESPONSE', 'BAD_DIMENSION']);
-        error = codes.has(caught && caught.code) ? failure(caught.code, caught.status) : failure('UNAVAILABLE');
-        if (caught instanceof SyntaxError) error = failure('BAD_RESPONSE');
+        if (caught instanceof SyntaxError) {
+          error = failure('BAD_RESPONSE');
+        } else if (codes.has(caught && caught.code)) {
+          error = failure(caught.code, caught.status);
+        } else {
+          error = failure('UNAVAILABLE');
+          error.reason = 'network';
+        }
       } finally {
         clearTimeout(timer);
         if (error) controller.abort();
@@ -207,4 +277,4 @@ function createTokenHubClient(options = {}) {
   };
 }
 
-module.exports = { VERSION, DEFAULT_BASE_URL, TEXT_MODELS, resolveTextModel, loadTextModel, createTokenHubClient, chatStatus, tokenHubStatus, createProbeProof, verifyProbeProof };
+module.exports = { VERSION, DEFAULT_BASE_URL, TEXT_MODELS, resolveTextModel, loadTextModel, createTokenHubClient, chatStatus, tokenHubStatus, createServiceProof, verifyServiceProof, createProbeProof, verifyProbeProof, nodeFetch, selectFetch };

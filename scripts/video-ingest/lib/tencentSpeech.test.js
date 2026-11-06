@@ -4,12 +4,10 @@ const assert = require('node:assert/strict');
 const { describe, it } = require('node:test');
 
 const {
-  buildIntroRequest,
   resolveTencentConfig,
   segmentsFromAsrData,
   signTc3,
   transcribeSpeech,
-  writeIntroText,
 } = require('./tencentSpeech');
 
 describe('tencentSpeech', () => {
@@ -22,19 +20,17 @@ describe('tencentSpeech', () => {
     assert.equal(config.secretId, 'id');
     assert.equal(config.asrEngine, '16k_zh');
     assert.equal(config.region, 'ap-shanghai');
-    assert.equal(config.introModel, 'hy3');
-    assert.equal(config.chatUrl, 'https://env-id.api.tcloudbasegateway.com/v1/ai/cloudbase/chat/completions');
+    assert.equal(config.introModel, undefined);
+    assert.equal(config.chatUrl, undefined);
   });
 
-  it('未设置引擎、地域、模型和接口地址时不回落到写死值', () => {
+  it('未设置引擎或地域时不回落到写死值', () => {
     const config = resolveTencentConfig({
       TCB_SECRET_ID: 'id',
       TCB_SECRET_KEY: 'key',
     });
     assert.equal(config.asrEngine, '');
     assert.equal(config.region, '');
-    assert.equal(config.introModel, '');
-    assert.equal(config.chatUrl, '');
   });
 
   it('签名与腾讯云文档示例一致', () => {
@@ -57,15 +53,6 @@ describe('tencentSpeech', () => {
     );
   });
 
-  it('简介请求使用调用方传入的模型并关闭深度思考', () => {
-    const body = buildIntroRequest('系统', '用户', 'caller-model');
-    assert.equal(body.model, 'caller-model');
-    assert.equal(body.messages[0].content, '系统');
-    assert.equal(body.max_tokens, 256);
-    assert.deepEqual(body.thinking, { type: 'disabled' });
-    assert.equal(body.reasoning_effort, 'none');
-  });
-
   it('把录音文件识别的句子转成口播', () => {
     const segments = segmentsFromAsrData({
       ResultDetail: [{ FinalSentence: '打开项目。', StartMs: 20, EndMs: 1500 }],
@@ -73,7 +60,7 @@ describe('tencentSpeech', () => {
     assert.deepEqual(segments, [{ startSec: 0.02, endSec: 1.5, text: '打开项目。' }]);
   });
 
-  it('提交录音识别并写出简介', async () => {
+  it('提交录音识别并取回口播句子', async () => {
     const calls = [];
     const fetchImpl = async (url, options) => {
       calls.push({ url: String(url), action: options.headers['X-TC-Action'], body: options.body });
@@ -94,10 +81,7 @@ describe('tencentSpeech', () => {
           },
         });
       }
-      const body = JSON.parse(options.body);
-      assert.equal(body.model, 'hy3');
-      assert.deepEqual(body.thinking, { type: 'disabled' });
-      return jsonResponse({ choices: [{ message: { content: '千寻本期讲解如何打开项目。' } }] });
+      throw new Error('不应调用模型');
     };
     const env = speechEnv();
     const segments = await transcribeSpeech({
@@ -108,13 +92,7 @@ describe('tencentSpeech', () => {
       sleep: async () => {},
     });
     assert.equal(segments[0].text, '打开项目。');
-    const intro = await writeIntroText({
-      fetch: fetchImpl,
-      env,
-      systemPrompt: '系统',
-      userPrompt: '口播：打开项目。',
-    });
-    assert.equal(intro, '千寻本期讲解如何打开项目。');
+    assert.equal(calls.filter((call) => call.action === 'CreateRecTask' || call.action === 'DescribeTaskStatus').length, 2);
     assert.equal(calls[0].action, 'CreateRecTask');
     assert.equal(calls[1].action, 'DescribeTaskStatus');
   });
@@ -132,17 +110,6 @@ describe('tencentSpeech', () => {
     );
   });
 
-  it('简介调用不依赖 ASR 密钥，并接受运营保存的场景模型', async () => {
-    const intro = await writeIntroText({
-      env: { TCB_ENV_ID: 'env-id', TCB_API_KEY: 'fixture-key' }, modelName: 'hy4-preview',
-      systemPrompt: '系统', userPrompt: '口播', fetch: async (url, options) => {
-        assert.equal(url, 'https://env-id.api.tcloudbasegateway.com/v1/ai/cloudbase/chat/completions');
-        assert.equal(JSON.parse(options.body).model, 'hy4-preview');
-        return jsonResponse({ choices: [{ message: { content: '本期讲解整平。' } }] });
-      },
-    });
-    assert.equal(intro, '本期讲解整平。');
-  });
 });
 
 function speechEnv(overrides = {}) {

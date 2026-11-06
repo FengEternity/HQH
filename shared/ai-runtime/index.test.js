@@ -1,7 +1,8 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createTokenHubClient, chatStatus, tokenHubStatus, resolveTextModel, loadTextModel, createProbeProof, verifyProbeProof } = require('./index');
+const http = require('node:http');
+const { createTokenHubClient, chatStatus, tokenHubStatus, resolveTextModel, loadTextModel, createServiceProof, verifyServiceProof, createProbeProof, verifyProbeProof, nodeFetch, selectFetch } = require('./index');
 
 const env = { TCB_ENV_ID: 'env-id', TCB_API_KEY: 'fixture-key' };
 const embedEnv = { TOKENHUB_API_KEY: 'fixture-key' };
@@ -81,6 +82,41 @@ test('问答和简介共用场景路由，容器可读取同一份运营配置',
   assert.equal(resolveTextModel({ place: 'video_intro', env: {} }), 'hy3');
 });
 
+test('没有全局 fetch 时用 Node 自带请求完成对话', async () => {
+  const seen = [];
+  const server = http.createServer((request, response) => {
+    const chunks = [];
+    request.on('data', (chunk) => chunks.push(chunk));
+    request.on('end', () => {
+      seen.push({
+        authorization: request.headers.authorization,
+        body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+      });
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ choices: [{ message: { content: '好' } }] }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const previous = globalThis.fetch;
+  globalThis.fetch = undefined;
+  try {
+    assert.equal(selectFetch(), nodeFetch);
+    const result = await nodeFetch(`http://127.0.0.1:${port}/v1/ai/cloudbase/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer fixture-key', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'hy3', messages: [{ role: 'user', content: '回复一个字：好' }] }),
+    });
+    assert.equal(result.status, 200);
+    assert.equal(JSON.parse(await result.text()).choices[0].message.content, '好');
+    assert.equal(seen[0].authorization, 'Bearer fixture-key');
+    assert.equal(seen[0].body.model, 'hy3');
+  } finally {
+    globalThis.fetch = previous;
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('容器探测凭据绑定用途和短时限，不能伪造或过期使用', () => {
   const now = 1793700000000;
   const proof = createProbeProof('fixture-secret', now);
@@ -88,4 +124,7 @@ test('容器探测凭据绑定用途和短时限，不能伪造或过期使用',
   assert.equal(verifyProbeProof('other-secret', proof, now), false);
   assert.equal(verifyProbeProof('fixture-secret', proof, now + 61000), false);
   assert.equal(verifyProbeProof('fixture-secret', 'invalid', now), false);
+  const introProof = createServiceProof('fixture-secret', 'video-ingest:write-intro', now);
+  assert.equal(verifyServiceProof('fixture-secret', 'video-ingest:write-intro', introProof, now), true);
+  assert.equal(verifyServiceProof('fixture-secret', 'video-ingest:write-intro', proof, now), false);
 });

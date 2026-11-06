@@ -107,6 +107,8 @@ describe('player page', () => {
     await page.onAskSend();
     assert.equal(page.data.askError, '网络中断');
     assert.equal(page.data.inputDraft, '怎么整平');
+    assert.equal(page.data.asking, false);
+    assert.equal(page.data.messages.length, 0);
     await page.onAskSend();
     const sends = calls.filter((item) => item.action === 'videoDocSend');
     assert.equal(sends.length, 2);
@@ -117,5 +119,59 @@ describe('player page', () => {
     assert.equal(Object.prototype.hasOwnProperty.call(sends[0], 'openid'), false);
     assert.equal(page.data.messages[0].text, '先整平');
     assert.equal(page.data.inputDraft, '');
+    assert.equal(page.data.askBusy, false);
+  });
+
+  it('shows the question immediately and reveals a long answer in steps', async () => {
+    const answer = '一二三四五六七八九十一二三四五六七八九十';
+    let releaseSend;
+    const page = loadPage({
+      catalog: async () => ({
+        video: { title: '设站' },
+        videoUrl: 'https://example.com/a.mp4',
+      }),
+      shop: async () => ({ products: [] }),
+      agent: (data) => {
+        if (data.action === 'videoDocHistory') return Promise.resolve({ ok: true, messages: [] });
+        return new Promise((resolve) => {
+          releaseSend = () => resolve({
+            ok: true,
+            messages: [
+              { id: 'u1', role: 'user', text: '怎么固定' },
+              { id: 'm1', role: 'assistant', text: answer },
+            ],
+          });
+        });
+      },
+    });
+    await page.onLoad({ id: 'vid-1' });
+    await page.onTabTap({ currentTarget: { dataset: { tab: 'ask' } } });
+    page._revealDelayMs = 0;
+    page.setData({ inputDraft: '怎么固定' });
+    const pending = page.onAskSend();
+    assert.equal(page.data.inputDraft, '');
+    assert.equal(page.data.asking, true);
+    assert.equal(page.data.askBusy, true);
+    assert.equal(page.data.messages[0].role, 'user');
+    assert.equal(page.data.messages[0].text, '怎么固定');
+    assert.equal(typeof releaseSend, 'function');
+
+    const seen = [];
+    const original = page.setData.bind(page);
+    page.setData = (next) => {
+      seen.push(next);
+      original(next);
+    };
+    releaseSend();
+    await pending;
+    const partial = seen.some((item) => {
+      const last = item.messages && item.messages[item.messages.length - 1];
+      return last && last.streaming === true && last.text.length < answer.length;
+    });
+    assert.equal(partial, true);
+    assert.equal(page.data.asking, false);
+    assert.equal(page.data.messages[0].text, '怎么固定');
+    assert.equal(page.data.messages[1].text, answer);
+    assert.equal(page.data.messages[1].streaming, false);
   });
 });

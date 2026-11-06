@@ -67,29 +67,54 @@
       </scroll-view>
 
       <view wx:else class="player-ask">
-        <scroll-view class="player-ask-thread" scroll-y>
-          <view wx:if="{{!messages.length}}" class="player-ask-empty muted">
-            针对当前讲解提问，不会跳到客服。
+        <scroll-view
+          class="player-ask-thread"
+          scroll-y
+          scroll-into-view="{{askAnchor}}"
+          scroll-with-animation
+        >
+          <view wx:if="{{!messages.length && !asking}}" class="player-ask-empty">
+            <view class="player-ask-empty-title">问问这条讲解</view>
+            <view class="player-ask-empty-copy">只根据当前视频回答，不会转到客服。</view>
           </view>
           <view
             wx:for="{{messages}}"
             wx:key="id"
-            class="player-ask-row player-ask-row-{{item.role}}"
+            class="ask-msg ask-msg-{{item.role}}"
           >
-            <text>{{item.text}}</text>
+            <view class="ask-bubble">
+              <text class="ask-text">{{item.text}}</text><text wx:if="{{item.streaming}}" class="ask-caret">▍</text>
+            </view>
+          </view>
+          <view wx:if="{{asking}}" class="ask-msg ask-msg-assistant">
+            <view class="ask-bubble ask-typing">
+              <view class="ask-dot"></view>
+              <view class="ask-dot"></view>
+              <view class="ask-dot"></view>
+            </view>
           </view>
           <view wx:if="{{askError}}" class="player-ask-error">{{askError}}</view>
+          <view id="ask-end" class="ask-anchor"></view>
+          <view id="ask-end-b" class="ask-anchor"></view>
         </scroll-view>
         <view class="player-ask-dock">
           <input
             class="player-ask-input"
             placeholder="问问这条讲解"
+            placeholder-class="player-ask-placeholder"
             value="{{inputDraft}}"
-            bindinput="onAskInput"
+            maxlength="500"
             confirm-type="send"
+            confirm-hold="{{true}}"
+            adjust-position="{{true}}"
+            cursor-spacing="24"
+            bindinput="onAskInput"
             bindconfirm="onAskSend"
           />
-          <view class="btn player-ask-send" bindtap="onAskSend">发送</view>
+          <view
+            class="player-ask-send {{askBusy ? 'player-ask-send-busy' : ''}}"
+            bindtap="onAskSend"
+          >发送</view>
         </view>
       </view>
     </view>

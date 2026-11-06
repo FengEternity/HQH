@@ -36,15 +36,14 @@ afterEach(() => {
 });
 
 describe('admin model page', () => {
-  it('未就绪时不发问答测试，但允许独立检查视频处理容器', async () => {
+  it('未就绪时三个场景都不发测试', async () => {
     const calls = [];
     const page = loadPage(async (data) => { calls.push(data); return { ok: true, text: '好' }; });
     page.places = [{ id: 'video_doc', model: 'hy3' }, { id: 'video_intro', model: 'hy3' }];
     page.modelIds = ['hy3']; page.notes = {};
     await page.testModel({ currentTarget: { dataset: { place: 'video_doc' } } });
-    assert.equal(calls.length, 0);
     await page.testModel({ currentTarget: { dataset: { place: 'video_intro' } } });
-    assert.equal(calls[0].place, 'video_intro');
+    assert.equal(calls.length, 0);
   });
   it('uses a model dropdown beside the test button', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'models.wxml'), 'utf8');

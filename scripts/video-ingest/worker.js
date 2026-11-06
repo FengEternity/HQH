@@ -12,15 +12,10 @@ const { pipeline } = require('node:stream/promises');
 
 const cloudbase = require('@cloudbase/node-sdk');
 
-const { transcribeSpeech, writeIntroText, resolveTencentConfig } = require('./lib/tencentSpeech');
-const { loadTextModel, chatStatus } = require('./lib/ai-runtime');
+const { transcribeSpeech, resolveTencentConfig } = require('./lib/tencentSpeech');
+const { requestIntro } = require('./lib/requestIntro');
 const { PLACEHOLDER_INTRO } = require('./lib/autoIntro');
-const {
-  INTRO_SYSTEM_PROMPT,
-  acceptIntro,
-  buildIntroUserPrompt,
-  joinTranscript,
-} = require('./lib/introAbstract');
+const { acceptIntro, joinTranscript } = require('./lib/introAbstract');
 const {
   assessPlaybackProfile,
   buildPlaybackFfmpegArgs,
@@ -423,26 +418,22 @@ function createJobDependencies({
           }
         }
         log('tencent asr: ready');
-        if (!chatStatus(env).ready) {
+        if (!String(env.ADMIN_PIN || '').trim()) {
           log('tencent intro skipped: missing config');
           return { segments, intro: '', grounded: false };
         }
         let intro = '';
         try {
-          const modelName = await loadTextModel(typeof app.database === 'function' ? app.database() : null, 'video_intro', env);
-          intro = await writeIntroText({
-            env,
-            modelName,
-            systemPrompt: INTRO_SYSTEM_PROMPT,
-            userPrompt: buildIntroUserPrompt({
-              title,
-              brandName,
-              transcript: joinTranscript(segments),
-              terms: termDocument.terms,
-            }),
+          intro = await requestIntro({
+            app,
+            pin: env.ADMIN_PIN,
+            title,
+            brandName,
+            transcript: joinTranscript(segments),
+            terms: termDocument.terms,
           });
-        } catch (error) {
-          log(`tencent intro skipped: ${error && error.message ? error.message : 'failed'}`);
+        } catch {
+          log('tencent intro skipped: failed');
           return { segments, intro: '', grounded: false };
         }
         const verdict = acceptIntro({

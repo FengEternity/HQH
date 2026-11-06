@@ -60,7 +60,7 @@ Page({
   },
   testModel(event) {
     const placeId = event.currentTarget.dataset.place;
-    if (!this.data.connectionReady && placeId !== 'video_intro') {
+    if (!this.data.connectionReady) {
       this.setData({ error: '模型服务尚未就绪，请先完成服务端接入设置' });
       return Promise.resolve();
     }

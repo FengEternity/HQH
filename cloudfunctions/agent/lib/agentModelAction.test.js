@@ -47,22 +47,31 @@ function staffDb() {
 }
 
 describe('agent model actions', () => {
-  it('配置返回脱敏就绪状态，简介测试发往实际容器且先校验人员', async () => {
+  it('三个场景的测试都在云函数内探测，且先校验人员', async () => {
     const db = staffDb();
     const view = await handleAgentModelAction(db, { action: 'agentModelConfig' }, { openid: 'op-1', env: {} });
     assert.equal(view.connection.ready, false);
-    let called = false;
-    const deps = { openid: 'op-1', env: {}, probeVideoIntro: async () => { called = true; return { model: 'hy3', text: '好' }; } };
+    let seen = null;
+    const deps = {
+      openid: 'op-1',
+      env: { TCB_ENV_ID: 'env-id', TCB_API_KEY: 'fixture-key' },
+      fetch: async (_url, options) => {
+        seen = JSON.parse(options.body);
+        return { status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: '好' } }] }) };
+      },
+    };
     const result = await handleAgentModelAction(db, { action: 'agentModelTest', place: 'video_intro', model: 'hy3' }, deps);
-    assert.equal(called, true);
-    assert.equal(result.message, '视频处理服务可以调用');
-    called = false;
+    assert.equal(seen.model, 'hy3');
+    assert.equal(result.message, '问答服务可以调用');
+    seen = null;
     await handleAgentModelAction(db, { action: 'agentModelTest', place: 'video_intro', model: 'hy3' }, { ...deps, openid: 'off-1' });
-    assert.equal(called, false);
+    assert.equal(seen, null);
   });
   it('loads the saved video model inside the cloud function entry', () => {
     const source = fs.readFileSync(require.resolve('../index.js'), 'utf8');
     assert.equal(source.includes('handleAgentModelAction'), true);
+    assert.equal(source.includes('writeVideoIntro'), true);
+    assert.equal(source.includes('/ai/probe'), false);
     assert.equal(source.includes("loadPlaceModelName(db, 'video_doc', runtimeEnv())"), true);
   });
 

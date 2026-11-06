@@ -106,6 +106,7 @@ async function probeAgentModel({ modelName, env = process.env, fetch }) {
     if (!answer.text) throw coded('BAD_RESPONSE');
     return { model: result.model, text: answer.text.slice(0, 40) };
   } catch (error) {
+    console.error('model probe failed', error && error.code || '', error && error.status || '', error && error.reason || '');
     if (error && error.code === 'TIMEOUT') throw error;
     const failure = coded('MODEL_UNAVAILABLE');
     const messages = {
