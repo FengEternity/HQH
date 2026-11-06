@@ -38,6 +38,11 @@ describe('agent model list', () => {
     );
     assert.equal(MODELS.some((item) => item.id === 'hy-role'), false);
     assert.equal(resolvePlaceModel({ place: 'video_doc', stored: null, env: {} }), 'hy3');
+    assert.equal(resolvePlaceModel({ place: 'video_search', stored: null, env: {} }), 'hy3');
+    assert.equal(
+      resolvePlaceModel({ place: 'video_search', stored: { video_search: 'glm-5.3-flash' }, env: {} }),
+      'glm-5.3-flash',
+    );
     assert.equal(
       resolvePlaceModel({
         place: 'customer_service',
@@ -84,6 +89,7 @@ describe('agent model list', () => {
       video_doc: 'deepseek-v4.1-flash-1017',
       customer_service: 'hy3',
       video_intro: 'hy3',
+      video_search: 'hy3',
     });
   });
 });

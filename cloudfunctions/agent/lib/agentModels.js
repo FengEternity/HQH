@@ -8,6 +8,7 @@ const PLACES = [
   { id: 'video_doc', label: '播放页问答', hint: '讲解页提问时使用' },
   { id: 'customer_service', label: '客服', hint: '已保存，客服回复接入后按这个名字调用' },
   { id: 'video_intro', label: '视频简介', hint: '处理成片时写简介使用' },
+  { id: 'video_search', label: 'AI 搜索', hint: '讲解页 AI 搜索改写查询时使用' },
 ];
 
 function clean(value) {

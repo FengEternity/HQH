@@ -13,7 +13,7 @@ const TEXT_MODELS = ['hy3', 'hy4-preview', 'deepseek-v4.1-flash-1017', 'deepseek
   'mimo-v2.6-pro', 'mimo-v2.6-flash', 'step-5-preview'];
 
 function resolveTextModel({ place, stored, env = process.env }) {
-  const keys = { video_doc: 'TOKENHUB_VIDEO_DOC_MODEL', customer_service: 'TOKENHUB_CUSTOMER_SERVICE_MODEL', video_intro: 'TOKENHUB_INTRO_MODEL' };
+  const keys = { video_doc: 'TOKENHUB_VIDEO_DOC_MODEL', customer_service: 'TOKENHUB_CUSTOMER_SERVICE_MODEL', video_intro: 'TOKENHUB_INTRO_MODEL', video_search: 'TOKENHUB_VIDEO_SEARCH_MODEL' };
   if (!keys[place]) throw failure('BAD_INPUT');
   const candidates = [stored && stored[place], env[keys[place]], env.TOKENHUB_MODEL];
   if (place !== 'video_intro') candidates.push(env.AGENT_MODEL_NAME);

@@ -8,6 +8,11 @@ const { exportForsetiTrace } = require('./lib/forsetiTrace');
 const { createVideoDocExecutor } = require('./lib/videoDocModel');
 const { handleAgentModelAction, loadPlaceModelName } = require('./lib/agentModelAction');
 const { writeVideoIntro } = require('./lib/writeVideoIntro');
+const { createTokenHubClient } = require('./lib/ai-runtime');
+const { mergeThreeLaneItems, runVideoSearchLoop } = require('./lib/videoSearchLane');
+
+const VIDEO_SEARCH_BUDGET_MS = 20000;
+const VIDEO_SEARCH_MAX_CALLS = 3;
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV, timeout: 60000 });
 const db = cloud.database();
@@ -54,10 +59,71 @@ async function exportTrace(turn) {
   }
 }
 
+async function findVideosViaSearch(query) {
+  try {
+    const res = await cloud.callFunction({ name: 'search', data: { action: 'findVideos', query } });
+    return (res && res.result && res.result.cards) || [];
+  } catch (error) {
+    return [];
+  }
+}
+
+async function handleVideoSearch(event) {
+  const query = String((event && event.query) || '').trim();
+  if (!query) {
+    return { ok: true, scene: 'video', items: [] };
+  }
+  let agentFailed = false;
+  try {
+    await checkText(query);
+  } catch (error) {
+    // 内容安全拒绝或检查本身失败，都只按第三路不可用处理，前两路照出。
+    agentFailed = true;
+  }
+  const searchPromise = cloud
+    .callFunction({ name: 'search', data: { scene: 'video', query, mode: 'ai' } })
+    .then((res) => (res && res.result) || { ok: false, code: 'FAIL' })
+    .catch(() => ({ ok: false, code: 'FAIL' }));
+  const lanePromise = agentFailed
+    ? Promise.resolve({ ok: false, error: 'CONTENT_REJECTED', proposedIds: [], cardById: {}, calls: [] })
+    : (async () => {
+      const model = await loadPlaceModelName(db, 'video_search', runtimeEnv());
+      const client = createTokenHubClient({ env: runtimeEnv() });
+      return runVideoSearchLoop({
+        chat: (input) => client.chat(input),
+        model,
+        query,
+        findVideos: findVideosViaSearch,
+        now: Date.now,
+        budgetMs: VIDEO_SEARCH_BUDGET_MS,
+        maxCalls: VIDEO_SEARCH_MAX_CALLS,
+      });
+    })().catch(() => ({ ok: false, error: 'UNAVAILABLE', proposedIds: [], cardById: {}, calls: [] }));
+  const [searchResult, lane] = await Promise.all([searchPromise, lanePromise]);
+  if (!searchResult || searchResult.ok === false) {
+    return { ok: false, code: 'FAIL' };
+  }
+  const items = mergeThreeLaneItems({
+    keywordItems: searchResult.keywordItems || [],
+    proposedIds: lane.proposedIds || [],
+    cardById: lane.cardById || {},
+    semanticOnlyItems: searchResult.semanticOnlyItems || [],
+  });
+  const result = { ok: true, scene: 'video', items };
+  const notice = agentFailed || !lane.ok ? 'agent_unavailable' : searchResult.notice;
+  if (notice) {
+    result.notice = notice;
+  }
+  return result;
+}
+
 exports.main = async (event) => {
   try {
     const openid = cloud.getWXContext().OPENID;
     const action = event && event.action;
+    if (action === 'videoSearch') {
+      return await handleVideoSearch(event);
+    }
     if (action === 'writeVideoIntro') {
       return await writeVideoIntro({ db, env: runtimeEnv(), event, openid });
     }
