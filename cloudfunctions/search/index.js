@@ -11,7 +11,7 @@ const { contentHash } = require('./lib/chunkText');
 const { attemptEmbed, markStaleForRewrite, shouldCommit, outcomeKind } = require('./lib/indexAttempt');
 const { embedChunkText } = require('./lib/embedClient');
 const { createTask, driveIndexTask, taskView } = require('./lib/indexTask');
-const { scorePublishedVideos } = require('./lib/vectorRank');
+const { auditChunks, scorePublishedVideos } = require('./lib/vectorRank');
 const { COSINE_THRESHOLD, EMBEDDING_MODEL, INDEX_BATCH_SIZE, MAX_INPUT_CHARS, VECTOR_CAP } = require('./lib/searchConfig');
 const { resolveQueryEmbedding } = require('./lib/queryEmbeddingCache');
 const { loadAllPages } = require('./lib/pagedRead');
@@ -396,7 +396,22 @@ async function handleOps(event) {
   if (event.action === 'advanceIndexTask') {
     return handleAdvanceTask(event);
   }
+  if (event.action === 'auditIndex') {
+    return handleAudit(event);
+  }
   badInput();
+}
+
+async function handleAudit() {
+  const loaded = await loadPublishedVideos();
+  const chunks = await loadChunks(loaded.videos);
+  const report = auditChunks(loaded.videos, chunks);
+  return {
+    ok: true,
+    missing: report.missing,
+    stale: report.stale,
+    published: loaded.videos.filter((video) => video && video.status === 'published').length,
+  };
 }
 
 async function handle(event) {

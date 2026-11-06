@@ -135,8 +135,30 @@ function scorePublishedVideos({ videos, chunks, queryEmbedding, model }) {
   };
 }
 
+function auditChunks(videos, chunks, model) {
+  const modelName = model || EMBEDDING_MODEL;
+  const byId = new Map();
+  for (const chunk of chunks || []) {
+    if (chunk && chunk.sourceId) byId.set(String(chunk.sourceId), chunk);
+  }
+  const missing = [];
+  const stale = [];
+  for (const video of videos || []) {
+    if (!video || video.status !== 'published') continue;
+    const chunk = byId.get(String(video._id));
+    if (!chunk) {
+      missing.push(String(video._id));
+    } else if (!usableChunk(video, chunk, modelName)) {
+      stale.push(String(video._id));
+    }
+  }
+  return { missing, stale };
+}
+
 module.exports = {
+  auditChunks,
   cosine,
   scorePublishedVideos,
   selectVectorHits,
+  usableChunk,
 };
