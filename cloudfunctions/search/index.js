@@ -3,7 +3,8 @@
 const cloud = require('wx-server-sdk');
 const crypto = require('crypto');
 const { resolveSearchMode, runSearch } = require('./lib/searchIndex');
-const { attachPosterUrls } = require('./lib/resolvePosterUrls');
+const { attachResultPosters } = require('./lib/resolvePosterUrls');
+const { readCatalogChunks, writeCatalogChunks } = require('./lib/searchCatalogCache');
 const { verifyTicket } = require('./lib/ticket');
 const { expandQuery } = require('./lib/keywordSearch');
 const { contentHash } = require('./lib/chunkText');
@@ -210,7 +211,14 @@ async function handleQuery(event) {
       embedError = true;
     } else {
       queryEmbedding = embedded.embedding;
-      chunks = await loadChunks(videos);
+      const now = Date.now();
+      const cached = readCatalogChunks(videos, now);
+      if (cached) {
+        chunks = cached;
+      } else {
+        chunks = await loadChunks(videos);
+        writeCatalogChunks(videos, chunks, now);
+      }
     }
   }
   const result = runSearch({
@@ -227,8 +235,7 @@ async function handleQuery(event) {
   if (!result.ok || !result.items || !result.items.length) {
     return result;
   }
-  result.items = await attachPosterUrls(result.items, (payload) => cloud.getTempFileURL(payload));
-  return result;
+  return attachResultPosters(result, (payload) => cloud.getTempFileURL(payload));
 }
 
 async function handleReindex(event) {
@@ -259,6 +266,13 @@ async function loadChunks(videos) {
       db
         .collection('search_chunks')
         .where({ sourceType: 'video', sourceId: command.in(part) })
+        .field({
+          sourceId: true,
+          status: true,
+          contentHash: true,
+          embeddingModel: true,
+          embedding: true,
+        })
         .limit(10)
         .get(),
     );

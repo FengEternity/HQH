@@ -53,6 +53,26 @@ async function attachPosterUrls(items, getTempFileURL) {
   });
 }
 
+async function attachResultPosters(result, getTempFileURL) {
+  if (!result) {
+    return result;
+  }
+  const keys = ['items', 'keywordItems', 'semanticOnlyItems'].filter((key) => Array.isArray(result[key]));
+  const flat = [];
+  const spans = [];
+  for (const key of keys) {
+    spans.push({ key, start: flat.length, count: result[key].length });
+    flat.push.apply(flat, result[key]);
+  }
+  const decorated = await attachPosterUrls(flat, getTempFileURL);
+  const next = Object.assign({}, result);
+  for (const span of spans) {
+    next[span.key] = decorated.slice(span.start, span.start + span.count);
+  }
+  return next;
+}
+
 module.exports = {
   attachPosterUrls,
+  attachResultPosters,
 };
