@@ -19,7 +19,7 @@ const {
   getOptionalDocument,
 } = require('./lib/videoIngestActions');
 const { CLAIM_TIMEOUT_MS } = require('./lib/videoIngest');
-const { jobNeedsWake, wakeVideoIngest } = require('./lib/wakeVideoIngest');
+const { jobNeedsWake, shouldWakeAfterRequeue, wakeVideoIngest } = require('./lib/wakeVideoIngest');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -278,8 +278,8 @@ async function wakeIfIngestPending() {
   if (!jobNeedsWake(candidate, now, CLAIM_TIMEOUT_MS)) {
     return { ok: true, woke: false };
   }
-  const woke = await wakeVideoIngest((options) => cloud.callContainer(options));
-  return { ok: true, woke };
+  const wake = await wakeVideoIngest((options) => cloud.callContainer(options));
+  return { ok: true, woke: wake.woke };
 }
 
 async function initDb() {
@@ -658,8 +658,16 @@ async function enqueueVideoIngest(event) {
 async function enqueueNoncompliantVideos(event) {
   await requireAdmin(event.ticket);
   const saved = await videoIngestActions.enqueueNoncompliantVideos();
-  const woke = await wakeVideoIngest((options) => cloud.callContainer(options));
-  return { ...saved, woke };
+  const now = Date.now();
+  const candidate =
+    saved.enqueued > 0
+      ? null
+      : await videoIngestRepository.findClaimCandidate(now, CLAIM_TIMEOUT_MS);
+  if (!shouldWakeAfterRequeue(saved.enqueued, candidate, now, CLAIM_TIMEOUT_MS)) {
+    return { ...saved, woke: false, idle: true };
+  }
+  const wake = await wakeVideoIngest((options) => cloud.callContainer(options));
+  return { ...saved, woke: wake.woke, wakeCode: wake.code, idle: false };
 }
 
 async function getIngestProgress(event) {
