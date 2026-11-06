@@ -1,6 +1,14 @@
 const { catalog, shop, agent } = require('../../utils/api');
+const { formatAskRuns } = require('../../utils/askReply');
 const { withPosterUrl } = require('../../utils/videoMedia');
 const { formatPriceYuan } = require('../../utils/shopPrice');
+
+function presentMessages(messages) {
+  return (messages || []).map((item) => {
+    if (!item || item.role !== 'assistant') return item;
+    return Object.assign({}, item, { runs: formatAskRuns(item.text || '') });
+  });
+}
 
 Page({
   data: {
@@ -80,7 +88,7 @@ Page({
     return agent({ action: 'videoDocHistory', videoId: this.data.videoId })
       .then((result) => {
         this.setData({
-          messages: (result && result.messages) || [],
+          messages: presentMessages((result && result.messages) || []),
           askError: '',
           askAnchor: this.nextAskAnchor(),
         });
@@ -117,7 +125,7 @@ Page({
     const last = list[list.length - 1];
     const done = (next) => {
       this.setData({
-        messages: next,
+        messages: presentMessages(next),
         asking: false,
         askError: '',
         askAnchor: this.nextAskAnchor(),

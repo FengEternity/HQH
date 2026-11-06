@@ -220,6 +220,10 @@
   word-break: break-all;
 }
 
+.ask-strong {
+  font-weight: 600;
+}
+
 .ask-caret {
   margin-left: 2rpx;
   color: #4b6fdb;

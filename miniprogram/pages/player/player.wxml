@@ -83,7 +83,11 @@
             class="ask-msg ask-msg-{{item.role}}"
           >
             <view class="ask-bubble">
-              <text class="ask-text">{{item.text}}</text><text wx:if="{{item.streaming}}" class="ask-caret">▍</text>
+              <block wx:if="{{item.role === 'assistant'}}">
+                <text class="ask-text" user-select="{{!item.streaming}}"><text wx:for="{{item.runs}}" wx:for-item="run" wx:for-index="ri" wx:key="ri" class="{{run.strong ? 'ask-strong' : ''}}">{{run.text}}</text></text>
+                <text wx:if="{{item.streaming}}" class="ask-caret">▍</text>
+              </block>
+              <text wx:else class="ask-text" user-select>{{item.text}}</text>
             </view>
           </view>
           <view wx:if="{{asking}}" class="ask-msg ask-msg-assistant">

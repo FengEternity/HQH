@@ -46,6 +46,8 @@ describe('player page', () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'player.wxml'), 'utf8');
     assert.equal(wxml.includes('wx:elif="{{video}}"'), false);
     assert.equal(wxml.includes('加载中'), false);
+    assert.equal(wxml.includes('user-select'), true);
+    assert.equal(wxml.includes('item.runs'), true);
 
     let releaseShop;
     const shopGate = new Promise((resolve) => {
@@ -118,6 +120,7 @@ describe('player page', () => {
     assert.equal(sends[0].requestId, sends[1].requestId);
     assert.equal(Object.prototype.hasOwnProperty.call(sends[0], 'openid'), false);
     assert.equal(page.data.messages[0].text, '先整平');
+    assert.equal(page.data.messages[0].runs.map((run) => run.text).join(''), '先整平');
     assert.equal(page.data.inputDraft, '');
     assert.equal(page.data.askBusy, false);
   });

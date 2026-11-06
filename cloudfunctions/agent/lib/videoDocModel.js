@@ -24,6 +24,15 @@ function resolveAgentModelName(env) {
   return resolvePlaceModel({ place: 'video_doc', stored: null, env });
 }
 
+const VIDEO_DOC_SYSTEM = [
+  '你是讲解页助手。回答前调用 lookup_current_video_doc。只根据当前讲解回答用户的问题，不要引用其他视频。',
+  '正文写给正在看视频的人：直接回答所问。步骤用「1. 」列表，菜单和按键用 **加粗**。',
+  '不要提及工具、字段、数组、代码，也不要说工具返回了什么。不要按标题、简介、品牌逐项复述。',
+  '只有用户问购买或商品时，才说明有没有在售商品；没有就用一句话。',
+  '有商品时，在回答末尾追加 json 代码块 {"cards":[{"type":"shop_product","id":"商品id"}]}，id 必须来自工具结果。',
+  '用户问其他视频或其他型号时，请他回到讲解搜索或打开对应播放页。',
+].join('');
+
 function visibleText(content) {
   const raw = Array.isArray(content) ? content.map(part => (part && part.text) || '').join('') : String(content || '');
   const withoutThink = raw.replace(/<think>[\s\S]*?<\/think>/g, '');
@@ -34,6 +43,22 @@ function visibleText(content) {
     try { cards = JSON.parse(fence[1]).cards || []; } catch { cards = []; }
   }
   return { text, cards: Array.isArray(cards) ? cards : [] };
+}
+
+function scrubAnswer(text) {
+  let out = String(text || '');
+  out = out.replace(/[（(][^）)\n]{0,160}(?:工具返回|空数组|products)[^）)\n]{0,160}[）)]/gi, '');
+  out = out.replace(/工具返回的?\s*[`']?products[`']?\s*为空数组/gi, '');
+  out = out.replace(/[，,]?\s*也?没有返回任何关联的其他视频[。.]?/g, '');
+  out = out.replace(/^当前视频信息如下[：:]?\s*$/gm, '');
+  out = out.replace(/^[-*•]\s*(?:\*\*)?(?:标题|简介|品牌)(?:\*\*)?\s*[：:].*$/gm, '');
+  out = out.replace(/^[-*•]\s*(?:\*\*)?讲解内容(?:\*\*)?\s*[：:]\s*/gm, '');
+  out = out.replace(/[（(]\s*[）)]/g, '');
+  out = out.replace(/[，,]\s*([。．])/g, '$1');
+  out = out.replace(/[ \t]{2,}/g, ' ');
+  out = out.replace(/[ \t]+\n/g, '\n');
+  out = out.replace(/\n{3,}/g, '\n\n');
+  return out.trim();
 }
 
 async function withTimeout(work, ms) {
@@ -52,7 +77,7 @@ function modelError(error) {
 async function runConfiguredTurn({ client, modelName, tools, projection, text, now, modelSpans }) {
   const deadline = now() + TURN_BUDGET_MS;
   const messages = [
-    { role: 'system', content: '你是讲解页助手。回答前调用 lookup_current_video_doc。只根据工具返回的当前讲解回答，不要引用其他视频。引用商品时，在回答末尾追加 json 代码块 {"cards":[{"type":"shop_product","id":"商品id"}]}，id 必须来自工具结果。' },
+    { role: 'system', content: VIDEO_DOC_SYSTEM },
     { role: 'user', content: (projection && projection.playbackLabel ? '播放位置：' + projection.playbackLabel + '\n' : '') + String(text || '').trim() },
   ];
   const toolResults = [];
@@ -74,8 +99,9 @@ async function runConfiguredTurn({ client, modelName, tools, projection, text, n
     if (!Array.isArray(calls)) throw coded('MODEL_UNAVAILABLE');
     if (!calls.length) {
       const answer = visibleText(message.content);
-      if (!toolResults.length || !answer.text) throw coded('MODEL_UNAVAILABLE');
-      return { text: answer.text, cards: answer.cards, toolResults, model: result.model,
+      const text = scrubAnswer(answer.text);
+      if (!toolResults.length || !text) throw coded('MODEL_UNAVAILABLE');
+      return { text, cards: answer.cards, toolResults, model: result.model,
         tokenInput, tokenOutput, modelSpans };
     }
     messages.push({ ...message, role: 'assistant' });
@@ -149,4 +175,4 @@ function createVideoDocExecutor(options = {}) {
   };
 }
 
-module.exports = { resolveAgentModelName, createVideoDocExecutor, probeAgentModel, visibleText, LOOKUP_TOOL };
+module.exports = { resolveAgentModelName, createVideoDocExecutor, probeAgentModel, visibleText, scrubAnswer, LOOKUP_TOOL, VIDEO_DOC_SYSTEM };
