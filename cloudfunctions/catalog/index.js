@@ -238,6 +238,8 @@ async function dispatch(event, openid) {
       return await getIngestProgress(event, openid);
     case 'claimVideoIngest':
       return await claimVideoIngest(event, openid);
+    case 'renewVideoIngest':
+      return await renewVideoIngest(event, openid);
     case 'completeVideoIngest':
       return await completeVideoIngest(event, openid);
     case 'noteVideoIntro':
@@ -897,6 +899,21 @@ async function replacePlaybackMedia(event, openid) {
     videoFileId: event.videoFileId,
     durationSec: event.durationSec,
     media: event.media,
+  });
+}
+
+async function renewVideoIngest(event, openid) {
+  await requireCatalogAccess({
+    db,
+    openid,
+    action: event.action,
+    ticket: event.ticket,
+    pin: process.env.ADMIN_PIN,
+  });
+  return await videoIngestActions.renewVideo({
+    workerId: String(event.workerId || '').trim(),
+    videoId: String(event.videoId || '').trim(),
+    mediaRevision: event.mediaRevision,
   });
 }
 

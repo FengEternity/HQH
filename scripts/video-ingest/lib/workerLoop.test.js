@@ -1,9 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { describe, it } = require('node:test');
+const { describe, it, mock } = require('node:test');
 
-const { fitSegmentsToDuration, runOnce } = require('./workerLoop');
+const { fitSegmentsToDuration, runOnce, startClaimHeartbeat } = require('./workerLoop');
 
 const PLACEHOLDER_INTRO = '讲解处理中，完成后请核对简介。';
 
@@ -87,6 +87,28 @@ function createDeps(overrides = {}) {
     },
   };
 }
+
+describe('claim heartbeat', () => {
+  it('asks catalog to renew the same job every minute', async () => {
+    mock.timers.enable({ apis: ['setInterval'] });
+    const calls = [];
+    const stop = startClaimHeartbeat(
+      {
+        renew: (payload) => {
+          calls.push(payload);
+          return Promise.resolve();
+        },
+      },
+      { videoId: 'vid', mediaRevision: 2 },
+      'worker-a',
+    );
+    mock.timers.tick(60000);
+    await Promise.resolve();
+    stop();
+    mock.timers.reset();
+    assert.deepEqual(calls, [{ workerId: 'worker-a', videoId: 'vid', mediaRevision: 2 }]);
+  });
+});
 
 describe('runOnce', () => {
   it('claim 空任务时返回 idle 且不继续处理', async () => {

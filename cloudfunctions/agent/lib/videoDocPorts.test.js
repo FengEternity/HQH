@@ -6,7 +6,15 @@ const { loadVideoDoc, loadLinkedVideoProducts } = require('./videoDocPorts');
 
 function createDb() {
   const tables = {
-    videos: [{ _id: 'vid-1', status: 'published', title: '设站', intro: '先整平', transcript: '原文', secret: '机密' }],
+    videos: [{
+      _id: 'vid-1',
+      status: 'published',
+      title: '设站',
+      intro: '先整平',
+      transcript: '原文',
+      transcriptSegments: [{ startSec: 0, endSec: 1, text: '原文' }],
+      secret: '机密',
+    }],
     video_shop_links: [{ videoId: 'vid-1', shopProductId: 'sku-1' }, { videoId: 'vid-1', shopProductId: 'missing' }],
     shop_products: [{ _id: 'sku-1', name: '脚架', priceFen: 100, status: 'published', detail: '内部说明' }],
   };
@@ -45,6 +53,7 @@ describe('videoDocPorts', () => {
     const video = await loadVideoDoc(db, 'vid-1');
     assert.equal(video.title, '设站');
     assert.equal(video.transcript, '原文');
+    assert.equal(video.transcriptSegments[0].text, '原文');
     assert.equal(video.secret, undefined);
     const products = await loadLinkedVideoProducts(db, 'vid-1');
     assert.deepEqual(products, [{ id: 'sku-1', name: '脚架', priceFen: 100, status: 'published' }]);

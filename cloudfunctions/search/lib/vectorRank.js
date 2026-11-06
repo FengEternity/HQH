@@ -45,7 +45,7 @@ function usableChunk(video, chunk, modelName) {
   return magnitudeSquared(chunk.embedding) > 0;
 }
 
-function selectVectorHits({ videos, chunks, queryEmbedding, threshold, model }) {
+function selectVectorHits({ videos, chunks, queryEmbedding, model }) {
   const modelName = model || EMBEDDING_MODEL;
   const byId = new Map();
   for (const chunk of chunks || []) {
@@ -70,9 +70,6 @@ function selectVectorHits({ videos, chunks, queryEmbedding, threshold, model }) 
     }
     indexed += 1;
     const score = cosine(queryEmbedding, chunk.embedding);
-    if (!(score >= threshold)) {
-      continue;
-    }
     hits.push({ video, cosine: score });
   }
   hits.sort((left, right) => {

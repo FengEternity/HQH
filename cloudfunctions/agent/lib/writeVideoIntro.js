@@ -5,6 +5,7 @@ const { loadPlaceModelName } = require('./agentModelAction');
 const { visibleText } = require('./videoDocModel');
 
 const PURPOSE = 'video-ingest:write-intro';
+const INTRO_TRANSCRIPT_LIMIT = 4000;
 const INTRO_SYSTEM_PROMPT = [
   '你是测绘仪器讲解视频的编辑。',
   '根据用户给出的标题、品牌、术语表和口播，只写一段简介正文。',
@@ -17,14 +18,23 @@ const INTRO_SYSTEM_PROMPT = [
   '不要输出标题、解释或引号。',
 ].join('');
 
+function clipIntroTranscript(transcript) {
+  const text = String(transcript || '');
+  if ([...text].length <= INTRO_TRANSCRIPT_LIMIT) return text;
+  return [...text].slice(0, INTRO_TRANSCRIPT_LIMIT).join('');
+}
+
 function buildIntroUserPrompt({ title, brandName, transcript, terms }) {
   const termList = Array.isArray(terms) ? terms.filter((term) => typeof term === 'string') : [];
+  const spoken = clipIntroTranscript(transcript);
+  const clipped = [...String(transcript || '')].length > INTRO_TRANSCRIPT_LIMIT;
   return [
     `标题：${title || ''}`,
     `品牌：${brandName || ''}`,
     `术语表：${termList.join('、')}`,
-    `口播：${transcript || ''}`,
-  ].join('\n');
+    `口播：${spoken}`,
+    clipped ? `口播已截取前 ${INTRO_TRANSCRIPT_LIMIT} 字` : '',
+  ].filter(Boolean).join('\n');
 }
 
 function badInput() {
@@ -91,4 +101,4 @@ async function writeVideoIntro({ db, env = {}, event = {}, fetch, openid, now = 
   }
 }
 
-module.exports = { PURPOSE, INTRO_SYSTEM_PROMPT, buildIntroUserPrompt, writeVideoIntro };
+module.exports = { PURPOSE, INTRO_SYSTEM_PROMPT, INTRO_TRANSCRIPT_LIMIT, buildIntroUserPrompt, writeVideoIntro };

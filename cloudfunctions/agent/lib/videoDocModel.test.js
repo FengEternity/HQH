@@ -31,7 +31,8 @@ test('播放页通过云开发资源点的工具回合取得当前视频并过�
   assert.equal(calls[0].messages[0].content, VIDEO_DOC_SYSTEM);
   assert.equal(VIDEO_DOC_SYSTEM.includes('不要提及工具'), true);
   assert.equal(VIDEO_DOC_SYSTEM.includes('lookup_current_video_doc'), true);
-  assert.equal(calls[0].tool_choice.function.name, lookup.function.name);
+  assert.equal(calls[0].tool_choice, 'auto');
+  assert.equal(calls[0].messages.at(-1).content.includes('设站'), true);
   assert.deepEqual(calls[0].thinking, { type: 'disabled' });
   assert.equal(calls[0].messages.at(-1).content.includes('12'), true);
 });
@@ -73,7 +74,22 @@ test('工具调用超限停止，未知工具和未取依据的答案拒绝', as
   const make = message => createVideoDocExecutor({ env, fetch: async () => response(message) });
   await assert.rejects(runVideoDocTurn({ ...turnInput, executor: make({ role: 'assistant', tool_calls: [lookup] }) }), { code: 'TIMEOUT' });
   await assert.rejects(runVideoDocTurn({ ...turnInput, executor: make({ role: 'assistant', tool_calls: [{ ...lookup, function: { name: 'shell', arguments: '{}' } }] }) }), { code: 'MODEL_UNAVAILABLE' });
-  await assert.rejects(runVideoDocTurn({ ...turnInput, executor: make({ content: '没有调用工具的答案' }) }), { code: 'MODEL_UNAVAILABLE' });
+  const direct = await runVideoDocTurn({ ...turnInput, executor: make({ content: '先整平。\n```json\n{"cards":[{"type":"shop_product","id":"sku-1"},{"type":"shop_product","id":"foreign"}]}\n```' }) });
+  assert.equal(direct.text, '先整平。');
+  assert.deepEqual(direct.cards, [{ type: 'shop_product', id: 'sku-1' }]);
+});
+
+test('投影里已有讲解时一次模型返回即可', async () => {
+  const calls = [];
+  const executor = createVideoDocExecutor({ env, fetch: async (url, options) => {
+    calls.push(JSON.parse(options.body));
+    return response({ content: '先整平' });
+  }});
+  const result = await runVideoDocTurn({ ...turnInput, executor });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].tool_choice, 'auto');
+  assert.equal(result.text, '先整平');
+  assert.deepEqual(result.cards, []);
 });
 
 test('运营连通测试调用同一资源点客户端且只返回脱敏错误', async () => {

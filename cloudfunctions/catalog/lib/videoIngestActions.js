@@ -21,6 +21,7 @@ const {
   claimJobRecord,
   createJobRecord,
   finishJobRecord,
+  renewJobRecord,
 } = require('./videoIngestJobs');
 const { resolveVideoKnowledge } = require('./videoKnowledge');
 const { normalizeVideoMedia } = require('./videoMediaMetadata');
@@ -471,6 +472,29 @@ function createVideoIngestActions({
     });
   }
 
+  async function renewVideo({ workerId, videoId, mediaRevision }) {
+    if (!workerId || !videoId) {
+      throw badInput('workerId 必填');
+    }
+    const timestamp = now();
+    const candidate = await repository.findRunningJob(videoId, mediaRevision);
+    if (!candidate) return { ok: true, renewed: false };
+    return repository.runTransaction(async (transaction) => {
+      const currentJob = await transaction.getJob(candidate._id);
+      const renewed = currentJob
+        ? renewJobRecord({
+          job: currentJob,
+          workerId,
+          now: timestamp,
+          timeoutMs: CLAIM_TIMEOUT_MS,
+        })
+        : null;
+      if (!renewed) return { ok: true, renewed: false };
+      await transaction.updateJob(candidate._id, renewed);
+      return { ok: true, renewed: true, claimedAt: renewed.claimedAt };
+    });
+  }
+
   async function noteRunningIntro({ videoId, mediaRevision, intro, introGate }) {
     if (!videoId) {
       throw badInput('videoId 必填');
@@ -590,6 +614,7 @@ function createVideoIngestActions({
 
   return {
     claimVideo,
+    renewVideo,
     completeVideo,
     noteRunningIntro,
     deleteVideo,

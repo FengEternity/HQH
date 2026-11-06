@@ -50,11 +50,12 @@ function runSearch(input) {
   const synonyms = (input && input.synonyms) || [];
   const videos = ((input && input.videos) || []).map(withSearchBlob);
   const keywordHits = searchPublished(videos, query, synonyms);
+  const keywordItems = keywordHits.map(toVideoItem);
   if (resolveSearchMode(input && input.mode) !== 'ai') {
     return {
       ok: true,
       scene,
-      items: keywordHits.map(toVideoItem),
+      items: keywordItems,
     };
   }
   const published = videos.filter((video) => video && video.status === 'published');
@@ -93,10 +94,14 @@ function runSearch(input) {
     expected,
   });
   const usableVectorHits = vectorEnabled && !embedError && !overCap ? vectorHits : [];
+  const merged = mergeVideos(keywordHits, usableVectorHits);
+  const keywordIds = new Set(keywordHits.map((video) => String(video && video._id)));
   const result = {
     ok: true,
     scene,
-    items: mergeVideos(keywordHits, usableVectorHits).map(toVideoItem),
+    items: merged.map(toVideoItem),
+    keywordItems,
+    semanticOnlyItems: merged.filter((video) => !keywordIds.has(String(video && video._id))).map(toVideoItem),
   };
   if (notice) {
     result.notice = notice;

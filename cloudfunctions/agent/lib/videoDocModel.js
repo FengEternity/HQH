@@ -25,13 +25,39 @@ function resolveAgentModelName(env) {
 }
 
 const VIDEO_DOC_SYSTEM = [
-  '你是讲解页助手。回答前调用 lookup_current_video_doc。只根据当前讲解回答用户的问题，不要引用其他视频。',
+  '你是讲解页助手。用户消息里已经给出当前讲解。只根据这些内容回答，不要引用其他视频。',
+  '需要再核对时可以调用 lookup_current_video_doc。',
   '正文写给正在看视频的人：直接回答所问。步骤用「1. 」列表，菜单和按键用 **加粗**。',
   '不要提及工具、字段、数组、代码，也不要说工具返回了什么。不要按标题、简介、品牌逐项复述。',
   '只有用户问购买或商品时，才说明有没有在售商品；没有就用一句话。',
-  '有商品时，在回答末尾追加 json 代码块 {"cards":[{"type":"shop_product","id":"商品id"}]}，id 必须来自工具结果。',
+  '有商品时，在回答末尾追加 json 代码块 {"cards":[{"type":"shop_product","id":"商品id"}]}，id 必须来自用户消息或工具结果里的商品 id。',
   '用户问其他视频或其他型号时，请他回到讲解搜索或打开对应播放页。',
 ].join('');
+
+function projectionPrompt(projection, text) {
+  const lines = ['问题：' + String(text || '').trim()];
+  if (projection && projection.playbackLabel) lines.push('播放位置：' + projection.playbackLabel);
+  if (!projection) return lines.join('\n');
+  lines.push('标题：' + (projection.title || ''));
+  lines.push('简介：' + (projection.intro || ''));
+  lines.push('品牌：' + (projection.brandName || ''));
+  lines.push('型号：' + (projection.modelName || ''));
+  lines.push('标签：' + (Array.isArray(projection.tags) ? projection.tags.join(' ') : ''));
+  if (projection.transcript) lines.push('口播：' + projection.transcript);
+  if (projection.transcriptTruncated) lines.push('口播已截断');
+  const products = (projection.products || []).filter((item) => item && item.id);
+  lines.push('上架商品：' + JSON.stringify(products.map((item) => ({ id: String(item.id), name: item.name || '' }))));
+  return lines.join('\n');
+}
+
+function injectedToolResult(projection) {
+  const products = ((projection && projection.products) || []).filter((item) => item && item.id);
+  return {
+    name: LOOKUP_TOOL.function.name,
+    resultCode: 'ok',
+    cards: products.map((item) => ({ type: 'shop_product', id: String(item.id) })),
+  };
+}
 
 function visibleText(content) {
   const raw = Array.isArray(content) ? content.map(part => (part && part.text) || '').join('') : String(content || '');
@@ -78,7 +104,7 @@ async function runConfiguredTurn({ client, modelName, tools, projection, text, n
   const deadline = now() + TURN_BUDGET_MS;
   const messages = [
     { role: 'system', content: VIDEO_DOC_SYSTEM },
-    { role: 'user', content: (projection && projection.playbackLabel ? '播放位置：' + projection.playbackLabel + '\n' : '') + String(text || '').trim() },
+    { role: 'user', content: projectionPrompt(projection, text) },
   ];
   const toolResults = [];
   let used = 0;
@@ -88,7 +114,7 @@ async function runConfiguredTurn({ client, modelName, tools, projection, text, n
     let result;
     try {
       result = await client.chat({ model: modelName, messages, tools: [LOOKUP_TOOL],
-        tool_choice: used ? 'auto' : { type: 'function', function: { name: LOOKUP_TOOL.function.name } },
+        tool_choice: 'auto',
         temperature: 0.2, max_tokens: 1024, thinking: { type: 'disabled' }, deadline, timeoutMs: TURN_BUDGET_MS,
       });
     } catch (error) { throw modelError(error); }
@@ -100,8 +126,9 @@ async function runConfiguredTurn({ client, modelName, tools, projection, text, n
     if (!calls.length) {
       const answer = visibleText(message.content);
       const text = scrubAnswer(answer.text);
-      if (!toolResults.length || !text) throw coded('MODEL_UNAVAILABLE');
-      return { text, cards: answer.cards, toolResults, model: result.model,
+      if (!text) throw coded('MODEL_UNAVAILABLE');
+      const grounded = toolResults.length ? toolResults : [injectedToolResult(projection)];
+      return { text, cards: answer.cards, toolResults: grounded, model: result.model,
         tokenInput, tokenOutput, modelSpans };
     }
     messages.push({ ...message, role: 'assistant' });

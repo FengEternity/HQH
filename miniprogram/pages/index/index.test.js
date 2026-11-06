@@ -298,9 +298,8 @@ describe('explainer search', () => {
     await page.onSearchConfirm();
     page.onBrandTap({ currentTarget: { dataset: { id: 'b2' } } });
 
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
     assert.equal(calls[0].mode, 'ai');
-    assert.equal(calls[1].mode, 'keyword');
     assert.equal(page.data.aiLabel, 'AI 搜索结果');
     assert.equal(page.data.noticeText, '按描述来找暂时不可用，以下是按名称找到的');
     assert.deepEqual(page.data.keywordResults.map((item) => item.id), ['v2']);
@@ -361,8 +360,8 @@ describe('explainer search', () => {
     page.setData({ queryMode: 'ai' });
     await page.onSearchConfirm();
 
+    assert.equal(calls.length, 1);
     assert.equal(calls[0].mode, 'ai');
-    assert.equal(calls[1].mode, 'keyword');
     assert.equal(page.data.searchMode, 'ai');
     assert.equal(page.data.aiLabel, 'AI 搜索结果');
     assert.equal(page.data.noticeText, '');
@@ -371,23 +370,16 @@ describe('explainer search', () => {
   });
 
   it('keeps vector-only hits above the keyword results', async () => {
-    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async (data) => {
-      if (data.mode === 'keyword') {
-        return {
-          ok: true,
-          scene: 'video',
-          items: [{ id: 'kw', title: '参数计算', brandId: 'b1', brandName: '南方', modelName: '', tags: [] }],
-        };
-      }
-      return {
-        ok: true,
-        scene: 'video',
-        items: [
-          { id: 'kw', title: '参数计算', brandId: 'b1', brandName: '南方', modelName: '', tags: [] },
-          { id: 'ai', title: '坐标换算', brandId: 'b2', brandName: '华测', modelName: '', tags: [] },
-        ],
-      };
-    });
+    const page = loadPage(async () => ({ ok: true, brands: [], videos: [] }), async () => ({
+      ok: true,
+      scene: 'video',
+      items: [
+        { id: 'kw', title: '参数计算', brandId: 'b1', brandName: '南方', modelName: '', tags: [] },
+        { id: 'ai', title: '坐标换算', brandId: 'b2', brandName: '华测', modelName: '', tags: [] },
+      ],
+      keywordItems: [{ id: 'kw', title: '参数计算', brandId: 'b1', brandName: '南方', modelName: '', tags: [] }],
+      semanticOnlyItems: [{ id: 'ai', title: '坐标换算', brandId: 'b2', brandName: '华测', modelName: '', tags: [] }],
+    }));
     page.setData({ query: '怎么计算', queryMode: 'ai' });
 
     await page.onSearchConfirm();
@@ -410,6 +402,22 @@ describe('explainer search', () => {
     assert.equal(calls, 0);
     assert.equal(page.data.searched, false);
     assert.equal(page.data.aiLabel, '');
+  });
+});
+
+describe('home catalog cache', () => {
+  it('skips listHome when the last success is under a minute old', async () => {
+    let calls = 0;
+    const page = loadPage(async () => {
+      calls += 1;
+      return { ok: true, brands: [], videos: [] };
+    });
+    await page.load({ showLoading: true });
+    await page.onShow();
+    assert.equal(calls, 1);
+    page._homeLoadedAt = Date.now() - 61000;
+    await page.onShow();
+    assert.equal(calls, 2);
   });
 });
 

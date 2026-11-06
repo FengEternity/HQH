@@ -6,6 +6,8 @@ const store = require('./videoDocStore');
 
 const RATE_LIMIT = 6;
 const RATE_WINDOW_MS = 60 * 1000;
+const RUN_LEASE_MS = 55000;
+const TRACE_WAIT_MS = 300;
 
 function fail(code, message) {
   return { ok: false, code, message };
@@ -30,12 +32,29 @@ async function threadMessages(db, threadId) {
   return rows.map(store.publicMessage);
 }
 
-async function exportBestEffort(input, turn) {
-  if (typeof input.exportTrace !== 'function') return;
-  try {
-    await input.exportTrace(turn);
-  } catch (error) {
-    return;
+function exportBestEffort(input, turn) {
+  if (typeof input.exportTrace !== 'function') return Promise.resolve();
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(resolve, TRACE_WAIT_MS);
+  });
+  return Promise.race([
+    Promise.resolve()
+      .then(() => input.exportTrace(turn))
+      .then(() => undefined)
+      .catch(() => undefined),
+    timeout,
+  ]).finally(() => clearTimeout(timer));
+}
+
+async function expireStaleRuns(db, runs, now) {
+  for (const run of runs) {
+    if (!run || run.status !== 'running') continue;
+    if (now - Number(run.updatedAt || 0) < RUN_LEASE_MS) continue;
+    await store.updateRun(db, run._id, { status: 'failed', code: 'TIMEOUT', updatedAt: now });
+    run.status = 'failed';
+    run.code = 'TIMEOUT';
+    run.updatedAt = now;
   }
 }
 
@@ -96,10 +115,19 @@ async function videoDocSend(db, input) {
       messageId: assistant ? assistant.id : '',
     };
   }
+  const runs = await store.listRuns(db, hash);
+  await expireStaleRuns(db, runs, now);
+  if (existing && existing.status === 'running') {
+    const matched = runs.find((item) => item._id === existing._id);
+    if (matched) {
+      existing.status = matched.status;
+      existing.code = matched.code;
+      existing.updatedAt = matched.updatedAt;
+    }
+  }
   if (existing && existing.status === 'running') {
     return fail('IN_PROGRESS', '正在回答，请稍候');
   }
-  const runs = await store.listRuns(db, hash);
   if (runs.some((item) => item.status === 'running')) {
     return fail('IN_PROGRESS', '正在回答，请稍候');
   }
@@ -278,4 +306,4 @@ async function videoDocSend(db, input) {
   };
 }
 
-module.exports = { videoDocSend, videoDocHistory, RATE_LIMIT };
+module.exports = { videoDocSend, videoDocHistory, RATE_LIMIT, RUN_LEASE_MS, TRACE_WAIT_MS };

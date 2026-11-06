@@ -7,6 +7,7 @@ const {
   canEnqueue,
   createJobRecord,
   claimJobRecord,
+  renewJobRecord,
   finishJobRecord,
 } = require('./videoIngestJobs');
 
@@ -80,6 +81,38 @@ describe('claimJobRecord', () => {
       timeoutMs: CLAIM_TIMEOUT_MS,
     });
     assert.equal(claimed, null);
+  });
+
+  it('renews a live claim so another worker cannot take it', () => {
+    const claimed = claimJobRecord({
+      job: baseJob,
+      workerId: 'worker-a',
+      now: 1000,
+      timeoutMs: CLAIM_TIMEOUT_MS,
+    });
+    const renewed = renewJobRecord({
+      job: claimed,
+      workerId: 'worker-a',
+      now: 1000 + 60000,
+      timeoutMs: CLAIM_TIMEOUT_MS,
+    });
+    assert.equal(renewed.claimedAt, 1000 + 60000);
+    assert.equal(
+      claimJobRecord({
+        job: renewed,
+        workerId: 'worker-b',
+        now: renewed.claimedAt + 1000,
+        timeoutMs: CLAIM_TIMEOUT_MS,
+      }),
+      null,
+    );
+    const stolen = claimJobRecord({
+      job: renewed,
+      workerId: 'worker-b',
+      now: renewed.claimedAt + CLAIM_TIMEOUT_MS,
+      timeoutMs: CLAIM_TIMEOUT_MS,
+    });
+    assert.equal(stolen.claimedBy, 'worker-b');
   });
 
   it('claims an expired running job for another worker', () => {

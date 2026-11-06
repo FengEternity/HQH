@@ -2,7 +2,8 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { videoDocSend } = require('./videoDocAction');
+const { videoDocSend, RUN_LEASE_MS } = require('./videoDocAction');
+const { scopeHash } = require('./videoDocStore');
 
 function createDb() {
   const rows = { video_doc_threads: [], video_doc_messages: [], agent_runs: [] };
@@ -330,5 +331,92 @@ describe('videoDocSend', () => {
     });
     assert.equal(result.ok, true);
     assert.equal(result.text, '先整平');
+  });
+
+  it('lets a new question through after a running turn passes the lease', async () => {
+    const db = createDb();
+    await db.collection('agent_runs').add({
+      data: {
+        requestId: 'req-old',
+        agentRunId: 'run-old',
+        profileId: 'video_doc',
+        profileVersion: 'v1',
+        scopeHash: scopeHash('user-1', 'vid-1'),
+        actorType: 'end_user',
+        status: 'running',
+        code: '',
+        resumeCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    });
+    const result = await videoDocSend(db, {
+      openid: 'user-1',
+      videoId: 'vid-1',
+      text: '再问一次',
+      requestId: 'req-new',
+      now: 1 + RUN_LEASE_MS,
+      loadVideo: publishedLoad('vid-1'),
+      loadLinkedProducts: async () => [],
+      executor: async () => ({ text: '可以', model: 'stub', tokenInput: 1, tokenOutput: 1 }),
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.text, '可以');
+    const runs = await db.collection('agent_runs').where({}).get();
+    assert.equal(runs.data.find((item) => item.requestId === 'req-old').status, 'failed');
+  });
+
+  it('keeps a running turn inside the lease', async () => {
+    const db = createDb();
+    await db.collection('agent_runs').add({
+      data: {
+        requestId: 'req-live',
+        agentRunId: 'run-live',
+        profileId: 'video_doc',
+        profileVersion: 'v1',
+        scopeHash: scopeHash('user-1', 'vid-1'),
+        actorType: 'end_user',
+        status: 'running',
+        code: '',
+        resumeCount: 0,
+        createdAt: 1000,
+        updatedAt: 1000,
+      },
+    });
+    let called = false;
+    const result = await videoDocSend(db, {
+      openid: 'user-1',
+      videoId: 'vid-1',
+      text: '还在答',
+      requestId: 'req-next',
+      now: 1000 + RUN_LEASE_MS - 1,
+      loadVideo: publishedLoad('vid-1'),
+      loadLinkedProducts: async () => [],
+      executor: async () => {
+        called = true;
+        return { text: '不该答', model: 'stub', tokenInput: 1, tokenOutput: 1 };
+      },
+    });
+    assert.equal(result.code, 'IN_PROGRESS');
+    assert.equal(called, false);
+  });
+
+  it('returns the answer when trace export stays pending', async () => {
+    const db = createDb();
+    const started = Date.now();
+    const result = await videoDocSend(db, {
+      openid: 'user-1',
+      videoId: 'vid-1',
+      text: '怎么整平',
+      requestId: 'req-trace-slow',
+      now: 10,
+      loadVideo: publishedLoad('vid-1'),
+      loadLinkedProducts: async () => [],
+      executor: async () => ({ text: '先整平', model: 'stub', tokenInput: 1, tokenOutput: 1 }),
+      exportTrace: () => new Promise(() => {}),
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.text, '先整平');
+    assert.equal(Date.now() - started < 1000, true);
   });
 });

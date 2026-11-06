@@ -29,6 +29,7 @@ Page({
   onLoad(query) {
     const id = String((query && query.id) || '').trim();
     this._currentTimeSec = 0;
+    this._retriedVideo = false;
     this.setData({ videoId: id });
     const videoTask = catalog({ action: 'getVideo', id });
     const shopTask = shop({ action: 'listLinkedShopProducts', videoId: id }).catch(() => ({
@@ -195,28 +196,42 @@ Page({
         { id: localId, role: 'user', text },
       ]),
     });
-    return agent({
+    const payload = {
       action: 'videoDocSend',
       videoId: this.data.videoId,
       text,
       currentTimeSec: this._currentTimeSec || 0,
       requestId: this._requestId,
-    })
-      .then((result) => {
-        this._pendingText = '';
-        this._ignoreInput = false;
-        return this.revealMessages((result && result.messages) || []);
-      })
-      .catch((err) => {
-        this._ignoreInput = false;
+    };
+    let retried = false;
+    const succeed = (result) => {
+      this._pendingText = '';
+      this._ignoreInput = false;
+      return this.revealMessages((result && result.messages) || []);
+    };
+    const fail = (err) => {
+      if (err && err.code === 'TIME_LIMIT' && !retried) {
+        retried = true;
+        return agent(payload).then(succeed).catch(fail);
+      }
+      this._ignoreInput = false;
+      if (err && err.code === 'IN_PROGRESS') {
         this.setData({
-          askError: err.message || '发送失败',
+          askError: err.message || '正在回答，请稍候',
           asking: false,
-          inputDraft: String(this.data.inputDraft || '').trim() ? this.data.inputDraft : text,
           askAnchor: this.nextAskAnchor(),
-          messages: (this.data.messages || []).filter((item) => item.id !== localId),
         });
-      })
+        return;
+      }
+      this.setData({
+        askError: err.message || '发送失败',
+        asking: false,
+        inputDraft: String(this.data.inputDraft || '').trim() ? this.data.inputDraft : text,
+        askAnchor: this.nextAskAnchor(),
+        messages: (this.data.messages || []).filter((item) => item.id !== localId),
+      });
+    };
+    return agent(payload).then(succeed).catch(fail)
       .then(() => {
         this._sending = false;
         if (this._unloaded) return;
@@ -252,6 +267,21 @@ Page({
     wx.navigateTo({ url: `/pages/shop-detail/shop-detail?id=${id}` });
   },
   onVideoError() {
+    if (!this._retriedVideo && this.data.videoId) {
+      this._retriedVideo = true;
+      return catalog({ action: 'getVideo', id: this.data.videoId })
+        .then((res) => {
+          const src = String((res && res.videoUrl) || '').trim();
+          if (!src) {
+            this.setData({ error: '视频无法播放，请确认已上传云存储文件。' });
+            return;
+          }
+          this.setData({ src, error: '' });
+        })
+        .catch(() => {
+          this.setData({ error: '视频无法播放，请确认已上传云存储文件。' });
+        });
+    }
     this.setData({
       error: '视频无法播放，请确认已上传云存储文件。',
     });

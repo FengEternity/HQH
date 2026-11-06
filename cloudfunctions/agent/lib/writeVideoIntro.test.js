@@ -3,7 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { createServiceProof } = require('./ai-runtime');
-const { INTRO_SYSTEM_PROMPT, buildIntroUserPrompt, writeVideoIntro, PURPOSE } = require('./writeVideoIntro');
+const { INTRO_SYSTEM_PROMPT, INTRO_TRANSCRIPT_LIMIT, buildIntroUserPrompt, writeVideoIntro, PURPOSE } = require('./writeVideoIntro');
 const { INTRO_SYSTEM_PROMPT: ingestPrompt, buildIntroUserPrompt: ingestPromptBuilder } = require('../../../scripts/video-ingest/lib/introAbstract');
 
 const NOW = 1793700000000;
@@ -83,5 +83,13 @@ describe('writeVideoIntro', () => {
     assert.equal(wrong.code, 'UNAUTHORIZED');
     const empty = await writeVideoIntro({ db: dbWith('hy3'), env, event: event({ transcript: '  ' }), fetch, now: NOW });
     assert.equal(empty.code, 'BAD_INPUT');
+  });
+
+  it('简介提示里的口播不超过 4000 字', () => {
+    const transcript = '口'.repeat(INTRO_TRANSCRIPT_LIMIT + 80);
+    const prompt = buildIntroUserPrompt({ title: '整平', brandName: '千寻', transcript, terms: [] });
+    const spoken = prompt.split('口播：')[1].split('\n')[0];
+    assert.equal([...spoken].length, INTRO_TRANSCRIPT_LIMIT);
+    assert.equal(prompt.includes('口播已截取前 4000 字'), true);
   });
 });

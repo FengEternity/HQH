@@ -2,7 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { runVideoDocTurn } = require('./videoDocTurn');
+const { runVideoDocTurn, projectVideo, TRANSCRIPT_LIMIT } = require('./videoDocTurn');
 
 function publishedVideo(extra) {
   return Object.assign(
@@ -109,5 +109,27 @@ describe('runVideoDocTurn', () => {
     assert.equal(loaded, false);
     assert.equal(result.ok, false);
     assert.equal(result.code, 'BAD_INPUT');
+  });
+
+  it('clips a long transcript and keeps the segment around the playhead', () => {
+    const long = '口'.repeat(TRANSCRIPT_LIMIT + 50);
+    const clipped = projectVideo(publishedVideo({ transcript: long }), [], 0);
+    assert.equal(clipped.transcript.length, TRANSCRIPT_LIMIT);
+    assert.equal(clipped.transcriptTruncated, true);
+
+    const windowed = projectVideo(
+      publishedVideo({
+        transcript: '全文',
+        transcriptSegments: [
+          { startSec: 0, endSec: 10, text: '开头步骤' },
+          { startSec: 110, endSec: 130, text: '对中步骤' },
+        ],
+      }),
+      [],
+      120,
+    );
+    assert.equal(windowed.transcript.includes('开头步骤'), false);
+    assert.equal(windowed.transcript.includes('对中步骤'), true);
+    assert.equal(windowed.transcript.length <= TRANSCRIPT_LIMIT, true);
   });
 });

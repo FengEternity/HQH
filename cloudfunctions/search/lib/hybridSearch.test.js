@@ -139,7 +139,7 @@ describe('vector merge', () => {
     assert.equal(res.items[0].score, undefined);
   });
 
-  it('does not append the nearest video when nothing reaches the threshold', () => {
+  it('keeps the nearest video when its cosine is below the old threshold', () => {
     const item = video({ contentHash: 'hash-1', searchBlob: '无关' });
     const res = runSearch({
       scene: 'video',
@@ -150,7 +150,9 @@ describe('vector merge', () => {
       queryEmbedding: axis(0),
       threshold: 0.5,
     });
-    assert.deepEqual(res.items, []);
+    assert.deepEqual(res.items.map((row) => row.id), ['v1']);
+    assert.deepEqual(res.semanticOnlyItems.map((row) => row.id), ['v1']);
+    assert.deepEqual(res.keywordItems, []);
     assert.equal(res.notice, undefined);
   });
 

@@ -256,6 +256,8 @@ function createCatalog(app, initialTicket, adminPin) {
   return {
     claim: ({ workerId }) =>
       authenticatedCall({ action: 'claimVideoIngest', workerId }),
+    renew: ({ workerId, videoId, mediaRevision }) =>
+      authenticatedCall({ action: 'renewVideoIngest', workerId, videoId, mediaRevision }),
     complete: (payload) =>
       authenticatedCall({ action: 'completeVideoIngest', ...payload }),
     noteIntro: (payload) =>

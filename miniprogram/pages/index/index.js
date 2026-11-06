@@ -8,17 +8,14 @@ const {
   visitorCatalogMessage,
 } = require('../../utils/catalogVisitorError');
 
+const HOME_CACHE_MS = 60000;
+
 function decorateSearchItems(items) {
   return withPosterUrls(items || []).map((item) =>
     Object.assign({}, item, {
       initial: String(item.brandName || '优').slice(0, 1),
     }),
   );
-}
-
-function itemsNotIn(items, others) {
-  const ids = new Set((others || []).map((item) => item.id));
-  return items.filter((item) => !ids.has(item.id));
 }
 
 Page({
@@ -48,10 +45,9 @@ Page({
     whenCloudReady(getApp()).then(() => this.load({ showLoading: true }));
   },
   onShow() {
-    // 从运营页返回时静默刷新；首次由 onLoad 负责，避免重复请求
-    if (this._loadedOnce) {
-      this.load({ showLoading: false });
-    }
+    if (!this._loadedOnce) return;
+    if (this._homeLoadedAt && Date.now() - this._homeLoadedAt < HOME_CACHE_MS) return;
+    this.load({ showLoading: false });
   },
   load(options) {
     const showLoading = !options || options.showLoading !== false;
@@ -73,6 +69,7 @@ Page({
         const brands = res.brands || [];
         const allVideos = withPosterUrls(res.videos || []);
         this._loadedOnce = true;
+        this._homeLoadedAt = Date.now();
         this.setData({ brands, allVideos, loading: false, error: '' });
         this.paintShelves();
       })
@@ -156,20 +153,18 @@ Page({
     const seq = (this._searchSeq || 0) + 1;
     this._searchSeq = seq;
     this.setData({ searching: true, error: '' });
-    const request = searchMode === 'ai'
-      ? () => Promise.all([
-        search({ scene: 'video', query, mode: 'ai' }),
-        search({ scene: 'video', query, mode: 'keyword' }),
-      ]).then(([ai, keyword]) => ({ ai, keyword }))
-      : () => search({ scene: 'video', query, mode: 'keyword' }).then((ai) => ({ ai, keyword: null }));
+    const request = () => search({ scene: 'video', query, mode: searchMode }).then((ai) => ({ ai }));
     return callWithVisitorRetry(request)
       .then(({ ai, keyword }) => {
         if (seq !== this._searchSeq) {
           return;
         }
-        const keywordItems = keyword ? decorateSearchItems(keyword.items) : [];
         const merged = decorateSearchItems(ai.items);
-        const searchItems = searchMode === 'ai' ? itemsNotIn(merged, keywordItems) : merged;
+        const hasSplit = searchMode === 'ai' && Array.isArray(ai.keywordItems) && Array.isArray(ai.semanticOnlyItems);
+        const keywordItems = hasSplit ? decorateSearchItems(ai.keywordItems) : (searchMode === 'ai' ? merged : []);
+        const searchItems = searchMode === 'ai'
+          ? (hasSplit ? decorateSearchItems(ai.semanticOnlyItems) : [])
+          : merged;
         const notice = searchMode === 'ai' ? (ai.notice || '') : '';
         const noticeItems = keywordItems.length ? keywordItems : searchItems;
         this.setData({

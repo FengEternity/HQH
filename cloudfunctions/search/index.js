@@ -11,7 +11,8 @@ const { attemptEmbed, markStaleForRewrite, shouldCommit, outcomeKind } = require
 const { embedChunkText } = require('./lib/embedClient');
 const { applyBatch, createTask, nextBatch, taskView } = require('./lib/indexTask');
 const { scorePublishedVideos } = require('./lib/vectorRank');
-const { COSINE_THRESHOLD, INDEX_BATCH_SIZE, MAX_INPUT_CHARS, VECTOR_CAP } = require('./lib/searchConfig');
+const { COSINE_THRESHOLD, EMBEDDING_MODEL, INDEX_BATCH_SIZE, MAX_INPUT_CHARS, VECTOR_CAP } = require('./lib/searchConfig');
+const { resolveQueryEmbedding } = require('./lib/queryEmbeddingCache');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -196,7 +197,15 @@ async function handleQuery(event) {
   let chunks = [];
   if (mode === 'ai' && vectorOn && publishedCount > 0 && publishedCount <= VECTOR_CAP) {
     const sentence = expandQuery(query, synonyms).join(' ');
-    const embedded = sentence ? await embedChunkText(sentence) : { ok: false, error: 'embed_failed' };
+    const embedded = sentence
+      ? await resolveQueryEmbedding({
+        db,
+        sentence,
+        embed: (text) => embedChunkText(text),
+        now: Date.now(),
+        model: EMBEDDING_MODEL,
+      })
+      : { ok: false, error: 'embed_failed' };
     if (!embedded.ok) {
       embedError = true;
     } else {
@@ -243,15 +252,21 @@ async function handleDeleteChunk(event) {
 async function loadChunks(videos) {
   const command = db.command;
   const ids = (videos || []).map((video) => video && video._id).filter(Boolean);
-  const rows = [];
+  const batches = [];
   for (let index = 0; index < ids.length; index += 10) {
     const part = ids.slice(index, index + 10);
-    const res = await db
-      .collection('search_chunks')
-      .where({ sourceType: 'video', sourceId: command.in(part) })
-      .limit(10)
-      .get();
-    rows.push.apply(rows, res.data || []);
+    batches.push(
+      db
+        .collection('search_chunks')
+        .where({ sourceType: 'video', sourceId: command.in(part) })
+        .limit(10)
+        .get(),
+    );
+  }
+  const loaded = await Promise.all(batches);
+  const rows = [];
+  for (const res of loaded) {
+    rows.push.apply(rows, (res && res.data) || []);
   }
   return rows;
 }

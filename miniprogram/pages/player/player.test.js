@@ -42,6 +42,29 @@ afterEach(() => {
 });
 
 describe('player page', () => {
+  it('fetches a fresh video address after playback fails once', async () => {
+    const calls = [];
+    const page = loadPage({
+      catalog: async (data) => {
+        calls.push(data);
+        return {
+          video: { title: '设站' },
+          videoUrl: calls.length === 1 ? 'https://example.com/old.mp4' : 'https://example.com/new.mp4',
+        };
+      },
+      shop: async () => ({ products: [] }),
+    });
+    await page.onLoad({ id: 'vid-1' });
+    await page.onVideoError();
+    assert.equal(calls.length, 2);
+    assert.equal(calls[1].action, 'getVideo');
+    assert.equal(page.data.src, 'https://example.com/new.mp4');
+    assert.equal(page.data.error, '');
+    await page.onVideoError();
+    assert.equal(calls.length, 2);
+    assert.equal(page.data.error, '视频无法播放，请确认已上传云存储文件。');
+  });
+
   it('keeps the player shell mounted and paints video with products once', async () => {
     const wxml = fs.readFileSync(path.join(__dirname, 'player.wxml'), 'utf8');
     assert.equal(wxml.includes('wx:elif="{{video}}"'), false);
@@ -123,6 +146,82 @@ describe('player page', () => {
     assert.equal(page.data.messages[0].runs.map((run) => run.text).join(''), '先整平');
     assert.equal(page.data.inputDraft, '');
     assert.equal(page.data.askBusy, false);
+  });
+
+  it('retries a timed-out ask with the same request id and keeps an in-progress bubble', async () => {
+    const calls = [];
+    let attempt = 0;
+    const page = loadPage({
+      catalog: async () => ({
+        video: { title: '设站' },
+        videoUrl: 'https://example.com/a.mp4',
+      }),
+      shop: async () => ({ products: [] }),
+      agent: async (data) => {
+        calls.push(data);
+        if (data.action === 'videoDocHistory') return { ok: true, messages: [] };
+        attempt += 1;
+        if (attempt === 1) {
+          const error = new Error('服务响应超时，请再试一次');
+          error.code = 'TIME_LIMIT';
+          throw error;
+        }
+        return {
+          ok: true,
+          status: 'replayed',
+          messages: [
+            { id: 'u1', role: 'user', text: '怎么整平' },
+            { id: 'a1', role: 'assistant', text: '先整平' },
+          ],
+        };
+      },
+    });
+    await page.onLoad({ id: 'vid-1' });
+    page.setData({ inputDraft: '怎么整平' });
+    await page.onAskSend();
+    const sends = calls.filter((item) => item.action === 'videoDocSend');
+    assert.equal(sends.length, 2);
+    assert.equal(sends[0].requestId, sends[1].requestId);
+    assert.equal(page.data.messages.map((item) => item.text).join('|'), '怎么整平|先整平');
+    assert.equal(page.data.askError, '');
+
+    let progress = 0;
+    const waiting = loadPage({
+      catalog: async () => ({ video: { title: '设站' }, videoUrl: 'https://example.com/a.mp4' }),
+      shop: async () => ({ products: [] }),
+      agent: async (data) => {
+        if (data.action === 'videoDocHistory') return { ok: true, messages: [] };
+        progress += 1;
+        const error = new Error(progress === 1 ? '服务响应超时，请再试一次' : '正在回答，请稍候');
+        error.code = progress === 1 ? 'TIME_LIMIT' : 'IN_PROGRESS';
+        throw error;
+      },
+    });
+    await waiting.onLoad({ id: 'vid-1' });
+    waiting.setData({ inputDraft: '怎么整平' });
+    await waiting.onAskSend();
+    assert.equal(waiting.data.messages[0].text, '怎么整平');
+    assert.equal(waiting.data.askError, '正在回答，请稍候');
+    assert.equal(waiting.data.inputDraft, '');
+
+    let timeouts = 0;
+    const failed = loadPage({
+      catalog: async () => ({ video: { title: '设站' }, videoUrl: 'https://example.com/a.mp4' }),
+      shop: async () => ({ products: [] }),
+      agent: async (data) => {
+        if (data.action === 'videoDocHistory') return { ok: true, messages: [] };
+        timeouts += 1;
+        const error = new Error('服务响应超时，请再试一次');
+        error.code = 'TIME_LIMIT';
+        throw error;
+      },
+    });
+    await failed.onLoad({ id: 'vid-1' });
+    failed.setData({ inputDraft: '怎么整平' });
+    await failed.onAskSend();
+    assert.equal(timeouts, 2);
+    assert.equal(failed.data.messages.length, 0);
+    assert.equal(failed.data.inputDraft, '怎么整平');
   });
 
   it('shows the question immediately and reveals a long answer in steps', async () => {

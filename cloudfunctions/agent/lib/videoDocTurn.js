@@ -2,9 +2,47 @@
 
 const { runTurn } = require('./runTurn');
 
+const TRANSCRIPT_LIMIT = 2000;
+const WINDOW_BEFORE_SEC = 30;
+const WINDOW_AFTER_SEC = 90;
+
 function cleanText(value) {
   const text = String(value || '').trim();
   return text || '';
+}
+
+function segmentText(segment) {
+  return cleanText(segment && segment.text);
+}
+
+function clipTranscript(video, currentTimeSec) {
+  const segments = Array.isArray(video && video.transcriptSegments) ? video.transcriptSegments : [];
+  const usable = segments.filter((segment) => segmentText(segment));
+  const hasTime = currentTimeSec !== undefined && currentTimeSec !== null && currentTimeSec !== '';
+  let source = '';
+  let omitted = false;
+  if (usable.length && hasTime) {
+    const sec = Number(currentTimeSec);
+    const windowStart = sec - WINDOW_BEFORE_SEC;
+    const windowEnd = sec + WINDOW_AFTER_SEC;
+    const picked = usable.filter((segment) => {
+      const start = Number(segment.startSec) || 0;
+      const end = Number(segment.endSec) || 0;
+      return end >= windowStart && start <= windowEnd;
+    });
+    omitted = picked.length !== usable.length;
+    source = picked.map(segmentText).join('\n');
+    if (!source) source = cleanText(video.transcript);
+  } else if (usable.length) {
+    source = usable.map(segmentText).join('\n');
+  } else {
+    source = cleanText(video && video.transcript);
+  }
+  if (!source) return { transcript: '', transcriptTruncated: false };
+  if (source.length <= TRANSCRIPT_LIMIT) {
+    return { transcript: source, transcriptTruncated: omitted };
+  }
+  return { transcript: source.slice(0, TRANSCRIPT_LIMIT), transcriptTruncated: true };
 }
 
 function projectVideo(video, products, currentTimeSec) {
@@ -21,8 +59,11 @@ function projectVideo(video, products, currentTimeSec) {
       priceFen: Number(item.priceFen) || 0,
     })),
   };
-  const transcript = cleanText(video.transcript);
-  if (transcript) projection.transcript = transcript;
+  const clipped = clipTranscript(video, currentTimeSec);
+  if (clipped.transcript) {
+    projection.transcript = clipped.transcript;
+    if (clipped.transcriptTruncated) projection.transcriptTruncated = true;
+  }
   if (currentTimeSec !== undefined && currentTimeSec !== null && currentTimeSec !== '') {
     const sec = Number(currentTimeSec);
     if (!Number.isInteger(sec) || sec < 0) {
@@ -77,4 +118,4 @@ async function runVideoDocTurn(input) {
   });
 }
 
-module.exports = { runVideoDocTurn, projectVideo };
+module.exports = { runVideoDocTurn, projectVideo, TRANSCRIPT_LIMIT };

@@ -19,6 +19,7 @@ async function loadVideoDoc(db, videoId) {
     brandName: doc.brandName,
     modelName: doc.modelName,
     transcript: doc.transcript || '',
+    transcriptSegments: Array.isArray(doc.transcriptSegments) ? doc.transcriptSegments : [],
   };
 }
 

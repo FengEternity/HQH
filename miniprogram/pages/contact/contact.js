@@ -75,19 +75,46 @@ Page({
   },
   armSeenRefresh() {
     this.disarmSeenRefresh();
-    const timer = setInterval(() => {
+    const generation = this._seenGeneration;
+    this._seenDelay = 4000;
+    this._seenSignature = '';
+    const tick = () => {
       ticketing({ action: 'csHistory' })
-        .then((result) => this.applyResult(result))
-        .catch(() => {});
-    }, 4000);
-    if (timer && typeof timer.unref === 'function') {
-      timer.unref();
-    }
+        .then((result) => {
+          if (generation !== this._seenGeneration) return;
+          const messages = (result && result.messages) || [];
+          const last = messages[messages.length - 1];
+          const signature = [
+            result && result.thread && result.thread._id,
+            result && result.thread && result.thread.updatedAt,
+            messages.length,
+            last && last._id,
+            last && last.text,
+          ].join('|');
+          const changed = signature !== this._seenSignature;
+          this._seenSignature = signature;
+          this.applyResult(result);
+          this._seenDelay = changed ? 4000 : Math.min(30000, this._seenDelay * 2);
+        })
+        .catch(() => {
+          if (generation !== this._seenGeneration) return;
+          this._seenDelay = Math.min(30000, (this._seenDelay || 4000) * 2);
+        })
+        .then(() => {
+          if (generation !== this._seenGeneration) return;
+          const timer = setTimeout(tick, this._seenDelay || 4000);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+          this._seenTimer = timer;
+        });
+    };
+    const timer = setTimeout(tick, this._seenDelay);
+    if (timer && typeof timer.unref === 'function') timer.unref();
     this._seenTimer = timer;
   },
   disarmSeenRefresh() {
+    this._seenGeneration = (this._seenGeneration || 0) + 1;
     if (this._seenTimer) {
-      clearInterval(this._seenTimer);
+      clearTimeout(this._seenTimer);
       this._seenTimer = null;
     }
   },
@@ -159,6 +186,7 @@ Page({
     return ticketing(this.withThread(data))
       .then((result) => {
         this.applyResult(result, localId);
+        this.armSeenRefresh();
         return true;
       })
       .catch((err) => {

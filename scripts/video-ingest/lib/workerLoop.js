@@ -100,6 +100,21 @@ function fitSegmentsToDuration(segments, durationSec) {
   return fitted;
 }
 
+const CLAIM_HEARTBEAT_MS = 60000;
+
+function startClaimHeartbeat(catalog, claimed, workerId) {
+  if (!catalog || typeof catalog.renew !== 'function' || !claimed) return () => {};
+  const timer = setInterval(() => {
+    Promise.resolve(catalog.renew({
+      workerId,
+      videoId: claimed.videoId,
+      mediaRevision: claimed.mediaRevision,
+    })).catch(() => {});
+  }, CLAIM_HEARTBEAT_MS);
+  if (typeof timer.unref === 'function') timer.unref();
+  return () => clearInterval(timer);
+}
+
 async function runOnce({
   catalog,
   workerId,
@@ -122,6 +137,37 @@ async function runOnce({
     return 'idle';
   }
 
+  const stopHeartbeat = startClaimHeartbeat(catalog, claimed, workerId);
+  try {
+    return await runClaimed({
+      catalog,
+      claimed,
+      downloadVideo,
+      probeMedia,
+      transcodeIfNeeded,
+      createCover,
+      recognizeSpeech,
+      placeholderIntro,
+      deleteCloudFiles,
+      warn,
+    });
+  } finally {
+    stopHeartbeat();
+  }
+}
+
+async function runClaimed({
+  catalog,
+  claimed,
+  downloadVideo,
+  probeMedia,
+  transcodeIfNeeded,
+  createCover,
+  recognizeSpeech,
+  placeholderIntro,
+  deleteCloudFiles,
+  warn,
+}) {
   let localPath;
   try {
     localPath = await downloadVideo(claimed.videoFileId);
@@ -278,7 +324,9 @@ async function runOnce({
 }
 
 module.exports = {
+  CLAIM_HEARTBEAT_MS,
   fitSegmentsToDuration,
   generatedIntroFields,
   runOnce,
+  startClaimHeartbeat,
 };

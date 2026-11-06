@@ -38,6 +38,16 @@ function claimJobRecord({ job, workerId, now, timeoutMs }) {
   return null;
 }
 
+function renewJobRecord({ job, workerId, now, timeoutMs }) {
+  if (!job || job.phase !== 'running' || job.claimedBy !== workerId) return null;
+  if (now - Number(job.claimedAt || 0) >= timeoutMs) return null;
+  return {
+    ...job,
+    claimedAt: now,
+    updatedAt: now,
+  };
+}
+
 function badFinishPhase(phase) {
   const err = new Error(`finishJobRecord phase must be done or dead, got: ${phase}`);
   err.code = 'BAD_INPUT';
@@ -59,5 +69,6 @@ module.exports = {
   canEnqueue,
   createJobRecord,
   claimJobRecord,
+  renewJobRecord,
   finishJobRecord,
 };

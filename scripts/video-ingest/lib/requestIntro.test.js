@@ -3,7 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { verifyServiceProof } = require('./ai-runtime');
-const { PURPOSE, requestIntro } = require('./requestIntro');
+const { PURPOSE, INTRO_TRANSCRIPT_LIMIT, requestIntro } = require('./requestIntro');
 
 describe('requestIntro', () => {
   it('用服务签名把标题和口播交给云函数，不在容器里调用模型', async () => {
@@ -28,6 +28,19 @@ describe('requestIntro', () => {
     assert.equal(payload.data.transcript, '先打开项目。');
     assert.equal(verifyServiceProof('pin', PURPOSE, payload.data.proof, 1793700000000), true);
     assert.equal(JSON.stringify(payload).includes('TCB_API_KEY'), false);
+    let longPayload;
+    await requestIntro({
+      pin: 'pin',
+      transcript: '口'.repeat(INTRO_TRANSCRIPT_LIMIT + 20),
+      now: 1793700000000,
+      app: {
+        async callFunction(request) {
+          longPayload = request;
+          return { result: { ok: true, intro: '简介' } };
+        },
+      },
+    });
+    assert.equal([...longPayload.data.transcript].length, INTRO_TRANSCRIPT_LIMIT);
   });
 
   it('没有口令或云函数没有写出简介时失败', async () => {
