@@ -4,6 +4,9 @@ function decideNotice(state) {
   if (!state || !state.publishedCount) {
     return '';
   }
+  if (state.libraryTruncated) {
+    return 'library_overflow';
+  }
   if (!state.vectorEnabled) {
     return 'semantic_unavailable';
   }

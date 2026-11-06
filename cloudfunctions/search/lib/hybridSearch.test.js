@@ -356,3 +356,14 @@ describe('cosine probe', () => {
     ]);
   });
 });
+
+const { decideNotice } = require('./mergeNotice');
+
+describe('library overflow notice', () => {
+  it('wins over every other notice', () => {
+    assert.equal(
+      decideNotice({ publishedCount: 6000, libraryTruncated: true, vectorEnabled: true, embedError: true }),
+      'library_overflow',
+    );
+  });
+});

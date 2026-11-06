@@ -18,4 +18,9 @@ describe('searchNoticeText', () => {
       '按描述来找暂时不可用，以下是按名称找到的',
     );
   });
+
+  it('tells the visitor only part of the library was searched', () => {
+    assert.equal(searchNoticeText('library_overflow', []), '讲解较多，本次只搜到其中一部分');
+    assert.equal(searchNoticeText('library_overflow', [{ id: 'v1' }]), '讲解较多，本次只搜到其中一部分');
+  });
 });

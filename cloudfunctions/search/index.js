@@ -14,6 +14,7 @@ const { createTask, driveIndexTask, taskView } = require('./lib/indexTask');
 const { scorePublishedVideos } = require('./lib/vectorRank');
 const { COSINE_THRESHOLD, EMBEDDING_MODEL, INDEX_BATCH_SIZE, MAX_INPUT_CHARS, VECTOR_CAP } = require('./lib/searchConfig');
 const { resolveQueryEmbedding } = require('./lib/queryEmbeddingCache');
+const { loadAllPages } = require('./lib/pagedRead');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -36,29 +37,36 @@ function missingDocument(error) {
   return /not exist|does not exist|cannot find|不存在|DOCUMENT_NOT_FOUND/i.test(text);
 }
 
+const PUBLISHED_PAGE_SIZE = 1000;
+const PUBLISHED_HARD_CAP = 5000;
+
 async function loadPublishedVideos() {
-  const res = await db
-    .collection('videos')
-    .where({ status: 'published' })
-    .field({
-      title: true,
-      intro: true,
-      brandId: true,
-      brandName: true,
-      productId: true,
-      modelName: true,
-      tags: true,
-      coverFileId: true,
-      videoFileId: true,
-      status: true,
-      publishedAt: true,
-      searchBlob: true,
-      searchAbstract: true,
-      contentHash: true,
-    })
-    .limit(1000)
-    .get();
-  return res.data || [];
+  const { rows, truncated } = await loadAllPages(async (skip, limit) => {
+    const res = await db
+      .collection('videos')
+      .where({ status: 'published' })
+      .field({
+        title: true,
+        intro: true,
+        brandId: true,
+        brandName: true,
+        productId: true,
+        modelName: true,
+        tags: true,
+        coverFileId: true,
+        videoFileId: true,
+        status: true,
+        publishedAt: true,
+        searchBlob: true,
+        searchAbstract: true,
+        contentHash: true,
+      })
+      .skip(skip)
+      .limit(limit)
+      .get();
+    return res.data || [];
+  }, { pageSize: PUBLISHED_PAGE_SIZE, hardCap: PUBLISHED_HARD_CAP });
+  return { videos: rows, truncated };
 }
 
 async function loadSynonyms() {
@@ -190,7 +198,8 @@ async function handleQuery(event) {
   if (!String(query || '').trim()) {
     return runSearch({ scene, mode, query });
   }
-  const [videos, synonyms] = await Promise.all([loadPublishedVideos(), loadSynonyms()]);
+  const [loaded, synonyms] = await Promise.all([loadPublishedVideos(), loadSynonyms()]);
+  const videos = loaded.videos;
   const vectorOn = typeof COSINE_THRESHOLD === 'number' && Number.isFinite(COSINE_THRESHOLD);
   const publishedCount = videos.filter((video) => video && video.status === 'published').length;
   let embedError = false;
@@ -230,6 +239,7 @@ async function handleQuery(event) {
     chunks,
     queryEmbedding,
     embedError,
+    libraryTruncated: loaded.truncated,
     threshold: COSINE_THRESHOLD,
   });
   if (!result.ok || !result.items || !result.items.length) {
@@ -348,7 +358,8 @@ async function handleProbe(event) {
   if (!query) {
     badInput();
   }
-  const [videos, synonyms] = await Promise.all([loadPublishedVideos(), loadSynonyms()]);
+  const [loadedProbe, synonyms] = await Promise.all([loadPublishedVideos(), loadSynonyms()]);
+  const videos = loadedProbe.videos;
   const sentence = expandQuery(query, synonyms).join(' ');
   const embedded = sentence ? await embedChunkText(sentence) : { ok: false, error: 'embed_failed' };
   if (!embedded.ok) {

@@ -51,12 +51,17 @@ function runSearch(input) {
   const videos = ((input && input.videos) || []).map(withSearchBlob);
   const keywordHits = searchPublished(videos, query, synonyms);
   const keywordItems = keywordHits.map(toVideoItem);
+  const libraryTruncated = Boolean(input && input.libraryTruncated);
   if (resolveSearchMode(input && input.mode) !== 'ai') {
-    return {
+    const keywordResult = {
       ok: true,
       scene,
       items: keywordItems,
     };
+    if (libraryTruncated) {
+      keywordResult.notice = 'library_overflow';
+    }
+    return keywordResult;
   }
   const published = videos.filter((video) => video && video.status === 'published');
   const threshold = input && Object.prototype.hasOwnProperty.call(input, 'threshold')
@@ -87,6 +92,7 @@ function runSearch(input) {
   }
   const notice = decideNotice({
     publishedCount: published.length,
+    libraryTruncated,
     vectorEnabled,
     embedError: vectorEnabled && embedError,
     overCap: vectorEnabled && overCap,
