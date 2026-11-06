@@ -39,12 +39,28 @@ async function writeQueryEmbedding(db, id, embedding, now, model) {
   }
 }
 
+const EMBED_RETRYABLE = new Set(['embed_timeout', 'embed_failed']);
+
+async function embedOnce(embed, sentence) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const embedded = await embed(sentence);
+    if (embedded && embedded.ok) {
+      return embedded;
+    }
+    const error = (embedded && embedded.error) || 'embed_failed';
+    if (!EMBED_RETRYABLE.has(error) || attempt === 1) {
+      return { ok: false, error };
+    }
+  }
+  return { ok: false, error: 'embed_failed' };
+}
+
 async function resolveQueryEmbedding({ db, sentence, embed, now, model }) {
   const modelName = model || EMBEDDING_MODEL;
   const id = queryCacheId(modelName, sentence);
   const cached = await readQueryEmbedding(db, id, now, modelName);
   if (cached) return { ok: true, embedding: cached, cached: true };
-  const embedded = await embed(sentence);
+  const embedded = await embedOnce(embed, sentence);
   if (!embedded || !embedded.ok) return { ok: false, error: (embedded && embedded.error) || 'embed_failed' };
   if (!freshEmbedding({ embedding: embedded.embedding, embeddingModel: modelName, updatedAt: now }, now, modelName)) {
     return { ok: false, error: 'bad_dimension' };

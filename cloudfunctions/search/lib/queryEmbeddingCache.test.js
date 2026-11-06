@@ -71,6 +71,38 @@ describe('query embedding cache', () => {
     assert.equal(db.docs[id].embeddingModel, EMBEDDING_MODEL);
   });
 
+  it('retries a timed out embed once within the same resolve', async () => {
+    const db = createDb();
+    let calls = 0;
+    const resolved = await resolveQueryEmbedding({
+      db,
+      sentence: '坐标换算',
+      now: 10,
+      embed: async () => {
+        calls += 1;
+        return calls === 1 ? { ok: false, error: 'embed_timeout' } : { ok: true, embedding: vector() };
+      },
+    });
+    assert.equal(calls, 2);
+    assert.equal(resolved.ok, true);
+  });
+
+  it('does not retry a bad dimension', async () => {
+    const db = createDb();
+    let calls = 0;
+    const resolved = await resolveQueryEmbedding({
+      db,
+      sentence: '坐标换算',
+      now: 10,
+      embed: async () => {
+        calls += 1;
+        return { ok: false, error: 'bad_dimension' };
+      },
+    });
+    assert.equal(calls, 1);
+    assert.equal(resolved.ok, false);
+  });
+
   it('still searches when the cache cannot be written', async () => {
     const db = {
       collection() {

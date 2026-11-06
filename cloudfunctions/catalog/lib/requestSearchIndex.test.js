@@ -20,4 +20,24 @@ describe('requestSearchIndex', () => {
     }, { action: 'reindexVideo' });
     assert.deepEqual(failed, { ok: false, code: 'FAIL' });
   });
+
+  it('retries once when the search function reports failure', async () => {
+    const calls = [];
+    const res = await requestSearchIndex(async (payload) => {
+      calls.push(payload);
+      return { result: calls.length === 1 ? { ok: false, code: 'FAIL' } : { ok: true, videoId: 'v1' } };
+    }, { action: 'reindexVideo', videoId: 'v1' });
+    assert.equal(calls.length, 2);
+    assert.equal(res.ok, true);
+  });
+
+  it('does not retry a bad input', async () => {
+    const calls = [];
+    const res = await requestSearchIndex(async (payload) => {
+      calls.push(payload);
+      return { result: { ok: false, code: 'BAD_INPUT' } };
+    }, { action: 'reindexVideo' });
+    assert.equal(calls.length, 1);
+    assert.equal(res.code, 'BAD_INPUT');
+  });
 });
