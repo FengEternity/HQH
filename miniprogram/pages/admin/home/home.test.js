@@ -112,7 +112,7 @@ describe('admin home workbench', () => {
     page.openAbout();
 
     assert.equal(page.data.role, 'admin');
-    assert.equal(page.data.aboutHint, '开发版 · 0.2.5');
+    assert.equal(page.data.aboutHint, '开发版 · 0.2.6');
     assert.equal(page.data.pendingLabel, '1 条未读');
     assert.equal(page.data.ingestLabel, '进入');
     assert.deepEqual(

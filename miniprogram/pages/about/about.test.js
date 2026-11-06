@@ -60,6 +60,6 @@ describe('about page', () => {
     page.onLoad({ staff: '1' });
 
     assert.equal(page.data.staff, true);
-    assert.equal(page.data.version, '0.2.5');
+    assert.equal(page.data.version, '0.2.6');
   });
 });
