@@ -101,9 +101,27 @@ function taskView(task) {
   return view;
 }
 
+async function driveIndexTask({ task, budgetMs, now, indexOne, saveTask, batchSize = 1 }) {
+  const startedAt = now();
+  let current = task;
+  while (current.cursor) {
+    const ids = nextBatch(current, batchSize);
+    if (!ids.length) break;
+    const outcomes = [];
+    for (const id of ids) {
+      outcomes.push(await indexOne(id));
+    }
+    current = applyBatch(current, outcomes, now());
+    if (now() - startedAt >= budgetMs) break;
+  }
+  await saveTask(current);
+  return taskView(current);
+}
+
 module.exports = {
   applyBatch,
   createTask,
+  driveIndexTask,
   nextBatch,
   taskView,
 };

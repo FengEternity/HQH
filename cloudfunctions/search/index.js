@@ -10,7 +10,7 @@ const { expandQuery } = require('./lib/keywordSearch');
 const { contentHash } = require('./lib/chunkText');
 const { attemptEmbed, markStaleForRewrite, shouldCommit, outcomeKind } = require('./lib/indexAttempt');
 const { embedChunkText } = require('./lib/embedClient');
-const { applyBatch, createTask, nextBatch, taskView } = require('./lib/indexTask');
+const { createTask, driveIndexTask, taskView } = require('./lib/indexTask');
 const { scorePublishedVideos } = require('./lib/vectorRank');
 const { COSINE_THRESHOLD, EMBEDDING_MODEL, INDEX_BATCH_SIZE, MAX_INPUT_CHARS, VECTOR_CAP } = require('./lib/searchConfig');
 const { resolveQueryEmbedding } = require('./lib/queryEmbeddingCache');
@@ -295,15 +295,17 @@ async function listPublishedIds() {
   return (res.data || []).map((row) => row._id).filter(Boolean);
 }
 
+const TASK_DRIVE_BUDGET_MS = 45000;
+
 async function advanceStoredTask(task) {
-  const ids = nextBatch(task, INDEX_BATCH_SIZE);
-  const outcomes = [];
-  for (const id of ids) {
-    outcomes.push(await indexOne(id));
-  }
-  const next = applyBatch(task, outcomes, Date.now());
-  await saveTask(next);
-  return taskView(next);
+  return driveIndexTask({
+    task,
+    budgetMs: TASK_DRIVE_BUDGET_MS,
+    now: Date.now,
+    indexOne,
+    saveTask,
+    batchSize: INDEX_BATCH_SIZE,
+  });
 }
 
 async function handleStartTask(event) {
