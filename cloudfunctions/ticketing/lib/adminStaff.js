@@ -52,6 +52,14 @@ function assertRole(role) {
   }
 }
 
+function writableFields(document) {
+  if (!document || typeof document !== 'object') return {};
+  const copy = { ...document };
+  delete copy._id;
+  delete copy._openid;
+  return copy;
+}
+
 function enabledAdminOpenids(config) {
   const openids = config && Array.isArray(config.enabledAdminOpenids)
     ? config.enabledAdminOpenids
@@ -142,7 +150,7 @@ async function admitAdminByPin(db, { openid, pin, expectedPin, now }) {
     await transaction.collection(ADMIN_USERS).doc(openid).set({ data: record });
     await transaction.collection(ADMIN_CONFIG).doc(STAFF_CONFIG_ID).set({
       data: {
-        ...(config || {}),
+        ...writableFields(config),
         initialized: true,
         initializedAt: (config && config.initializedAt) || now,
         initializedBy: (config && config.initializedBy) || openid,
@@ -217,7 +225,7 @@ async function updateStaff(db, { openid, targetOpenid, role, enabled, now }) {
     });
     await transaction.collection(ADMIN_CONFIG).doc(STAFF_CONFIG_ID).set({
       data: {
-        ...(config || {}),
+        ...writableFields(config),
         enabledAdminOpenids: nextEnabledAdminOpenids,
         updatedAt: now,
       },
@@ -287,7 +295,7 @@ async function claimInvite(db, { openid, code, now }) {
       ];
       await transaction.collection(ADMIN_CONFIG).doc(STAFF_CONFIG_ID).set({
         data: {
-          ...(config || {}),
+          ...writableFields(config),
           enabledAdminOpenids: nextEnabledAdminOpenids,
           updatedAt: now,
         },

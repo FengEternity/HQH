@@ -48,9 +48,16 @@ function createMemoryDb(seed = {}) {
         }
         return {
           async get() {
-            return { data: clone(documents.get(id) || null) };
+            const stored = documents.get(id);
+            if (!stored) return { data: null };
+            return { data: { ...clone(stored), _id: id } };
           },
           async set({ data }) {
+            if (data && Object.prototype.hasOwnProperty.call(data, '_id')) {
+              const error = new Error('document.set:fail -501007 invalid parameters. 不能更新_id的值');
+              error.errCode = -501007;
+              throw error;
+            }
             documents.set(id, clone(data));
             return { stats: { created: 1 } };
           },
@@ -107,9 +114,16 @@ function createMemoryDb(seed = {}) {
         }
         return {
           async get() {
-            return { data: clone(documents.get(id) || null) };
+            const stored = documents.get(id);
+            if (!stored) return { data: null };
+            return { data: { ...clone(stored), _id: id } };
           },
           async set({ data }) {
+            if (data && Object.prototype.hasOwnProperty.call(data, '_id')) {
+              const error = new Error('document.set:fail -501007 invalid parameters. 不能更新_id的值');
+              error.errCode = -501007;
+              throw error;
+            }
             documents.set(id, clone(data));
             return { stats: { created: 1 } };
           },
