@@ -16,6 +16,7 @@ const { COSINE_THRESHOLD, EMBEDDING_MODEL, INDEX_BATCH_SIZE, MAX_INPUT_CHARS, VE
 const { resolveQueryEmbedding } = require('./lib/queryEmbeddingCache');
 const { loadAllPages } = require('./lib/pagedRead');
 const { findVideos } = require('./lib/findVideos');
+const { cleanupQueryCache } = require('./lib/cleanupQueryCache');
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
@@ -429,6 +430,9 @@ async function handleOps(event) {
   }
   if (event.action === 'auditIndex') {
     return handleAudit(event);
+  }
+  if (event.action === 'cleanupQueryCache') {
+    return cleanupQueryCache({ db, now: Date.now() });
   }
   badInput();
 }

@@ -5,6 +5,7 @@ const cloud = require('wx-server-sdk');
 const { buildSearchBlob, searchPublished } = require('./lib/catalogSearch');
 const { contentHash } = require('./lib/videoContentHash');
 const { requestSearchIndex } = require('./lib/requestSearchIndex');
+const { loadAllPages } = require('./lib/pagedRead');
 const { issueTicket } = require('./lib/ticket');
 const { requireCatalogAccess } = require('./lib/adminAccess');
 const {
@@ -677,9 +678,10 @@ async function upsertBrand(event, openid) {
 
 // videos 里冗余了 brandName 与 searchBlob，改名后要一并刷新，否则搜索还命中旧名
 async function syncBrandName(brandId, name, ticket) {
-  const res = await db.collection('videos').where({ brandId }).limit(200).get();
+  const { rows } = await loadAllPages((skip, pageSize) =>
+    db.collection('videos').where({ brandId }).skip(skip).limit(pageSize).get().then((res) => res.data || []));
   const publishedIds = [];
-  for (const doc of res.data) {
+  for (const doc of rows) {
     const merged = Object.assign({}, doc, { brandName: name });
     await db.collection('videos').doc(doc._id).update({
       data: {
