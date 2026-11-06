@@ -7,7 +7,12 @@
         "type": "folder"
       }
     ],
-    "include": []
+    "include": [
+      {
+        "value": "miniprogram/utils/askReply.js",
+        "type": "file"
+      }
+    ]
   },
   "watchOptions": {
     "ignore": [
@@ -30,6 +35,8 @@
     "minifyWXSS": true,
     "minifyWXML": true,
     "localPlugins": false,
+    "ignoreDevUnusedFiles": false,
+    "ignoreUploadUnusedFiles": false,
     "disableUseStrict": false,
     "useCompilerPlugins": false,
     "babelSetting": {
